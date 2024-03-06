@@ -7,9 +7,10 @@ from PySide6 import QtCore
 from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout 
 from PySide6.QtWidgets import QTextEdit, QPushButton, QFileDialog, QLabel, QSlider, QLineEdit, QComboBox
 from PySide6.QtCore import Qt, QThread, Signal, QUrl, QTimer, QSize
+from PySide6.QtCore import QRegularExpression
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
-from PySide6.QtGui import QImage, QPixmap, QColor, QFont, QTextCursor, QFontMetrics, QMouseEvent
+from PySide6.QtGui import QImage, QPixmap, QColor, QFont, QTextCursor, QFontMetrics, QMouseEvent, QRegularExpressionValidator
 
 import serial
 from serial.tools import list_ports
@@ -49,7 +50,8 @@ def print_buffer(data):
 class Keyboard:
     SYSEX_RGB_MATRIX_CMD = 0x01
     SYSEX_DEFAULT_LAYER_SET = 0x02
-
+    SYSEX_DEBUG_MASK_SET = 0x03
+    
     RGB_MAXTRIX_W = 19
     RGB_MAXTRIX_H = 6
 
@@ -132,6 +134,7 @@ class KeybFirmataThread(QThread):
         if line:
             self.console_signal.emit(line)  # Emit signal with the received line
 
+
     def update_rgb(self, img, rgb_multiplier):
         if self.board == None:
             return
@@ -166,14 +169,23 @@ class KeybFirmataThread(QThread):
         if len(data) > 0:
             self.board.send_sysex(Keyboard.SYSEX_RGB_MATRIX_CMD, data)
 
+
     def keyb_default_layer_set(self, layer):
         if self.board == None:
             return
-
         #print(f"keyb_default_layer_set: {layer}")
         data = bytearray()
         data.append(min(layer, 255))
         self.board.send_sysex(Keyboard.SYSEX_DEFAULT_LAYER_SET, data)
+
+
+    def dbg_mask_set(self, dbg_mask):
+        if self.board == None:
+            return
+        #print(f"dbg_mask_set: {dbg_mask}")
+        data = bytearray()
+        data.append(min(dbg_mask, 255))
+        self.board.send_sysex(Keyboard.SYSEX_DEBUG_MASK_SET, data)
 
 
     def run(self):
@@ -205,24 +217,51 @@ class KeybFirmataThread(QThread):
 
 
 class ConsoleTab(QWidget):
+    dbg_mask_signal = Signal(int)
+
     def __init__(self):
         super().__init__()
         self.initUI()
 
+    def updateDbgMask(self):
+        dbg_mask = int(self.dbgMaskInput.text(),16)
+        self.dbg_mask_signal.emit(dbg_mask)
+    
     def initUI(self):
+        dbgMaskLayout = QHBoxLayout()
+        self.dbgMaskLabel = QLabel("debug mask")
+        metrics = QFontMetrics(self.dbgMaskLabel.font())
+        self.dbgMaskLabel.setFixedHeight(metrics.height())
+        
+        # debug mask hex byte input
+        self.dbgMaskInput = QLineEdit()
+        # Set a validator to allow only hex characters (0-9, A-F, a-f) and limit to 2 characters
+        regExp = QRegularExpression("[0-9A-Fa-f]{1,2}")
+        self.dbgMaskInput.setValidator(QRegularExpressionValidator(regExp))
+       
+        self.dbgMaskUpdateButton = QPushButton("set")
+        self.dbgMaskUpdateButton.clicked.connect(self.updateDbgMask)
+        
+        dbgMaskLayout.addWidget(self.dbgMaskLabel)
+        dbgMaskLayout.addWidget(self.dbgMaskInput)
+        dbgMaskLayout.addWidget(self.dbgMaskUpdateButton)
+        
         layout = QVBoxLayout()
-        self.text_edit = QTextEdit()
-        self.text_edit.setReadOnly(True)
+        self.console_output = QTextEdit()
+        self.console_output.setReadOnly(True)
 
         font = QFont()
         font.setFamily("Courier New");
-        self.text_edit.setFont(font);
+        self.console_output.setFont(font);
 
-        layout.addWidget(self.text_edit)
+        layout.addLayout(dbgMaskLayout)
+        layout.addWidget(self.console_output)
         self.setLayout(layout)
 
+
     def update_text(self, text):
-        self.text_edit.insertPlainText(text)
+        self.console_output.insertPlainText(text)
+        self.console_output.ensureCursorVisible()
 
 
 class VideoPlayerTab(QWidget):
@@ -681,7 +720,7 @@ class MainWindow(QMainWindow):
         
         tab_widget.addTab(self.console_tab, 'console')
         tab_widget.addTab(self.rgb_matrix_tab, 'rgb matrix')
-        tab_widget.addTab(self.winfocus_tab, 'window focus listener')
+        tab_widget.addTab(self.winfocus_tab, 'layer auto switch')
         
         self.setCentralWidget(tab_widget)
         #-----------------------------------------------------------
@@ -695,6 +734,7 @@ class MainWindow(QMainWindow):
         self.winfocus_listen_thread.winfocus_signal.connect(self.winfocus_tab.on_winfocus)
         self.winfocus_listen_thread.start()
 
+        self.console_tab.dbg_mask_signal.connect(self.firmata_thread.dbg_mask_set)
         self.rgb_matrix_tab.rgb_frame_signal.connect(self.firmata_thread.update_rgb)
         self.winfocus_tab.keyb_layer_set_signal.connect(self.firmata_thread.keyb_default_layer_set)
 
