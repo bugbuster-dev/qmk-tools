@@ -5,13 +5,12 @@ import numpy as np
 
 from PySide6 import QtCore
 from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout 
-from PySide6.QtWidgets import QTextEdit, QPushButton, QFileDialog, QLabel, QSlider, QLineEdit, QComboBox
+from PySide6.QtWidgets import QTextEdit, QPushButton, QFileDialog, QLabel, QSlider, QLineEdit, QComboBox, QSpacerItem, QSizePolicy
 from PySide6.QtCore import Qt, QThread, Signal, QUrl, QTimer, QSize
 from PySide6.QtCore import QRegularExpression
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtGui import QImage, QPixmap, QColor, QFont, QTextCursor, QFontMetrics, QMouseEvent, QRegularExpressionValidator
-
 import serial
 from serial.tools import list_ports
 
@@ -135,14 +134,13 @@ class KeybFirmataThread(QThread):
             self.console_signal.emit(line)  # Emit signal with the received line
 
 
+    print_pixeldata = 0
     def update_rgb(self, img, rgb_multiplier):
         if self.board == None:
             return
 
         #print(rgb_multiplier)
-
-        print_pixeldata = 0
-        if print_pixeldata:
+        if self.print_pixeldata:
             print("-"*120)
 
         height = img.height()
@@ -158,7 +156,7 @@ class KeybFirmataThread(QThread):
                 rgb_pixel = Keyboard.pixel_to_rgb_index_duration(pixel, Keyboard.xy_to_rgb_index(x, y), 200, rgb_multiplier)
                 data.extend(rgb_pixel)
 
-                if print_pixeldata:
+                if self.print_pixeldata:
                     print(f"{x:2},{y:2}=({pixel[0]:3},{pixel[1]:3},{pixel[2]:3})", end=" ")
                     print_buffer(rgb_pixel)
 
@@ -704,6 +702,129 @@ class WinFocusListenTab(QWidget):
         #print(selectedText)
 
 
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+import matplotlib.animation as animation
+
+
+def rgba2rgb( rgba, background=(255,255,255) ):
+    # rgba iteration: lines, pixels, rgba value
+    row, col, ch = rgba.shape
+
+    if ch == 3:
+        return rgba
+
+    assert ch == 4, 'RGBA image has 4 channels.'
+
+    rgb = np.zeros( (row, col, 3), dtype='float32' )
+    r, g, b, a = rgba[:,:,0], rgba[:,:,1], rgba[:,:,2], rgba[:,:,3]
+
+    a = np.asarray( a, dtype='float32' ) / 255.0
+
+    R, G, B = background
+
+    rgb[:,:,0] = r * a + (1.0 - a) * R
+    rgb[:,:,1] = g * a + (1.0 - a) * G
+    rgb[:,:,2] = b * a + (1.0 - a) * B
+
+    return np.asarray( rgb, dtype='uint8' )
+    
+
+class RGBAnimationTab(QWidget):
+    rgb_frame_signal = Signal(QImage, object)  # Signal to send rgb frame
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.initUI()
+
+    def initUI(self):
+        # Create a figure for plotting
+        self.figure = Figure(facecolor='black')
+        self.figure.subplots_adjust(left=0, right=1, bottom=0, top=1)  # Adjust margins
+        self.canvas = FigureCanvas(self.figure)
+        self.ax = self.figure.add_subplot(111)
+        self.ax.set_facecolor('black')
+        self.ax.axis('off')
+
+        # start animation button
+        self.startButton = QPushButton("start")
+        self.startButton.clicked.connect(self.startAnimation)
+
+        # Layout to hold the canvas and buttons
+        layout = QVBoxLayout()
+        spacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
+        layout.addSpacerItem(spacer)
+        layout.addWidget(self.canvas)
+        layout.addWidget(self.startButton)
+        self.setLayout(layout)
+
+        self.figure.set_size_inches((4,3))
+        self.figure.set_dpi(100)
+
+        # Parameters for the animation
+        self.x_size = 20
+        self.frames = 200
+        self.interval = 20
+
+        # Line object for the standing wave
+        self.standing_wave_line, = self.ax.plot([], [], color='cyan', lw=50)
+        
+        # Animation placeholder
+        self.ani = None
+
+
+    def startAnimation(self):
+        if self.ani is None:  # Prevent multiple instances if already running
+            self.ani = animation.FuncAnimation(self.figure, self.animate, frames=self.frames, init_func=self.init, blit=True, interval=self.interval, repeat=True)
+            self.canvas.draw()
+            
+            self.timer = QTimer()
+            self.timer.timeout.connect(self.captureAnimationFrame)
+            self.timer.start(1000/self.interval)
+
+            self.startButton.setText("stop")
+        else:
+            self.timer.stop()
+            self.ani.event_source.stop()
+            self.ani = None
+            
+            self.startButton.setText("start")
+
+
+    def init(self):
+        self.standing_wave_line.set_data([], [])
+        return self.standing_wave_line,
+
+
+    print_size = 1
+    def captureAnimationFrame(self):
+        self.ani.pause()
+
+        self.canvas.draw()
+        buffer = np.frombuffer(self.canvas.buffer_rgba(), dtype=np.uint8)
+        width, height = self.figure.get_size_inches() * self.figure.get_dpi()
+        if self.print_size:
+            print(f"canvas size: {width}x{height}")
+            self.print_size = 0
+        img = buffer.reshape(int(height), int(width), 4)                    
+        img = rgba2rgb(img)
+        qimage = QImage(img.data, width, height, QImage.Format_RGB888)
+        keyb_rgb = qimage.scaled(Keyboard.RGB_MAXTRIX_W, Keyboard.RGB_MAXTRIX_H)
+        self.rgb_frame_signal.emit(keyb_rgb, (10.0,10.0,10.0))
+
+        self.ani.resume()
+
+    def animate(self, i):
+        x = np.linspace(0, self.x_size, 1000)
+        #x = np.linspace(0, 2 * np.pi, 1000)
+
+        amplitude = np.sin(np.pi * i / self.frames) * 1
+        y = amplitude * np.sin(2 * 2 * np.pi * 2 * (x - self.x_size / 2) / self.x_size) * np.cos(2 * np.pi * i / 50)
+        self.standing_wave_line.set_data((x - self.x_size / 2)/100, y/30)
+
+        return self.standing_wave_line,
+
+
 #-------------------------------------------------------------------------------
 
 class MainWindow(QMainWindow):
@@ -720,13 +841,16 @@ class MainWindow(QMainWindow):
         tab_widget = QTabWidget()
         self.console_tab = ConsoleTab()
         self.rgb_matrix_tab = RGBMatrixTab()
+        self.rgb_animation_tab = RGBAnimationTab()
         self.winfocus_tab = WinFocusListenTab()
         #self.rgb_matrix_tab = VideoPlayerTab()
         
         tab_widget.addTab(self.console_tab, 'console')
-        tab_widget.addTab(self.rgb_matrix_tab, 'rgb matrix')
+        tab_widget.addTab(self.rgb_matrix_tab, 'rgb video')
+        tab_widget.addTab(self.rgb_animation_tab, 'rgb animation')
         tab_widget.addTab(self.winfocus_tab, 'layer auto switch')
         
+
         self.setCentralWidget(tab_widget)
         #-----------------------------------------------------------
 
@@ -741,6 +865,7 @@ class MainWindow(QMainWindow):
 
         self.console_tab.dbg_mask_signal.connect(self.firmata_thread.dbg_mask_set)
         self.rgb_matrix_tab.rgb_frame_signal.connect(self.firmata_thread.update_rgb)
+        self.rgb_animation_tab.rgb_frame_signal.connect(self.firmata_thread.update_rgb)
         self.winfocus_tab.keyb_layer_set_signal.connect(self.firmata_thread.keyb_default_layer_set)
 
 def main():
