@@ -588,7 +588,8 @@ class ProgramSelectorComboBox(QComboBox):
             if self.winfocusText:
                 self.clear()
                 lines = self.winfocusText.toPlainText().split('\n')
-                self.addItems(lines)                    
+                self.addItems(lines)
+                self.addItem("-")
                 #print(self.winfocusText.toPlainText())
         
         # Call the base class implementation to ensure default behavior
@@ -625,7 +626,10 @@ class WinFocusListenTab(QWidget):
         #---------------------------------------
 
         # Label for instructions
-        self.label = QLabel("click a line below to select program and its keyboard layer")
+        self.label = QLabel("select default layer above, the foreground application is traced here below.\n"
+                            "select program(s) and the layer to use in the dropdown box below.\n"
+                            "select '-' to unselect program."
+                            )
         layout.addWidget(self.label)
 
         # for displaying processes which got foreground focus
@@ -692,10 +696,11 @@ class WinFocusListenTab(QWidget):
 
 
     def selectLine(self, event):
+        pass
         #cursor = self.winfocusTextEdit.textCursor()
-        cursor = self.winfocusTextEdit.cursorForPosition(event.pos())
-        cursor.select(QTextCursor.LineUnderCursor)
-        selectedText = cursor.selectedText()
+        #cursor = self.winfocusTextEdit.cursorForPosition(event.pos())
+        #cursor.select(QTextCursor.LineUnderCursor)
+        #selectedText = cursor.selectedText()
         #print(selectedText)
 
 
