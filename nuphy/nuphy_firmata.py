@@ -10,7 +10,7 @@ from PySide6.QtCore import Qt, QThread, Signal, QUrl, QTimer, QSize
 from PySide6.QtCore import QRegularExpression
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
-from PySide6.QtGui import QImage, QPixmap, QColor, QFont, QTextCursor, QFontMetrics, QMouseEvent, QRegularExpressionValidator
+from PySide6.QtGui import QImage, QPixmap, QColor, QFont, QTextCursor, QFontMetrics, QMouseEvent, QRegularExpressionValidator, QKeyEvent
 import serial
 from serial.tools import list_ports
 
@@ -53,6 +53,7 @@ class Keyboard:
     
     RGB_MAXTRIX_W = 19
     RGB_MAXTRIX_H = 6
+    MAX_RGB_LED = 110
 
     DEFAULT_LAYER = 2
     MAX_LAYERS = 8
@@ -76,6 +77,8 @@ class Keyboard:
         if y == 2:
             if x < 2:
                 x = 0
+            else:
+                x = x - 1
             return min(x+37,54)
         if y == 3:
             if x < 2:
@@ -96,8 +99,11 @@ class Keyboard:
                 x = x - 2
             return min(x+71,87)
         if y == 5:
-            if x >= 4 and x <= 9:
-                x = 4
+            if x < 4:
+                if x == 3:
+                    x = 2
+            elif x >= 4 and x <= 9:
+                x = 3
             elif x == 18:
                 return 87
             else:
@@ -186,6 +192,27 @@ class KeybFirmataThread(QThread):
         self.board.send_sysex(Keyboard.SYSEX_DEBUG_MASK_SET, data)
 
 
+    def loop_leds(self, pos):
+        if 0:
+            data = bytearray()
+            led = Keyboard.xy_to_rgb_index(pos.x, pos.y)
+            print(f"x={pos.x}, y={pos.y}, led={led}")
+            data.extend([led, 0xff, 0, 0xff, 0xff])
+            self.board.send_sysex(Keyboard.SYSEX_RGB_MATRIX_CMD, data)
+            pos.x = pos.x + 1
+            if pos.x >= Keyboard.RGB_MAXTRIX_W:
+                pos.x = 0
+                pos.y = pos.y + 1
+                if pos.y >= Keyboard.RGB_MAXTRIX_H:
+                    pos.y = 0
+
+        if 0: # loop through all rgb leds
+            data = bytearray()
+            data.extend([pos.i ,0xff,0,0xff,0xff])
+            self.board.send_sysex(Keyboard.SYSEX_RGB_MATRIX_CMD, data)
+            pos.i = (pos.i + 1) % Keyboard.MAX_RGB_LED
+            
+
     def run(self):
         self.board = pyfirmata2.Arduino(self.port)
         self.board.auto_setup()
@@ -195,23 +222,13 @@ class KeybFirmataThread(QThread):
 
         self.board.add_cmd_handler(pyfirmata2.STRING_DATA, self.console_line_handler)
 
-        method_list = [func for func in dir(self.board) if callable(getattr(self.board, func)) and not func.startswith("__")]
-        data_list = [func for func in dir(self.board) if not callable(getattr(self.board, func))]
         print("-"*80)
         print(f"{self.board}")
-        print("-"*40)
-        print(f"{method_list}")
-        print("-"*40)
-        print(f"{data_list}")
-        print("-"*40)
         print(f"firmware:{self.board.firmware} {self.board.firmware_version}, firmata={self.board.firmata_version}")
         print("-"*80)
 
-        #data = bytearray()
-        #data.extend([99,0xff,0xff,0,0])
-        #self.board.send_sysex(Keyboard.SYSEX_RGB_MATRIX_CMD, data)
         while True:
-            time.sleep(0.1)
+            time.sleep(0.5)
 
 
 class ConsoleTab(QWidget):
@@ -705,7 +722,7 @@ class WinFocusListenTab(QWidget):
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.animation as animation
-
+import matplotlib.pyplot as plt
 
 def rgba2rgb( rgba, background=(255,255,255) ):
     # rgba iteration: lines, pixels, rgba value
@@ -728,8 +745,32 @@ def rgba2rgb( rgba, background=(255,255,255) ):
     rgb[:,:,2] = b * a + (1.0 - a) * B
 
     return np.asarray( rgb, dtype='uint8' )
-    
 
+
+def add_method_to_class(class_def, method):
+    method_definition = method
+
+    # Execute the method definition and retrieve the method from the local scope
+    local_scope = {}
+    exec(method_definition, globals(), local_scope)
+    for method in list(local_scope.values()):
+        #print(f"{method.__name__} added to class {class_def.__name__}")
+        # Add the method to the class
+        setattr(class_def, method.__name__, method)
+
+
+class CodeTextEdit(QTextEdit):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+    
+    def keyPressEvent(self, event: QKeyEvent):
+        if event.key() == Qt.Key_Tab:
+            # Insert four spaces instead of a tab
+            self.insertPlainText("    ")
+        else:
+            super().keyPressEvent(event)
+
+        
 class RGBAnimationTab(QWidget):
     rgb_frame_signal = Signal(QImage, object)  # Signal to send rgb frame
 
@@ -753,7 +794,9 @@ class RGBAnimationTab(QWidget):
         # Layout to hold the canvas and buttons
         layout = QVBoxLayout()
         spacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
-        layout.addSpacerItem(spacer)
+        self.code_editor = CodeTextEdit()
+        #layout.addSpacerItem(spacer)
+        layout.addWidget(self.code_editor)
         layout.addWidget(self.canvas)
         layout.addWidget(self.startButton)
         self.setLayout(layout)
@@ -763,18 +806,16 @@ class RGBAnimationTab(QWidget):
 
         # Parameters for the animation
         self.x_size = 20
-        self.frames = 200
+        self.frames = 500
         self.interval = 20
 
-        # Line object for the standing wave
-        self.standing_wave_line, = self.ax.plot([], [], color='cyan', lw=50)
-        
         # Animation placeholder
         self.ani = None
 
 
     def startAnimation(self):
         if self.ani is None:  # Prevent multiple instances if already running
+            add_method_to_class(RGBAnimationTab, self.code_editor.toPlainText())
             self.ani = animation.FuncAnimation(self.figure, self.animate, frames=self.frames, init_func=self.init, blit=True, interval=self.interval, repeat=True)
             self.canvas.draw()
             
@@ -791,12 +832,7 @@ class RGBAnimationTab(QWidget):
             self.startButton.setText("start")
 
 
-    def init(self):
-        self.standing_wave_line.set_data([], [])
-        return self.standing_wave_line,
-
-
-    print_size = 1
+    print_size = 0
     def captureAnimationFrame(self):
         self.ani.pause()
 
@@ -814,7 +850,15 @@ class RGBAnimationTab(QWidget):
 
         self.ani.resume()
 
-    def animate(self, i):
+
+    def init_wave(self):
+        # Line object for the standing wave
+        self.standing_wave_line, = self.ax.plot([], [], color='cyan', lw=50)
+        self.standing_wave_line.set_data([], [])
+        return self.standing_wave_line,
+
+
+    def animate_wave(self, i):
         x = np.linspace(0, self.x_size, 1000)
         #x = np.linspace(0, 2 * np.pi, 1000)
 
@@ -823,6 +867,34 @@ class RGBAnimationTab(QWidget):
         self.standing_wave_line.set_data((x - self.x_size / 2)/100, y/30)
 
         return self.standing_wave_line,
+
+
+    def init_rect(self):
+        self.frames = 1000
+        self.rect = plt.Rectangle((0.5, 0.5), 0.15, 0.3, color="blue")
+        self.ax.add_patch(self.rect)
+        self.ax.set_xlim(0, 1)
+        self.ax.set_ylim(0, 1)
+        
+        # Initialize velocity and direction
+        self.velocity = np.array([0.01, 0.007])
+
+        # Set the initial state of the rectangle, if needed
+        self.rect.set_xy((0.45, 0.45))
+        return self.rect,
+    
+    def animate_rect(self, i):
+        pos = self.rect.get_xy()
+        pos += self.velocity
+        
+        # Check for collision with the walls and reverse velocity if needed
+        if pos[0] <= 0 or pos[0] + self.rect.get_width() >= 1:
+            self.velocity[0] = -self.velocity[0]
+        if pos[1] <= 0 or pos[1] + self.rect.get_height() >= 1:
+            self.velocity[1] = -self.velocity[1]
+        
+        self.rect.set_xy(pos)
+        return self.rect,
 
 
 #-------------------------------------------------------------------------------
