@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 
 from PySide6 import QtCore
-from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout 
+from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout
 from PySide6.QtWidgets import QTextEdit, QPushButton, QFileDialog, QLabel, QSlider, QLineEdit, QComboBox, QSpacerItem, QSizePolicy
 from PySide6.QtCore import Qt, QThread, Signal, QUrl, QTimer, QSize
 from PySide6.QtCore import QRegularExpression
@@ -26,8 +26,8 @@ import ctypes.wintypes
 port        = pyfirmata2.Arduino.AUTODETECT
 port        = "COM9"
 
-width       = 800
-height      = 600
+app_width       = 800
+app_height      = 800
 
 #-------------------------------------------------------------------------------
 
@@ -44,13 +44,13 @@ def print_buffer(data):
     # This ensures we move to a new line after printing the last line, if necessary
     if len(data) % 16 != 0:
         print()  # Ensure there's a newline at the end if the data didn't end on a 16th byte
-        
+
 
 class Keyboard:
     SYSEX_RGB_MATRIX_CMD = 0x01
     SYSEX_DEFAULT_LAYER_SET = 0x02
     SYSEX_DEBUG_MASK_SET = 0x03
-    
+
     RGB_MAXTRIX_W = 19
     RGB_MAXTRIX_H = 6
     MAX_RGB_LED = 110
@@ -122,11 +122,11 @@ class Keyboard:
         data.append(min(int(pixel[1]*brightness[1]), 255))
         data.append(min(int(pixel[2]*brightness[2]), 255))
         return data
-    
-    
+
+
 class KeybFirmataThread(QThread):
     console_signal = Signal(str)  # Signal to send data to the main thread
-    
+
     MAX_LEN_SYSEX_DATA = 60
 
     def __init__(self, port):
@@ -169,7 +169,7 @@ class KeybFirmataThread(QThread):
                 if len(data) >= self.MAX_LEN_SYSEX_DATA:
                     self.board.send_sysex(Keyboard.SYSEX_RGB_MATRIX_CMD, data)
                     data = bytearray()
-        
+
         if len(data) > 0:
             self.board.send_sysex(Keyboard.SYSEX_RGB_MATRIX_CMD, data)
 
@@ -211,12 +211,12 @@ class KeybFirmataThread(QThread):
             data.extend([pos.i ,0xff,0,0xff,0xff])
             self.board.send_sysex(Keyboard.SYSEX_RGB_MATRIX_CMD, data)
             pos.i = (pos.i + 1) % Keyboard.MAX_RGB_LED
-            
+
 
     def run(self):
         self.board = pyfirmata2.Arduino(self.port)
         self.board.auto_setup()
-        
+
         it = pyfirmata2.util.Iterator(self.board)
         it.start()
 
@@ -241,26 +241,26 @@ class ConsoleTab(QWidget):
     def updateDbgMask(self):
         dbg_mask = int(self.dbgMaskInput.text(),16)
         self.dbg_mask_signal.emit(dbg_mask)
-    
+
     def initUI(self):
         dbgMaskLayout = QHBoxLayout()
         self.dbgMaskLabel = QLabel("debug mask")
         metrics = QFontMetrics(self.dbgMaskLabel.font())
         self.dbgMaskLabel.setFixedHeight(metrics.height())
-        
+
         # debug mask hex byte input
         self.dbgMaskInput = QLineEdit()
         # Set a validator to allow only hex characters (0-9, A-F, a-f) and limit to 2 characters
         regExp = QRegularExpression("[0-9A-Fa-f]{1,2}")
         self.dbgMaskInput.setValidator(QRegularExpressionValidator(regExp))
-       
+
         self.dbgMaskUpdateButton = QPushButton("set")
         self.dbgMaskUpdateButton.clicked.connect(self.updateDbgMask)
-        
+
         dbgMaskLayout.addWidget(self.dbgMaskLabel)
         dbgMaskLayout.addWidget(self.dbgMaskInput)
         dbgMaskLayout.addWidget(self.dbgMaskUpdateButton)
-        
+
         layout = QVBoxLayout()
         self.console_output = QTextEdit()
         self.console_output.setReadOnly(True)
@@ -318,7 +318,7 @@ class RGBMatrixTab(QWidget):
     def initUI(self):
         self.layout = QVBoxLayout()
         self.videoLabel = QLabel("")
-        self.videoLabel.setFixedSize(width, height)  # Set this to desired size
+        self.videoLabel.setFixedSize(app_width, app_height)  # Set this to desired size
 
         self.openButton = QPushButton("open file")
         self.openButton.clicked.connect(self.openFile)
@@ -371,7 +371,7 @@ class RGBMatrixTab(QWidget):
         rgbMultiplyLayout.addWidget(self.RGB_G_Slider)
         rgbMultiplyLayout.addWidget(self.RGB_B_Label)
         rgbMultiplyLayout.addWidget(self.RGB_B_Slider)
-        
+
         self.layout.addWidget(self.videoLabel)
         self.layout.addWidget(self.openButton)
         self.layout.addLayout(controlsLayout)
@@ -413,9 +413,9 @@ class RGBMatrixTab(QWidget):
             h, w, ch = rgbFrame.shape
             bytesPerLine = ch * w
             convertToQtFormat = QImage(rgbFrame.data, w, h, bytesPerLine, QImage.Format_RGB888)
-            p = convertToQtFormat.scaled(width, height, aspectMode=QtCore.Qt.AspectRatioMode.KeepAspectRatio)
+            p = convertToQtFormat.scaled(app_width, app_height, aspectMode=QtCore.Qt.AspectRatioMode.KeepAspectRatio)
             self.videoLabel.setPixmap(QPixmap.fromImage(p))
-            
+
             keyb_rgb = p.scaled(Keyboard.RGB_MAXTRIX_W, Keyboard.RGB_MAXTRIX_H)
             #self.videoLabel.setPixmap(QPixmap.fromImage(keyb_rgb))
             self.rgb_frame_signal.emit(keyb_rgb, self.RGB_multiplier)
@@ -597,7 +597,7 @@ class ProgramSelectorComboBox(QComboBox):
     def __init__(self, winfocusText=None):
         self.winfocusText = winfocusText
         super().__init__(None)
-        
+
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.LeftButton:
             if self.winfocusText:
@@ -606,7 +606,7 @@ class ProgramSelectorComboBox(QComboBox):
                 self.addItems(lines)
                 self.addItem("-")
                 #print(self.winfocusText.toPlainText())
-        
+
         # Call the base class implementation to ensure default behavior
         super().mousePressEvent(event)
 
@@ -654,7 +654,7 @@ class WinFocusListenTab(QWidget):
         self.winfocusTextEdit.textChanged.connect(self.limitLines)
         layout.addWidget(self.winfocusTextEdit)
 
-        #---------------------------------------        
+        #---------------------------------------
         self.programSelector = []
         self.layerSelector = []
         for i in range(3):
@@ -672,8 +672,8 @@ class WinFocusListenTab(QWidget):
         self.setLayout(layout)
 
         # Connect winfocusTextEdit mouse press event
-        self.winfocusTextEdit.mousePressEvent = self.selectLine    
-    
+        self.winfocusTextEdit.mousePressEvent = self.selectLine
+
     def on_winfocus(self, line):
         self.updateWinfocusText(line)
         self.currentFocus = line
@@ -692,7 +692,7 @@ class WinFocusListenTab(QWidget):
                 self.keyb_layer_set_signal.emit(layer)
                 self.currentLayer = layer
                 layerSet = True
-        
+
         if layerSet:
             return
 
@@ -720,6 +720,7 @@ class WinFocusListenTab(QWidget):
 
 
 from matplotlib.figure import Figure
+from matplotlib.patches import Rectangle
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
@@ -762,7 +763,17 @@ def add_method_to_class(class_def, method):
 class CodeTextEdit(QTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
-    
+
+        self.load_text_file("animation.pyfunc")
+
+    def load_text_file(self, filepath):
+        try:
+            with open(filepath, "r", encoding="utf-8") as file:
+                content = file.read()
+                self.setPlainText(content)
+        except Exception as e:
+            print(f"Error opening {filepath}: {e}")
+
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key_Tab:
             # Insert four spaces instead of a tab
@@ -770,7 +781,7 @@ class CodeTextEdit(QTextEdit):
         else:
             super().keyPressEvent(event)
 
-        
+
 class RGBAnimationTab(QWidget):
     rgb_frame_signal = Signal(QImage, object)  # Signal to send rgb frame
 
@@ -816,24 +827,38 @@ class RGBAnimationTab(QWidget):
     def startAnimation(self):
         if self.ani is None:  # Prevent multiple instances if already running
             add_method_to_class(RGBAnimationTab, self.code_editor.toPlainText())
-            self.ani = animation.FuncAnimation(self.figure, self.animate, frames=self.frames, init_func=self.init, blit=True, interval=self.interval, repeat=True)
-            self.canvas.draw()
-            
-            self.timer = QTimer()
-            self.timer.timeout.connect(self.captureAnimationFrame)
-            self.timer.start(1000/self.interval)
+            try:
+                init_fn_name, animate_fn_name = self.animate_methods()
+                animate_init_method = getattr(RGBAnimationTab, init_fn_name)
+                animate_method = getattr(RGBAnimationTab, animate_fn_name)
+                setattr(RGBAnimationTab, "animate_init", animate_init_method)
+                setattr(RGBAnimationTab, "animate", animate_method)
+                self.animate_init()
+                self.ani = animation.FuncAnimation(self.figure, self._animate, frames=self.frames, #init_func=self.init,
+                                                blit=True, interval=self.interval, repeat=True)
+            except Exception as e:
+                print(e)
 
-            self.startButton.setText("stop")
+
+            if self.ani:
+                self.timer = QTimer()
+                self.timer.timeout.connect(self.captureAnimationFrame)
+                self.timer.start(1000/self.interval)
+
+                self.startButton.setText("stop")
         else:
             self.timer.stop()
             self.ani.event_source.stop()
             self.ani = None
-            
+
             self.startButton.setText("start")
 
 
     print_size = 0
     def captureAnimationFrame(self):
+        if self.ani == None:
+            return
+
         self.ani.pause()
 
         self.canvas.draw()
@@ -842,7 +867,7 @@ class RGBAnimationTab(QWidget):
         if self.print_size:
             print(f"canvas size: {width}x{height}")
             self.print_size = 0
-        img = buffer.reshape(int(height), int(width), 4)                    
+        img = buffer.reshape(int(height), int(width), 4)
         img = rgba2rgb(img)
         qimage = QImage(img.data, width, height, QImage.Format_RGB888)
         keyb_rgb = qimage.scaled(Keyboard.RGB_MAXTRIX_W, Keyboard.RGB_MAXTRIX_H)
@@ -850,6 +875,11 @@ class RGBAnimationTab(QWidget):
 
         self.ani.resume()
 
+    def _animate(self, i):
+        ret = self.animate(i)
+        if i == self.frames:
+            self.figure.clear()
+        return ret
 
     def init_wave(self):
         # Line object for the standing wave
@@ -875,24 +905,24 @@ class RGBAnimationTab(QWidget):
         self.ax.add_patch(self.rect)
         self.ax.set_xlim(0, 1)
         self.ax.set_ylim(0, 1)
-        
+
         # Initialize velocity and direction
         self.velocity = np.array([0.01, 0.007])
 
         # Set the initial state of the rectangle, if needed
         self.rect.set_xy((0.45, 0.45))
         return self.rect,
-    
+
     def animate_rect(self, i):
         pos = self.rect.get_xy()
         pos += self.velocity
-        
+
         # Check for collision with the walls and reverse velocity if needed
         if pos[0] <= 0 or pos[0] + self.rect.get_width() >= 1:
             self.velocity[0] = -self.velocity[0]
         if pos[1] <= 0 or pos[1] + self.rect.get_height() >= 1:
             self.velocity[1] = -self.velocity[1]
-        
+
         self.rect.set_xy(pos)
         return self.rect,
 
@@ -906,7 +936,8 @@ class MainWindow(QMainWindow):
 
     def initUI(self):
         self.setWindowTitle('QMK Firmata')
-        self.setGeometry(100, 100, width, height)
+        self.setGeometry(100, 100, app_width, app_height)
+        self.setFixedSize(app_width, app_height)
 
         #-----------------------------------------------------------
         # add tabs
@@ -916,12 +947,12 @@ class MainWindow(QMainWindow):
         self.rgb_animation_tab = RGBAnimationTab()
         self.winfocus_tab = WinFocusListenTab()
         #self.rgb_matrix_tab = VideoPlayerTab()
-        
+
         tab_widget.addTab(self.console_tab, 'console')
         tab_widget.addTab(self.rgb_matrix_tab, 'rgb video')
         tab_widget.addTab(self.rgb_animation_tab, 'rgb animation')
         tab_widget.addTab(self.winfocus_tab, 'layer auto switch')
-        
+
 
         self.setCentralWidget(tab_widget)
         #-----------------------------------------------------------
@@ -946,11 +977,11 @@ def main():
     main_window.show()
     sys.exit(app.exec())
 
-def list_com_ports():
+def list_com_ports(vid = None):
     device_list = list_ports.comports()
     for device in device_list:
         print(f"{device}: vid={device.vid:04X}, pid={device.pid:04X}")
-        if device.vid == VID:
+        if device.vid == vid:
             port = device.device
 
 #-------------------------------------------------------------------------------
