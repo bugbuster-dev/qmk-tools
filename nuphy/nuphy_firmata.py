@@ -48,18 +48,20 @@ def print_buffer(data):
 
 class Keyboard:
     #---------------------------------------
-    FRMT_CMD_BEGIN_END  = 0 # form
+    FRMT_CMD_RESPONSE   = 0
     FRMT_CMD_SET        = 1
     FRMT_CMD_GET        = 2
     FRMT_CMD_ADD        = 3
     FRMT_CMD_DEL        = 4
     FRMT_CMD_PUB        = 5
-    FRMT_CMD_SUB        = 6 # todo subscribe to battery status, mcu load, ... for example
+    FRMT_CMD_SUB        = 6 # todo subscribe to for example battery status, mcu load, ...
 
     FRMT_ID_RGB_MATRIX_BUF      = 1
     FRMT_ID_DEFAULT_LAYER       = 2 # todo get default layer
     FRMT_ID_DEBUG_MASK          = 3
     FRMT_ID_BATTERY_STATUS      = 4 # todo 0=charging, 1=discharging, 2=full, 3=not charging, 4=unknown
+    FRMT_ID_MACWIN_MODE         = 5
+
     #---------------------------------------
 
     RGB_MAXTRIX_W = 19
@@ -140,7 +142,9 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
     A keyboard which "talks" firmata.
     """
 
-    console_signal = Signal(str)  # Signal to send data to the main thread
+    signal_console_output = Signal(str)  # signal new console output
+    signal_debug_mask = Signal(int)
+    signal_macwin_mode = Signal(str)
 
     MAX_LEN_SYSEX_DATA = 60
 
@@ -168,33 +172,60 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         if not self.name:
             self.name = self.port
 
-        if layout:
-            self.setup_layout(layout)
-        else:
-            self.auto_setup()
-
-        # Iterate over the first messages to get firmware data
-        while self.bytes_available():
-            self.iterate()
-
-        self.add_cmd_handler(pyfirmata2.STRING_DATA, self.console_line_handler)
-
-        print("-"*80)
-        print(f"{self}")
-        print(f"firmware:{self.firmware} {self.firmware_version}, firmata={self.firmata_version}")
-        print("-"*80)
-
-        self.samplingOn()
-
 
     def __str__(self):
         return "Keyboard {0.name} on {0.sp.port}".format(self)
 
 
+    def start(self):
+        if self._layout:
+            self.setup_layout(self._layout)
+        else:
+            self.auto_setup()
+
+        self.add_cmd_handler(pyfirmata2.STRING_DATA, self.console_line_handler)
+        self.add_cmd_handler(Keyboard.FRMT_CMD_RESPONSE, self.sysex_response_handler)
+
+        self.samplingOn()
+
+        self.send_sysex(pyfirmata2.REPORT_FIRMWARE, [])
+        self.send_sysex(pyfirmata2.REPORT_VERSION, [])
+
+        data = bytearray()
+        data.append(Keyboard.FRMT_ID_MACWIN_MODE)
+        self.send_sysex(Keyboard.FRMT_CMD_GET, data)
+        data = bytearray()
+        data.append(Keyboard.FRMT_ID_DEBUG_MASK)
+        self.send_sysex(Keyboard.FRMT_CMD_GET, data)
+
+        time.sleep(0.5)
+        print("-"*80)
+        print(f"{self}")
+        print(f"firmware:{self.firmware} {self.firmware_version}, firmata={self.get_firmata_version()}")
+        print("-"*80)
+
+
+    def sysex_response_handler(self, *data):
+        #print(f"sysex_response_handler: {data}")
+        buf = bytearray()
+        for i in range(0, len(data), 2):
+            # Combine two bytes
+            buf.append(data[i+1] << 7 | data[i])
+        #print(f"sysex_response_handler: {buf}")
+        if buf[0] == Keyboard.FRMT_ID_MACWIN_MODE:
+            macwin_mode = chr(buf[1])
+            print(f"macwin_mode: {macwin_mode}")
+            self.signal_macwin_mode.emit(macwin_mode)
+        elif buf[0] == Keyboard.FRMT_ID_DEBUG_MASK:
+            dbg_mask = buf[1]
+            print(f"debug_mask: {dbg_mask}")
+            self.signal_debug_mask.emit(dbg_mask)
+
+
     def console_line_handler(self, *data):
         line = pyfirmata2.util.two_byte_iter_to_str(data)
         if line:
-            self.console_signal.emit(line)  # Emit signal with the received line
+            self.signal_console_output.emit(line)  # Emit signal with the received line
 
 
     print_pixeldata = 0
@@ -245,6 +276,13 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         data.append(min(dbg_mask, 255))
         self.send_sysex(Keyboard.FRMT_CMD_SET, data)
 
+    def keyb_macwin_mode_set(self, macwin_mode):
+        print(f"keyb_macwin_mode_set: {macwin_mode}")
+        data = bytearray()
+        data.append(Keyboard.FRMT_ID_MACWIN_MODE)
+        data.append(ord('m') if macwin_mode == 'm' else ord('w'))
+        self.send_sysex(Keyboard.FRMT_CMD_SET, data)
+
 
     def loop_leds(self, pos):
         if 0:
@@ -272,141 +310,30 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
             pos.i = (pos.i + 1) % Keyboard.MAX_RGB_LED
 
-
-class KeybFirmataThread(QThread):
-    console_signal = Signal(str)  # Signal to send data to the main thread
-
-    MAX_LEN_SYSEX_DATA = 60
-
-    def __init__(self, port):
-        self.port   = port
-        self.board  = None
-        super().__init__()
-
-    def console_line_handler(self, *data):
-        line = pyfirmata2.util.two_byte_iter_to_str(data)
-        if line:
-            self.console_signal.emit(line)  # Emit signal with the received line
-
-
-    print_pixeldata = 0
-    def keyb_rgb_buf_set(self, img, rgb_multiplier):
-        if self.board == None:
-            return
-
-        #print(rgb_multiplier)
-        if self.print_pixeldata:
-            print("-"*120)
-
-        height = img.height()
-        width = img.width()
-        arr = np.ndarray((height, width, 3), buffer=img.constBits(), strides=[img.bytesPerLine(), 3, 1], dtype=np.uint8)
-
-        data = bytearray()
-        data.append(Keyboard.FRMT_ID_RGB_MATRIX_BUF)
-        for y in range(height):
-            for x in range(width):
-                pixel = arr[y, x]
-                #color = QColor(img.pixelColor(x, y))
-                #pixel = (color.red(), color.green(), color.blue())
-                rgb_pixel = Keyboard.pixel_to_rgb_index_duration(pixel, Keyboard.xy_to_rgb_index(x, y), 200, rgb_multiplier)
-                data.extend(rgb_pixel)
-
-                if self.print_pixeldata:
-                    print(f"{x:2},{y:2}=({pixel[0]:3},{pixel[1]:3},{pixel[2]:3})", end=" ")
-                    print_buffer(rgb_pixel)
-
-                if len(data) >= self.MAX_LEN_SYSEX_DATA:
-                    self.board.send_sysex(Keyboard.FRMT_CMD_SET, data)
-                    data = bytearray()
-                    data.append(Keyboard.FRMT_ID_RGB_MATRIX_BUF)
-
-        if len(data) > 0:
-            self.board.send_sysex(Keyboard.FRMT_CMD_SET, data)
-
-
-    def keyb_default_layer_set(self, layer):
-        if self.board == None:
-            return
-        #print(f"keyb_default_layer_set: {layer}")
-        data = bytearray()
-        data.append(Keyboard.FRMT_ID_DEFAULT_LAYER)
-        data.append(min(layer, 255))
-        self.board.send_sysex(Keyboard.FRMT_CMD_SET, data)
-
-
-    def keyb_dbg_mask_set(self, dbg_mask):
-        if self.board == None:
-            return
-        #print(f"keyb_dbg_mask_set: {dbg_mask}")
-        data = bytearray()
-        data.append(Keyboard.FRMT_ID_DEBUG_MASK)
-        data.append(min(dbg_mask, 255))
-        self.board.send_sysex(Keyboard.FRMT_CMD_SET, data)
-
-
-    def loop_leds(self, pos):
-        if 0:
-            data = bytearray()
-            data.append(Keyboard.FRMT_ID_RGB_MATRIX_BUF)
-            led = Keyboard.xy_to_rgb_index(pos.x, pos.y)
-            print(f"x={pos.x}, y={pos.y}, led={led}")
-            data.extend([led, 0xff, 0, 0xff, 0xff])
-
-            self.board.send_sysex(Keyboard.FRMT_CMD_SET, data)
-
-            pos.x = pos.x + 1
-            if pos.x >= Keyboard.RGB_MAXTRIX_W:
-                pos.x = 0
-                pos.y = pos.y + 1
-                if pos.y >= Keyboard.RGB_MAXTRIX_H:
-                    pos.y = 0
-
-        if 0: # loop through all rgb leds
-            data = bytearray()
-            data.append(Keyboard.FRMT_ID_RGB_MATRIX_BUF)
-            data.extend([pos.i ,0xff,0,0xff,0xff])
-
-            self.board.send_sysex(Keyboard.FRMT_CMD_SET, data)
-
-            pos.i = (pos.i + 1) % Keyboard.MAX_RGB_LED
-
-
-    def run(self):
-        #self.board = pyfirmata2.Arduino(self.port)
-        self.board = FirmataKeyboard(port=self.port)
-
-        it = pyfirmata2.util.Iterator(self.board)
-        it.start()
-
-        self.board.add_cmd_handler(pyfirmata2.STRING_DATA, self.console_line_handler)
-
-        print("-"*80)
-        print(f"{self.board}")
-        print(f"firmware:{self.board.firmware} {self.board.firmware_version}, firmata={self.board.firmata_version}")
-        print("-"*80)
-
-        while True:
-            time.sleep(0.5)
-            # todo handle exit
 
 
 class ConsoleTab(QWidget):
-    dbg_mask_signal = Signal(int)
+    signal_dbg_mask = Signal(int)
+    signal_macwin_mode = Signal(str)
 
     def __init__(self):
         super().__init__()
         self.initUI()
 
-    def updateDbgMask(self):
+    def update_keyb_dbg_mask(self):
         dbg_mask = int(self.dbgMaskInput.text(),16)
-        self.dbg_mask_signal.emit(dbg_mask)
+        self.signal_dbg_mask.emit(dbg_mask)
+
+    def update_keyb_macwin_mode(self, event):
+        macwin_mode = self.macWinModeSelector.currentText()
+        self.signal_macwin_mode.emit(macwin_mode)
+
 
     def initUI(self):
-        dbgMaskLayout = QHBoxLayout()
-        self.dbgMaskLabel = QLabel("debug mask")
-        metrics = QFontMetrics(self.dbgMaskLabel.font())
-        self.dbgMaskLabel.setFixedHeight(metrics.height())
+        hLayout = QHBoxLayout()
+        dbgMaskLabel = QLabel("debug mask")
+        metrics = QFontMetrics(dbgMaskLabel.font())
+        dbgMaskLabel.setFixedHeight(metrics.height())
 
         # debug mask hex byte input
         self.dbgMaskInput = QLineEdit()
@@ -415,12 +342,22 @@ class ConsoleTab(QWidget):
         self.dbgMaskInput.setValidator(QRegularExpressionValidator(regExp))
 
         self.dbgMaskUpdateButton = QPushButton("set")
-        self.dbgMaskUpdateButton.clicked.connect(self.updateDbgMask)
+        self.dbgMaskUpdateButton.clicked.connect(self.update_keyb_dbg_mask)
 
-        dbgMaskLayout.addWidget(self.dbgMaskLabel)
-        dbgMaskLayout.addWidget(self.dbgMaskInput)
-        dbgMaskLayout.addWidget(self.dbgMaskUpdateButton)
+        hLayout.addWidget(self.dbgMaskUpdateButton)
+        hLayout.addWidget(dbgMaskLabel)
+        hLayout.addWidget(self.dbgMaskInput)
 
+        macWinLabel = QLabel("mac/win mode")
+        self.macWinModeSelector = QComboBox()
+        self.macWinModeSelector.addItem('m')
+        self.macWinModeSelector.addItem('w')
+        hLayout.addWidget(macWinLabel)
+        hLayout.addWidget(self.macWinModeSelector)
+        self.macWinModeSelector.setCurrentIndex(1)
+        self.macWinModeSelector.currentIndexChanged.connect(self.update_keyb_macwin_mode)
+
+        #---------------------------------------
         layout = QVBoxLayout()
         self.console_output = QTextEdit()
         self.console_output.setReadOnly(True)
@@ -429,7 +366,7 @@ class ConsoleTab(QWidget):
         font.setFamily("Courier New");
         self.console_output.setFont(font);
 
-        layout.addLayout(dbgMaskLayout)
+        layout.addLayout(hLayout)
         layout.addWidget(self.console_output)
         self.setLayout(layout)
 
@@ -437,6 +374,12 @@ class ConsoleTab(QWidget):
     def update_text(self, text):
         self.console_output.insertPlainText(text)
         self.console_output.ensureCursorVisible()
+
+    def update_debug_mask(self, dbg_mask):
+        self.dbgMaskInput.setText(f"{dbg_mask:02x}")
+
+    def update_macwin_mode(self, macwin_mode):
+        self.macWinModeSelector.setCurrentIndex(0 if macwin_mode == 'm' else 1)
 
 
 class RGBMatrixTab(QWidget):
@@ -898,6 +841,7 @@ class CodeTextEdit(QTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
 
+        self.setFont(QFont("Courier New", 9))
         self.load_text_file("animation.pyfunc")
 
     def load_text_file(self, filepath):
@@ -1090,36 +1034,23 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(tab_widget)
         #-----------------------------------------------------------
 
-
         # instantiate firmata keyboard
-        if 1:
-            self.keyboard = FirmataKeyboard(port=firmata_port)
-            self.keyboard.console_signal.connect(self.console_tab.update_text)
+        self.keyboard = FirmataKeyboard(port=firmata_port)
+        self.keyboard.signal_console_output.connect(self.console_tab.update_text)
+        self.keyboard.signal_debug_mask.connect(self.console_tab.update_debug_mask)
+        self.keyboard.signal_macwin_mode.connect(self.console_tab.update_macwin_mode)
 
-            self.winfocus_listen_thread = WinFocusListenThread()
-            self.winfocus_listen_thread.winfocus_signal.connect(self.winfocus_tab.on_winfocus)
-            self.winfocus_listen_thread.start()
+        self.winfocus_listen_thread = WinFocusListenThread()
+        self.winfocus_listen_thread.winfocus_signal.connect(self.winfocus_tab.on_winfocus)
+        self.winfocus_listen_thread.start()
 
-            self.console_tab.dbg_mask_signal.connect(self.keyboard.keyb_dbg_mask_set)
-            self.rgb_matrix_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
-            self.rgb_animation_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
-            self.winfocus_tab.keyb_layer_set_signal.connect(self.keyboard.keyb_default_layer_set)
+        self.console_tab.signal_dbg_mask.connect(self.keyboard.keyb_dbg_mask_set)
+        self.console_tab.signal_macwin_mode.connect(self.keyboard.keyb_macwin_mode_set)
+        self.rgb_matrix_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
+        self.rgb_animation_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
+        self.winfocus_tab.keyb_layer_set_signal.connect(self.keyboard.keyb_default_layer_set)
 
-        if 0:
-            # setup firmata thread
-            self.firmata_thread = KeybFirmataThread(firmata_port)
-            self.firmata_thread.console_signal.connect(self.console_tab.update_text)
-            self.firmata_thread.start()
-
-            self.winfocus_listen_thread = WinFocusListenThread()
-            self.winfocus_listen_thread.winfocus_signal.connect(self.winfocus_tab.on_winfocus)
-            self.winfocus_listen_thread.start()
-
-            self.console_tab.dbg_mask_signal.connect(self.firmata_thread.keyb_dbg_mask_set)
-            self.rgb_matrix_tab.rgb_frame_signal.connect(self.firmata_thread.keyb_rgb_buf_set)
-            self.rgb_animation_tab.rgb_frame_signal.connect(self.firmata_thread.keyb_rgb_buf_set)
-            self.winfocus_tab.keyb_layer_set_signal.connect(self.firmata_thread.keyb_default_layer_set)
-
+        self.keyboard.start()
 
 
 def main():
