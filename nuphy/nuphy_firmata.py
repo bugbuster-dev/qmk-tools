@@ -23,8 +23,8 @@ import ctypes.wintypes
 
 #-------------------------------------------------------------------------------
 
-port        = pyfirmata2.Arduino.AUTODETECT
-port        = "COM9"
+firmata_port    = pyfirmata2.Arduino.AUTODETECT
+firmata_port    = "COM9"
 
 app_width       = 800
 app_height      = 800
@@ -47,9 +47,20 @@ def print_buffer(data):
 
 
 class Keyboard:
-    SYSEX_RGB_MATRIX_CMD = 0x01
-    SYSEX_DEFAULT_LAYER_SET = 0x02
-    SYSEX_DEBUG_MASK_SET = 0x03
+    #---------------------------------------
+    FRMT_CMD_BEGIN_END  = 0 # form
+    FRMT_CMD_SET        = 1
+    FRMT_CMD_GET        = 2
+    FRMT_CMD_ADD        = 3
+    FRMT_CMD_DEL        = 4
+    FRMT_CMD_PUB        = 5
+    FRMT_CMD_SUB        = 6 # todo subscribe to battery status, mcu load, ... for example
+
+    FRMT_ID_RGB_MATRIX_BUF      = 1
+    FRMT_ID_DEFAULT_LAYER       = 2 # todo get default layer
+    FRMT_ID_DEBUG_MASK          = 3
+    FRMT_ID_BATTERY_STATUS      = 4 # todo 0=charging, 1=discharging, 2=full, 3=not charging, 4=unknown
+    #---------------------------------------
 
     RGB_MAXTRIX_W = 19
     RGB_MAXTRIX_H = 6
@@ -124,6 +135,56 @@ class Keyboard:
         return data
 
 
+class FirmataKeyboard(pyfirmata2.Board):
+    """
+    A keyboard which "talks" firmata.
+    """
+    def __init__(self, *args, **kwargs):
+        self.name = None
+        self.port = None
+        for arg in kwargs:
+            if arg == "name":
+                self.name = kwargs[arg]
+            if arg == "port":
+                self.port = kwargs[arg]
+
+        if self.name == None:
+            self.name = self.port
+
+        # pretend its an arduino
+        layout = pyfirmata2.BOARDS['arduino']
+
+        self.samplerThread = pyfirmata2.util.Iterator(self)
+        self.sp = serial.Serial(self.port, 115200, timeout=1)
+
+        self._layout = layout
+        if not self.name:
+            self.name = self.port
+
+        if layout:
+            self.setup_layout(layout)
+        else:
+            self.auto_setup()
+
+        # Iterate over the first messages to get firmware data
+        while self.bytes_available():
+            self.iterate()
+
+        return
+#--------------------------------------------------------------------------------
+
+        args = list(args)
+
+        # pretend its an arduino
+        args.append(pyfirmata2.BOARDS['arduino'])
+        #pyfirmata2.BOARD_SETUP_WAIT_TIME = 1
+        sys.modules['pyfirmata2'].BOARD_SETUP_WAIT_TIME = 30
+        super().__init__(*args, **kwargs)
+
+    def __str__(self):
+        return "Keyboard {0.name} on {0.sp.port}".format(self)
+
+
 class KeybFirmataThread(QThread):
     console_signal = Signal(str)  # Signal to send data to the main thread
 
@@ -154,6 +215,7 @@ class KeybFirmataThread(QThread):
         arr = np.ndarray((height, width, 3), buffer=img.constBits(), strides=[img.bytesPerLine(), 3, 1], dtype=np.uint8)
 
         data = bytearray()
+        data.append(Keyboard.FRMT_ID_RGB_MATRIX_BUF)
         for y in range(height):
             for x in range(width):
                 pixel = arr[y, x]
@@ -167,11 +229,12 @@ class KeybFirmataThread(QThread):
                     print_buffer(rgb_pixel)
 
                 if len(data) >= self.MAX_LEN_SYSEX_DATA:
-                    self.board.send_sysex(Keyboard.SYSEX_RGB_MATRIX_CMD, data)
+                    self.board.send_sysex(Keyboard.FRMT_CMD_SET, data)
                     data = bytearray()
+                    data.append(Keyboard.FRMT_ID_RGB_MATRIX_BUF)
 
         if len(data) > 0:
-            self.board.send_sysex(Keyboard.SYSEX_RGB_MATRIX_CMD, data)
+            self.board.send_sysex(Keyboard.FRMT_CMD_SET, data)
 
 
     def keyb_default_layer_set(self, layer):
@@ -179,8 +242,9 @@ class KeybFirmataThread(QThread):
             return
         #print(f"keyb_default_layer_set: {layer}")
         data = bytearray()
+        data.append(Keyboard.FRMT_ID_DEFAULT_LAYER)
         data.append(min(layer, 255))
-        self.board.send_sysex(Keyboard.SYSEX_DEFAULT_LAYER_SET, data)
+        self.board.send_sysex(Keyboard.FRMT_CMD_SET, data)
 
 
     def dbg_mask_set(self, dbg_mask):
@@ -188,17 +252,21 @@ class KeybFirmataThread(QThread):
             return
         #print(f"dbg_mask_set: {dbg_mask}")
         data = bytearray()
+        data.append(Keyboard.FRMT_ID_DEBUG_MASK)
         data.append(min(dbg_mask, 255))
-        self.board.send_sysex(Keyboard.SYSEX_DEBUG_MASK_SET, data)
+        self.board.send_sysex(Keyboard.FRMT_CMD_SET, data)
 
 
     def loop_leds(self, pos):
         if 0:
             data = bytearray()
+            data.append(Keyboard.FRMT_ID_RGB_MATRIX_BUF)
             led = Keyboard.xy_to_rgb_index(pos.x, pos.y)
             print(f"x={pos.x}, y={pos.y}, led={led}")
             data.extend([led, 0xff, 0, 0xff, 0xff])
-            self.board.send_sysex(Keyboard.SYSEX_RGB_MATRIX_CMD, data)
+
+            self.board.send_sysex(Keyboard.FRMT_CMD_SET, data)
+
             pos.x = pos.x + 1
             if pos.x >= Keyboard.RGB_MAXTRIX_W:
                 pos.x = 0
@@ -208,13 +276,17 @@ class KeybFirmataThread(QThread):
 
         if 0: # loop through all rgb leds
             data = bytearray()
+            data.append(Keyboard.FRMT_ID_RGB_MATRIX_BUF)
             data.extend([pos.i ,0xff,0,0xff,0xff])
-            self.board.send_sysex(Keyboard.SYSEX_RGB_MATRIX_CMD, data)
+
+            self.board.send_sysex(Keyboard.FRMT_CMD_SET, data)
+
             pos.i = (pos.i + 1) % Keyboard.MAX_RGB_LED
 
 
     def run(self):
-        self.board = pyfirmata2.Arduino(self.port)
+        #self.board = pyfirmata2.Arduino(self.port)
+        self.board = FirmataKeyboard(port=self.port)
         self.board.auto_setup()
 
         it = pyfirmata2.util.Iterator(self.board)
@@ -229,6 +301,7 @@ class KeybFirmataThread(QThread):
 
         while True:
             time.sleep(0.5)
+            # todo handle exit
 
 
 class ConsoleTab(QWidget):
@@ -277,32 +350,6 @@ class ConsoleTab(QWidget):
     def update_text(self, text):
         self.console_output.insertPlainText(text)
         self.console_output.ensureCursorVisible()
-
-
-class VideoPlayerTab(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.player = QMediaPlayer()
-        self.initUI()
-
-    def initUI(self):
-        layout = QVBoxLayout()
-        self.videoWidget = QVideoWidget()
-
-        self.openButton = QPushButton("Open Video")
-        self.openButton.clicked.connect(self.openFile)
-
-        layout.addWidget(self.videoWidget)
-        layout.addWidget(self.openButton)
-
-        self.setLayout(layout)
-        self.player.setVideoOutput(self.videoWidget)
-
-    def openFile(self):
-        fileName, _ = QFileDialog.getOpenFileName(self, "Open Video")
-        if fileName != '':
-            self.player.setSource(QUrl.fromLocalFile(fileName))
-            self.player.play()
 
 
 class RGBMatrixTab(QWidget):
@@ -946,7 +993,6 @@ class MainWindow(QMainWindow):
         self.rgb_matrix_tab = RGBMatrixTab()
         self.rgb_animation_tab = RGBAnimationTab()
         self.winfocus_tab = WinFocusListenTab()
-        #self.rgb_matrix_tab = VideoPlayerTab()
 
         tab_widget.addTab(self.console_tab, 'console')
         tab_widget.addTab(self.rgb_matrix_tab, 'rgb video')
@@ -958,7 +1004,7 @@ class MainWindow(QMainWindow):
         #-----------------------------------------------------------
 
         # setup firmata thread
-        self.firmata_thread = KeybFirmataThread(port)
+        self.firmata_thread = KeybFirmataThread(firmata_port)
         self.firmata_thread.console_signal.connect(self.console_tab.update_text)
         self.firmata_thread.start()
 
@@ -977,11 +1023,11 @@ def main():
     main_window.show()
     sys.exit(app.exec())
 
-def list_com_ports(vid = None):
+def list_com_ports(vid = None, pid = None):
     device_list = list_ports.comports()
     for device in device_list:
         print(f"{device}: vid={device.vid:04X}, pid={device.pid:04X}")
-        if device.vid == vid:
+        if device.vid == vid and (pid == None or device.pid == pid):
             port = device.device
 
 #-------------------------------------------------------------------------------
