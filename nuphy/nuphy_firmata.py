@@ -137,6 +137,19 @@ class Keyboard:
         return data
 
 
+class DebugTracer:
+    def __init__(self, *args, **kwargs):
+        self.print = None
+        for arg in kwargs:
+            if arg == "print":
+                self.print = kwargs[arg]
+
+    def pr(self, *args, **kwargs):
+        if self.print:
+            msg = " ".join(str(arg) for arg in args)
+            print(msg)
+
+
 class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
     """
     A keyboard which "talks" firmata.
@@ -148,9 +161,17 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
     MAX_LEN_SYSEX_DATA = 60
 
+    debug = 0
     def __init__(self, *args, **kwargs):
-        QtCore.QObject.__init__(self)
+        #----------------------------------------------------
+        self.dbg = {}
+        self.dbg['DEBUG']           = DebugTracer(print=0)
+        self.dbg['SYSEX_COMMAND']   = DebugTracer(print=0)
+        self.dbg['SYSEX_RESPONSE']  = DebugTracer(print=0)
+        self.dbg['RGB_BUF']         = DebugTracer(print=0)
+        #----------------------------------------------------
 
+        QtCore.QObject.__init__(self)
         self.name = None
         self.port = None
         for arg in kwargs:
@@ -204,21 +225,33 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         print(f"firmware:{self.firmware} {self.firmware_version}, firmata={self.get_firmata_version()}")
         print("-"*80)
 
+    def stop(self):
+        self.samplingOff()
+        try:
+            self.sp.close()
+        except:
+            pass
 
     def sysex_response_handler(self, *data):
-        #print(f"sysex_response_handler: {data}")
+        dbg = self.dbg['SYSEX_RESPONSE']
+        dbg.pr(f"sysex_response_handler: {data}")
+
         buf = bytearray()
+        if len(data) % 2 != 0:
+            dbg.pr(f"sysex_response_handler: invalid data length {len(data)}")
+            return
+
         for i in range(0, len(data), 2):
             # Combine two bytes
             buf.append(data[i+1] << 7 | data[i])
-        #print(f"sysex_response_handler: {buf}")
+        #dbg.pr(f"sysex_response_handler: {buf}")
         if buf[0] == Keyboard.FRMT_ID_MACWIN_MODE:
             macwin_mode = chr(buf[1])
-            print(f"macwin_mode: {macwin_mode}")
+            dbg.pr(f"macwin_mode: {macwin_mode}")
             self.signal_macwin_mode.emit(macwin_mode)
         elif buf[0] == Keyboard.FRMT_ID_DEBUG_MASK:
             dbg_mask = buf[1]
-            print(f"debug_mask: {dbg_mask}")
+            dbg.pr(f"debug_mask: {dbg_mask}")
             self.signal_debug_mask.emit(dbg_mask)
 
 
@@ -228,11 +261,11 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             self.signal_console_output.emit(line)  # Emit signal with the received line
 
 
-    print_pixeldata = 0
     def keyb_rgb_buf_set(self, img, rgb_multiplier):
-        #print(rgb_multiplier)
-        if self.print_pixeldata:
-            print("-"*120)
+        dbg = self.dbg['RGB_BUF']
+        if dbg.print:
+            dbg.pr("-"*120)
+            dbg.pr(f"rgb mult {rgb_multiplier}")
 
         height = img.height()
         width = img.width()
@@ -248,9 +281,9 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 rgb_pixel = Keyboard.pixel_to_rgb_index_duration(pixel, Keyboard.xy_to_rgb_index(x, y), 200, rgb_multiplier)
                 data.extend(rgb_pixel)
 
-                if self.print_pixeldata:
-                    print(f"{x:2},{y:2}=({pixel[0]:3},{pixel[1]:3},{pixel[2]:3})", end=" ")
-                    print_buffer(rgb_pixel)
+                if dbg.print:
+                    dbg.pr(f"{x:2},{y:2}=({pixel[0]:3},{pixel[1]:3},{pixel[2]:3})", end=" ")
+                    dbg.pr(rgb_pixel)
 
                 if len(data) >= self.MAX_LEN_SYSEX_DATA:
                     self.send_sysex(Keyboard.FRMT_CMD_SET, data)
@@ -262,7 +295,9 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
 
     def keyb_default_layer_set(self, layer):
-        #print(f"keyb_default_layer_set: {layer}")
+        dbg = self.dbg['SYSEX_COMMAND']
+        dbg.pr(f"keyb_default_layer_set: {layer}")
+
         data = bytearray()
         data.append(Keyboard.FRMT_ID_DEFAULT_LAYER)
         data.append(min(layer, 255))
@@ -270,17 +305,21 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
 
     def keyb_dbg_mask_set(self, dbg_mask):
-        #print(f"keyb_dbg_mask_set: {dbg_mask}")
+        dbg = self.dbg['SYSEX_COMMAND']
+        dbg.pr(f"keyb_dbg_mask_set: {dbg_mask}")
+
         data = bytearray()
         data.append(Keyboard.FRMT_ID_DEBUG_MASK)
         data.append(min(dbg_mask, 255))
         self.send_sysex(Keyboard.FRMT_CMD_SET, data)
 
     def keyb_macwin_mode_set(self, macwin_mode):
-        print(f"keyb_macwin_mode_set: {macwin_mode}")
+        dbg = self.dbg['SYSEX_COMMAND']
+        dbg.pr(f"keyb_macwin_mode_set: {macwin_mode}")
+
         data = bytearray()
         data.append(Keyboard.FRMT_ID_MACWIN_MODE)
-        data.append(ord('m') if macwin_mode == 'm' else ord('w'))
+        data.append(ord(macwin_mode))
         self.send_sysex(Keyboard.FRMT_CMD_SET, data)
 
 
@@ -352,6 +391,7 @@ class ConsoleTab(QWidget):
         self.macWinModeSelector = QComboBox()
         self.macWinModeSelector.addItem('m')
         self.macWinModeSelector.addItem('w')
+        self.macWinModeSelector.addItem('-')
         hLayout.addWidget(macWinLabel)
         hLayout.addWidget(self.macWinModeSelector)
         self.macWinModeSelector.setCurrentIndex(1)
@@ -690,7 +730,7 @@ class ProgramSelectorComboBox(QComboBox):
 
 class WinFocusListenTab(QWidget):
     keyb_layer_set_signal = Signal(int)
-
+    num_program_selectors = 3
 
     def __init__(self):
         self.defaultLayer = Keyboard.DEFAULT_LAYER
@@ -734,10 +774,11 @@ class WinFocusListenTab(QWidget):
         #---------------------------------------
         self.programSelector = []
         self.layerSelector = []
-        for i in range(3):
+        for i in range(self.num_program_selectors):
             self.programSelector.append(ProgramSelectorComboBox(self.winfocusTextEdit))
             self.programSelector[i].addItems(["" for i in range(5)])
             self.programSelector[i].setCurrentIndex(0)
+            self.programSelector[i].currentIndexChanged.connect(self.on_program_selector_change)
             layout.addWidget(self.programSelector[i])
 
             self.layerSelector.append(QComboBox())
@@ -751,6 +792,15 @@ class WinFocusListenTab(QWidget):
         # Connect winfocusTextEdit mouse press event
         self.winfocusTextEdit.mousePressEvent = self.selectLine
 
+    # todo: remove, no need to do anything here.
+    # this python program has focus and only relevant if python program was selected to use separate layer and is now unselected
+    # which is not a likely use case.
+    def on_program_selector_change(self, index):
+        for i in range(self.num_program_selectors):
+            if self.sender() == self.programSelector[i]:
+                pass
+
+
     def on_winfocus(self, line):
         self.updateWinfocusText(line)
         self.currentFocus = line
@@ -759,10 +809,10 @@ class WinFocusListenTab(QWidget):
 
         # foreground focus window info
         focus_win = line.split("\t")
-        #print(focus_win)
+        #print(f"on_winfocus {focus_win}")
         for i, ps in enumerate(self.programSelector):
             compare_win = self.programSelector[i].currentText().split("\t")
-            #print(compare_win)
+            #print(f"on_winfocus compare: {compare_win}")
             if focus_win[0].strip() == compare_win[0].strip() and \
                focus_win[1].strip() == compare_win[1].strip():
                 layer = int(self.layerSelector[i].currentText())
@@ -932,7 +982,7 @@ class RGBAnimationTab(QWidget):
             self.startButton.setText("start")
 
 
-    print_size = 0
+    print_canvas_size = 0
     def captureAnimationFrame(self):
         if self.ani == None:
             return
@@ -942,9 +992,9 @@ class RGBAnimationTab(QWidget):
         self.canvas.draw()
         buffer = np.frombuffer(self.canvas.buffer_rgba(), dtype=np.uint8)
         width, height = self.figure.get_size_inches() * self.figure.get_dpi()
-        if self.print_size:
+        if self.print_canvas_size:
             print(f"canvas size: {width}x{height}")
-            self.print_size = 0
+            self.print_canvas_size = 0
         img = buffer.reshape(int(height), int(width), 4)
         img = rgba2rgb(img)
         qimage = QImage(img.data, width, height, QImage.Format_RGB888)
@@ -1052,6 +1102,12 @@ class MainWindow(QMainWindow):
 
         self.keyboard.start()
 
+    def closeEvent(self, event):
+        #print("closeEvent")
+        self.winfocus_listen_thread.terminate()
+        self.keyboard.stop()
+        event.accept()
+
 
 def main():
     app = QApplication(sys.argv)
@@ -1062,7 +1118,7 @@ def main():
 def list_com_ports(vid = None, pid = None):
     device_list = list_ports.comports()
     for device in device_list:
-        print(f"{device}: vid={device.vid:04X}, pid={device.pid:04X}")
+        print(f"{device}: vid={device.vid:04x}, pid={device.pid:04x}")
         if device.vid == vid and (pid == None or device.pid == pid):
             port = device.device
 
