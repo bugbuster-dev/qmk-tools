@@ -100,8 +100,31 @@ class ConsoleTab(QWidget):
     def update_macwin_mode(self, macwin_mode):
         self.macWinModeSelector.setCurrentIndex(0 if macwin_mode == 'm' else 1)
 
-
 class RGBMatrixTab(QWidget):
+    def __init__(self, rgb_matrix_size):
+        self.rgb_matrix_size = rgb_matrix_size
+
+        super().__init__()
+        self.initUI()
+
+
+    def initUI(self):
+        self.layout = QVBoxLayout()
+        self.tab_widget = QTabWidget()
+
+        self.rgb_video_tab = RGBVideoTab(self.rgb_matrix_size)
+        self.rgb_animation_tab = RGBAnimationTab(self.rgb_matrix_size)
+        # todo add rgb audio tab
+
+        self.tab_widget.addTab(self.rgb_video_tab, 'rgb video')
+        self.tab_widget.addTab(self.rgb_animation_tab, 'rgb animation')
+
+        self.layout.addWidget(self.tab_widget)
+        self.setLayout(self.layout)
+
+
+
+class RGBVideoTab(QWidget):
     rgb_frame_signal = Signal(QImage, object)  # Signal to send rgb frame
 
     def __init__(self, rgb_matrix_size):
@@ -248,7 +271,7 @@ class ProgramSelectorComboBox(QComboBox):
         super().mousePressEvent(event)
 
 
-class WinFocusListenTab(QWidget):
+class LayerAutoSwitchTab(QWidget):
     keyb_layer_set_signal = Signal(int)
     num_program_selectors = 3
 
@@ -544,22 +567,20 @@ class MainWindow(QMainWindow):
         self.setFixedSize(app_width, app_height)
 
         # instantiate firmata keyboard
-        self.keyboard = FirmataKeyboard(port=firmata_port, vid_pid=(0x19f5, 0x3265)) # todo pass vid, pid
+        self.keyboard = FirmataKeyboard(port=firmata_port, vid_pid=(0x19f5, 0x3265))
         rgb_matrix_size = self.keyboard.rgb_matrix_size()
         num_keyb_layers = self.keyboard.num_layers()
 
         #-----------------------------------------------------------
         # add tabs
         tab_widget = QTabWidget()
+        self.layer_switch_tab = LayerAutoSwitchTab(num_keyb_layers)
         self.console_tab = ConsoleTab()
-        self.rgb_matrix_tab = RGBMatrixTab(rgb_matrix_size) # todo one rgb tab for video, animation and audio
-        self.rgb_animation_tab = RGBAnimationTab(rgb_matrix_size)
-        self.winfocus_tab = WinFocusListenTab(num_keyb_layers)
+        self.rgb_matrix_tab = RGBMatrixTab(rgb_matrix_size)
 
         tab_widget.addTab(self.console_tab, 'console')
-        tab_widget.addTab(self.rgb_matrix_tab, 'rgb video')
-        tab_widget.addTab(self.rgb_animation_tab, 'rgb animation')
-        tab_widget.addTab(self.winfocus_tab, 'layer auto switch')
+        tab_widget.addTab(self.rgb_matrix_tab, 'rgb matrix')
+        tab_widget.addTab(self.layer_switch_tab, 'layer auto switch')
 
         self.setCentralWidget(tab_widget)
         #-----------------------------------------------------------
@@ -569,14 +590,14 @@ class MainWindow(QMainWindow):
         self.keyboard.signal_macwin_mode.connect(self.console_tab.update_macwin_mode)
 
         self.winfocus_listener = WinFocusListener()
-        self.winfocus_listener.winfocus_signal.connect(self.winfocus_tab.on_winfocus)
+        self.winfocus_listener.winfocus_signal.connect(self.layer_switch_tab.on_winfocus)
         self.winfocus_listener.start()
 
         self.console_tab.signal_dbg_mask.connect(self.keyboard.keyb_dbg_mask_set)
         self.console_tab.signal_macwin_mode.connect(self.keyboard.keyb_macwin_mode_set)
-        self.rgb_matrix_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
-        self.rgb_animation_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
-        self.winfocus_tab.keyb_layer_set_signal.connect(self.keyboard.keyb_default_layer_set)
+        self.rgb_matrix_tab.rgb_video_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
+        self.rgb_matrix_tab.rgb_animation_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
+        self.layer_switch_tab.keyb_layer_set_signal.connect(self.keyboard.keyb_default_layer_set)
 
         self.keyboard.start()
 

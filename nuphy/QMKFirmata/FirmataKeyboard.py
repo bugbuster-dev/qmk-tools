@@ -156,6 +156,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             self.port = find_com_port(self.vid_pid[0], self.vid_pid[1])
             self.keyboardModel = self.keyboardModelVidPid[(self.vid_pid[0], self.vid_pid[1])]
             dbg.pr(f"using keyboard: {self.keyboardModel}")
+            self.name = self.keyboardModel.name()
 
         self.samplerThread = pyfirmata2.util.Iterator(self)
         self.sp = serial.Serial(self.port, 115200, timeout=1)
