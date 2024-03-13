@@ -2,6 +2,7 @@
 import sys, traceback
 import cv2
 import numpy as np
+import pyaudio
 
 from PySide6 import QtCore
 from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout
@@ -114,10 +115,12 @@ class RGBMatrixTab(QWidget):
 
         self.rgb_video_tab = RGBVideoTab(self.rgb_matrix_size)
         self.rgb_animation_tab = RGBAnimationTab(self.rgb_matrix_size)
+        self.rgb_audio_tab = RGBAudioTab(self.rgb_matrix_size)
         # todo add rgb audio tab
 
-        self.tab_widget.addTab(self.rgb_video_tab, 'rgb video')
-        self.tab_widget.addTab(self.rgb_animation_tab, 'rgb animation')
+        self.tab_widget.addTab(self.rgb_video_tab, 'video')
+        self.tab_widget.addTab(self.rgb_animation_tab, 'animation')
+        self.tab_widget.addTab(self.rgb_audio_tab, 'audio')
 
         self.layout.addWidget(self.tab_widget)
         self.setLayout(self.layout)
@@ -251,6 +254,118 @@ class RGBVideoTab(QWidget):
             self.cap.release()
         self.timer.stop()
 
+
+class AudioCaptureThread(QThread):
+    def __init__(self):
+        super().__init__()
+        self.running = False
+
+    def onPeakLevels(self, callback):
+        self.callback = callback
+
+    def run(self):
+        FORMAT = pyaudio.paFloat32
+        CHANNELS = 1
+        RATE = 44100  # Sample rate
+        CHUNK = 1024  # Number of audio samples per frame
+
+        self.running = True
+        p = pyaudio.PyAudio()
+        stream = p.open(format=FORMAT,
+                        channels=CHANNELS,
+                        rate=RATE,
+                        input=True,
+                        frames_per_buffer=CHUNK)
+
+        while self.running:
+            duration = 0.1  # seconds
+            frames = []
+            for _ in range(0, int(RATE / CHUNK * duration)):
+                data = stream.read(CHUNK)
+                frames.append(np.frombuffer(data, dtype=np.float32))
+
+            audio_data = np.hstack(frames)
+            freq_data = np.fft.rfft(audio_data)
+            freq_magnitude = np.abs(freq_data)
+
+            # Calculate frequency bins
+            freq_bins = np.fft.rfftfreq(len(audio_data), d=1./RATE)
+
+            # Define frequency ranges for peak level detection
+            #freq_ranges = [(20, 200), (201, 2000), (2001, 5000), (5001, 20000)]
+            freq_ranges = [(20, 200), (201, 10000), (10001, 20000)]
+            peak_levels = []
+
+            for f_min, f_max in freq_ranges:
+                # Find the bin indices corresponding to the frequency range
+                idx = np.where((freq_bins >= f_min) & (freq_bins <= f_max))
+                peak_level = np.max(freq_magnitude[idx])
+                peak_levels.append(peak_level)
+
+            self.callback(peak_levels)
+
+            #print("Peak levels for defined frequency ranges:")
+            #for i, (f_min, f_max) in enumerate(freq_ranges):
+                #if peak_levels[i] > 0.1:
+                    #print(f"{f_min}-{f_max} Hz: {peak_levels[i]}")
+
+
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+
+    def stop(self):
+        self.running = False
+
+
+class RGBAudioTab(QWidget):
+    rgb_frame_signal = Signal(QImage, object)  # Signal to send rgb frame
+
+    def __init__(self, rgb_matrix_size):
+        super().__init__()
+        self.rgb_matrix_size = rgb_matrix_size
+        self.RGB_multiplier = (1.0,1.0,1.0)
+
+        self.audioThread = AudioCaptureThread()
+        self.initUI()
+
+    def initUI(self):
+        layout = QVBoxLayout()
+
+        self.startButton = QPushButton("start")
+        self.startButton.clicked.connect(self.start)
+        layout.addWidget(self.startButton)
+
+        self.setLayout(layout)
+
+    def processAudioPeakLevels(self, peak_levels):
+        #print(peak_levels)
+        keyb_rgb = QImage(self.rgb_matrix_size[0], self.rgb_matrix_size[1], QImage.Format_RGB888)
+        if all(level < 1 for (level) in peak_levels):
+            #print("no audio")
+            return
+
+        if peak_levels[0] > 20:
+            keyb_rgb.fill(QColor(255,10,10))
+        elif peak_levels[0] > 15:
+            keyb_rgb.fill(QColor(180,5,0))
+        elif peak_levels[0] > 10:
+            keyb_rgb.fill(QColor(50,50,10))
+        elif peak_levels[0] > 5:
+            keyb_rgb.fill(QColor(0,10,10))
+        elif peak_levels[0] > 1:
+            keyb_rgb.fill(QColor(0,0,10))
+
+        self.rgb_frame_signal.emit(keyb_rgb, self.RGB_multiplier)
+
+    def start(self):
+        if not self.audioThread.isRunning():
+            self.audioThread.onPeakLevels(self.processAudioPeakLevels)
+            self.audioThread.start()
+            self.startButton.setText("stop")
+        else:
+            self.audioThread.stop()
+            self.startButton.setText("start")
 
 
 class ProgramSelectorComboBox(QComboBox):
@@ -597,6 +712,7 @@ class MainWindow(QMainWindow):
         self.console_tab.signal_macwin_mode.connect(self.keyboard.keyb_macwin_mode_set)
         self.rgb_matrix_tab.rgb_video_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
         self.rgb_matrix_tab.rgb_animation_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
+        self.rgb_matrix_tab.rgb_audio_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
         self.layer_switch_tab.keyb_layer_set_signal.connect(self.keyboard.keyb_default_layer_set)
 
         self.keyboard.start()
