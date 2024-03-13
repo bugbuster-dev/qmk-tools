@@ -11,345 +11,24 @@ from PySide6.QtCore import QRegularExpression
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtGui import QImage, QPixmap, QColor, QFont, QTextCursor, QFontMetrics, QMouseEvent, QRegularExpressionValidator, QKeyEvent
-import serial
+
 from serial.tools import list_ports
 
 import pyfirmata2
-import time
 
-import win32con
-import ctypes
-import ctypes.wintypes
+from WinFocusListener import WinFocusListener
+from FirmataKeyboard import FirmataKeyboard
+from DebugTracer import DebugTracer
 
 #-------------------------------------------------------------------------------
 
 firmata_port    = pyfirmata2.Arduino.AUTODETECT
-firmata_port    = "COM9"
+#firmata_port    = "COM9"
 
 app_width       = 800
 app_height      = 800
 
 #-------------------------------------------------------------------------------
-
-def print_buffer(data):
-    # Print 16 byte values per line
-    for i, byte in enumerate(data):
-        # Print byte value with a space, end parameter prevents new line
-        print(f'{byte:02x}', end=' ')
-        # After every 16th byte, print a new line
-        if (i + 1) % 16 == 0:
-            print()  # This causes the line break
-
-    # Handle the case where the data length is not a multiple of 16
-    # This ensures we move to a new line after printing the last line, if necessary
-    if len(data) % 16 != 0:
-        print()  # Ensure there's a newline at the end if the data didn't end on a 16th byte
-
-
-class Keyboard:
-    #---------------------------------------
-    FRMT_CMD_RESPONSE   = 0
-    FRMT_CMD_SET        = 1
-    FRMT_CMD_GET        = 2
-    FRMT_CMD_ADD        = 3
-    FRMT_CMD_DEL        = 4
-    FRMT_CMD_PUB        = 5
-    FRMT_CMD_SUB        = 6 # todo subscribe to for example battery status, mcu load, ...
-
-    FRMT_ID_RGB_MATRIX_BUF      = 1
-    FRMT_ID_DEFAULT_LAYER       = 2 # todo get default layer
-    FRMT_ID_DEBUG_MASK          = 3
-    FRMT_ID_BATTERY_STATUS      = 4 # todo 0=charging, 1=discharging, 2=full, 3=not charging, 4=unknown
-    FRMT_ID_MACWIN_MODE         = 5
-
-    #---------------------------------------
-
-    RGB_MAXTRIX_W = 19
-    RGB_MAXTRIX_H = 6
-    MAX_RGB_LED = 110
-
-    DEFAULT_LAYER = 2
-    MAX_LAYERS = 8
-
-    def __init__(self):
-        pass
-
-    #(0,0)..(18,0)   ->      0..18
-    #(0,1)..(18,1)   ->      19..36
-    #(0,2)..(18,2)   ->      37..54
-    #(0,3)..(18,3)   ->      55..70
-    #(0,4)..(18,4)   ->      71..87
-    #(0,5)..(18,5)   ->      88..99
-    def xy_to_rgb_index(x, y):
-        if y == 0:
-            return min(x,18)
-        if y == 1:
-            if x >= 14:
-                x = x - 1
-            return min(x+19,36)
-        if y == 2:
-            if x < 2:
-                x = 0
-            else:
-                x = x - 1
-            return min(x+37,54)
-        if y == 3:
-            if x < 2:
-                x = 0
-            elif x == 18:
-                return 54
-            elif x <= 13:
-                x = x - 1
-            else:
-                x = x - 2
-            return min(x+55,70)
-        if y == 4:
-            if x < 2:
-                x = 0
-            elif x <= 12:
-                x = x - 1
-            else:
-                x = x - 2
-            return min(x+71,87)
-        if y == 5:
-            if x < 4:
-                if x == 3:
-                    x = 2
-            elif x >= 4 and x <= 9:
-                x = 3
-            elif x == 18:
-                return 87
-            else:
-                x = x - 6
-            return min(x+88,99)
-
-        return 0
-
-    @staticmethod
-    def pixel_to_rgb_index_duration(pixel, index, duration, brightness=(1.0,1.0,1.0)):
-        data = bytearray()
-        #print(brightness)
-        data.append(index)
-        data.append(duration)
-        data.append(min(int(pixel[0]*brightness[0]), 255))
-        data.append(min(int(pixel[1]*brightness[1]), 255))
-        data.append(min(int(pixel[2]*brightness[2]), 255))
-        return data
-
-
-class DebugTracer:
-    def __init__(self, *args, **kwargs):
-        self.print = None
-        for arg in kwargs:
-            if arg == "print":
-                self.print = kwargs[arg]
-
-    def pr(self, *args, **kwargs):
-        if self.print:
-            msg = " ".join(str(arg) for arg in args)
-            print(msg)
-
-
-class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
-    """
-    A keyboard which "talks" firmata.
-    """
-
-    signal_console_output = Signal(str)  # signal new console output
-    signal_debug_mask = Signal(int)
-    signal_macwin_mode = Signal(str)
-
-    MAX_LEN_SYSEX_DATA = 60
-
-    debug = 0
-    def __init__(self, *args, **kwargs):
-        #----------------------------------------------------
-        self.dbg = {}
-        self.dbg['DEBUG']           = DebugTracer(print=0)
-        self.dbg['SYSEX_COMMAND']   = DebugTracer(print=0)
-        self.dbg['SYSEX_RESPONSE']  = DebugTracer(print=0)
-        self.dbg['RGB_BUF']         = DebugTracer(print=0)
-        #----------------------------------------------------
-
-        QtCore.QObject.__init__(self)
-        self.name = None
-        self.port = None
-        for arg in kwargs:
-            if arg == "name":
-                self.name = kwargs[arg]
-            if arg == "port":
-                self.port = kwargs[arg]
-
-        if self.name == None:
-            self.name = self.port
-
-        # pretend its an arduino
-        layout = pyfirmata2.BOARDS['arduino']
-
-        self.samplerThread = pyfirmata2.util.Iterator(self)
-        self.sp = serial.Serial(self.port, 115200, timeout=1)
-
-        self._layout = layout
-        if not self.name:
-            self.name = self.port
-
-
-    def __str__(self):
-        return "Keyboard {0.name} on {0.sp.port}".format(self)
-
-
-    def start(self):
-        if self._layout:
-            self.setup_layout(self._layout)
-        else:
-            self.auto_setup()
-
-        self.add_cmd_handler(pyfirmata2.STRING_DATA, self.console_line_handler)
-        self.add_cmd_handler(Keyboard.FRMT_CMD_RESPONSE, self.sysex_response_handler)
-
-        self.samplingOn()
-
-        self.send_sysex(pyfirmata2.REPORT_FIRMWARE, [])
-        self.send_sysex(pyfirmata2.REPORT_VERSION, [])
-
-        data = bytearray()
-        data.append(Keyboard.FRMT_ID_MACWIN_MODE)
-        self.send_sysex(Keyboard.FRMT_CMD_GET, data)
-        data = bytearray()
-        data.append(Keyboard.FRMT_ID_DEBUG_MASK)
-        self.send_sysex(Keyboard.FRMT_CMD_GET, data)
-
-        time.sleep(0.5)
-        print("-"*80)
-        print(f"{self}")
-        print(f"firmware:{self.firmware} {self.firmware_version}, firmata={self.get_firmata_version()}")
-        print("-"*80)
-
-    def stop(self):
-        self.samplingOff()
-        try:
-            self.sp.close()
-        except:
-            pass
-
-    def sysex_response_handler(self, *data):
-        dbg = self.dbg['SYSEX_RESPONSE']
-        dbg.pr(f"sysex_response_handler: {data}")
-
-        buf = bytearray()
-        if len(data) % 2 != 0:
-            dbg.pr(f"sysex_response_handler: invalid data length {len(data)}")
-            return
-
-        for i in range(0, len(data), 2):
-            # Combine two bytes
-            buf.append(data[i+1] << 7 | data[i])
-        #dbg.pr(f"sysex_response_handler: {buf}")
-        if buf[0] == Keyboard.FRMT_ID_MACWIN_MODE:
-            macwin_mode = chr(buf[1])
-            dbg.pr(f"macwin_mode: {macwin_mode}")
-            self.signal_macwin_mode.emit(macwin_mode)
-        elif buf[0] == Keyboard.FRMT_ID_DEBUG_MASK:
-            dbg_mask = buf[1]
-            dbg.pr(f"debug_mask: {dbg_mask}")
-            self.signal_debug_mask.emit(dbg_mask)
-
-
-    def console_line_handler(self, *data):
-        line = pyfirmata2.util.two_byte_iter_to_str(data)
-        if line:
-            self.signal_console_output.emit(line)  # Emit signal with the received line
-
-
-    def keyb_rgb_buf_set(self, img, rgb_multiplier):
-        dbg = self.dbg['RGB_BUF']
-        if dbg.print:
-            dbg.pr("-"*120)
-            dbg.pr(f"rgb mult {rgb_multiplier}")
-
-        height = img.height()
-        width = img.width()
-        arr = np.ndarray((height, width, 3), buffer=img.constBits(), strides=[img.bytesPerLine(), 3, 1], dtype=np.uint8)
-
-        data = bytearray()
-        data.append(Keyboard.FRMT_ID_RGB_MATRIX_BUF)
-        for y in range(height):
-            for x in range(width):
-                pixel = arr[y, x]
-                #color = QColor(img.pixelColor(x, y))
-                #pixel = (color.red(), color.green(), color.blue())
-                rgb_pixel = Keyboard.pixel_to_rgb_index_duration(pixel, Keyboard.xy_to_rgb_index(x, y), 200, rgb_multiplier)
-                data.extend(rgb_pixel)
-
-                if dbg.print:
-                    dbg.pr(f"{x:2},{y:2}=({pixel[0]:3},{pixel[1]:3},{pixel[2]:3})", end=" ")
-                    dbg.pr(rgb_pixel)
-
-                if len(data) >= self.MAX_LEN_SYSEX_DATA:
-                    self.send_sysex(Keyboard.FRMT_CMD_SET, data)
-                    data = bytearray()
-                    data.append(Keyboard.FRMT_ID_RGB_MATRIX_BUF)
-
-        if len(data) > 0:
-            self.send_sysex(Keyboard.FRMT_CMD_SET, data)
-
-
-    def keyb_default_layer_set(self, layer):
-        dbg = self.dbg['SYSEX_COMMAND']
-        dbg.pr(f"keyb_default_layer_set: {layer}")
-
-        data = bytearray()
-        data.append(Keyboard.FRMT_ID_DEFAULT_LAYER)
-        data.append(min(layer, 255))
-        self.send_sysex(Keyboard.FRMT_CMD_SET, data)
-
-
-    def keyb_dbg_mask_set(self, dbg_mask):
-        dbg = self.dbg['SYSEX_COMMAND']
-        dbg.pr(f"keyb_dbg_mask_set: {dbg_mask}")
-
-        data = bytearray()
-        data.append(Keyboard.FRMT_ID_DEBUG_MASK)
-        data.append(min(dbg_mask, 255))
-        self.send_sysex(Keyboard.FRMT_CMD_SET, data)
-
-    def keyb_macwin_mode_set(self, macwin_mode):
-        dbg = self.dbg['SYSEX_COMMAND']
-        dbg.pr(f"keyb_macwin_mode_set: {macwin_mode}")
-
-        data = bytearray()
-        data.append(Keyboard.FRMT_ID_MACWIN_MODE)
-        data.append(ord(macwin_mode))
-        self.send_sysex(Keyboard.FRMT_CMD_SET, data)
-
-
-    def loop_leds(self, pos):
-        if 0:
-            data = bytearray()
-            data.append(Keyboard.FRMT_ID_RGB_MATRIX_BUF)
-            led = Keyboard.xy_to_rgb_index(pos.x, pos.y)
-            print(f"x={pos.x}, y={pos.y}, led={led}")
-            data.extend([led, 0xff, 0, 0xff, 0xff])
-
-            self.send_sysex(Keyboard.FRMT_CMD_SET, data)
-
-            pos.x = pos.x + 1
-            if pos.x >= Keyboard.RGB_MAXTRIX_W:
-                pos.x = 0
-                pos.y = pos.y + 1
-                if pos.y >= Keyboard.RGB_MAXTRIX_H:
-                    pos.y = 0
-
-        if 0: # loop through all rgb leds
-            data = bytearray()
-            data.append(Keyboard.FRMT_ID_RGB_MATRIX_BUF)
-            data.extend([pos.i ,0xff,0,0xff,0xff])
-
-            self.send_sysex(Keyboard.FRMT_CMD_SET, data)
-
-            pos.i = (pos.i + 1) % Keyboard.MAX_RGB_LED
-
-
 
 class ConsoleTab(QWidget):
     signal_dbg_mask = Signal(int)
@@ -425,10 +104,11 @@ class ConsoleTab(QWidget):
 class RGBMatrixTab(QWidget):
     rgb_frame_signal = Signal(QImage, object)  # Signal to send rgb frame
 
-    def __init__(self):
+    def __init__(self, rgb_matrix_size):
         super().__init__()
         self.cap = None
         self.frameRate = 25
+        self.rgb_matrix_size = rgb_matrix_size
         self.RGB_multiplier = (1.0,1.0,1.0)
         self.initUI()
 
@@ -533,7 +213,7 @@ class RGBMatrixTab(QWidget):
             p = convertToQtFormat.scaled(app_width, app_height, aspectMode=QtCore.Qt.AspectRatioMode.KeepAspectRatio)
             self.videoLabel.setPixmap(QPixmap.fromImage(p))
 
-            keyb_rgb = p.scaled(Keyboard.RGB_MAXTRIX_W, Keyboard.RGB_MAXTRIX_H)
+            keyb_rgb = p.scaled(self.rgb_matrix_size[0], self.rgb_matrix_size[1])
             #self.videoLabel.setPixmap(QPixmap.fromImage(keyb_rgb))
             self.rgb_frame_signal.emit(keyb_rgb, self.RGB_multiplier)
 
@@ -543,171 +223,11 @@ class RGBMatrixTab(QWidget):
         print(frame[0,0])  # Print RGB values of the top-left pixel as an example
 
 
-class WinFocusListenThread(QThread):
-    winfocus_signal = Signal(str)
+    def closeEvent(self, event):
+        if self.cap is not None and self.cap.isOpened():
+            self.cap.release()
+        self.timer.stop()
 
-    def __init__(self):
-        super().__init__()
-
-        #-------------------------------------------------------------------------------
-        # window focus listener code from:
-        # https://gist.github.com/keturn/6695625
-        #
-        self.user32 = ctypes.windll.user32
-        self.ole32 = ctypes.windll.ole32
-        self.kernel32 = ctypes.windll.kernel32
-
-        self.WinEventProcType = ctypes.WINFUNCTYPE(
-            None,
-            ctypes.wintypes.HANDLE,
-            ctypes.wintypes.DWORD,
-            ctypes.wintypes.HWND,
-            ctypes.wintypes.LONG,
-            ctypes.wintypes.LONG,
-            ctypes.wintypes.DWORD,
-            ctypes.wintypes.DWORD
-        )
-
-        # The types of events we want to listen for, and the names we'll use for
-        # them in the log output. Pick from
-        # http://msdn.microsoft.com/en-us/library/windows/desktop/dd318066(v=vs.85).aspx
-        self.eventTypes = {
-            win32con.EVENT_SYSTEM_FOREGROUND: "Foreground",
-        #    win32con.EVENT_OBJECT_FOCUS: "Focus",
-        #    win32con.EVENT_OBJECT_SHOW: "Show",
-        #    win32con.EVENT_SYSTEM_DIALOGSTART: "Dialog",
-        #    win32con.EVENT_SYSTEM_CAPTURESTART: "Capture",
-        #    win32con.EVENT_SYSTEM_MINIMIZEEND: "UnMinimize"
-        }
-
-        # limited information would be sufficient, but our platform doesn't have it.
-        self.processFlag = getattr(win32con, 'PROCESS_QUERY_LIMITED_INFORMATION',
-                              win32con.PROCESS_QUERY_INFORMATION)
-
-        self.threadFlag = getattr(win32con, 'THREAD_QUERY_LIMITED_INFORMATION',
-                             win32con.THREAD_QUERY_INFORMATION)
-
-        self.lastTime = 0
-
-    def log(self, msg):
-        #print(msg)
-        self.winfocus_signal.emit(msg)
-
-    def logError(self, msg):
-        sys.stdout.write(msg + '\n')
-
-    def getProcessID(self, dwEventThread, hwnd):
-        # It's possible to have a window we can get a PID out of when the thread
-        # isn't accessible, but it's also possible to get called with no window,
-        # so we have two approaches.
-
-        hThread = self.kernel32.OpenThread(self.threadFlag, 0, dwEventThread)
-
-        if hThread:
-            try:
-                processID = self.kernel32.GetProcessIdOfThread(hThread)
-                if not processID:
-                    self.logError("Couldn't get process for thread %s: %s" %
-                             (hThread, ctypes.WinError()))
-            finally:
-                self.kernel32.CloseHandle(hThread)
-        else:
-            errors = ["No thread handle for %s: %s" %
-                      (dwEventThread, ctypes.WinError(),)]
-
-            if hwnd:
-                processID = ctypes.wintypes.DWORD()
-                threadID = user32.GetWindowThreadProcessId(
-                    hwnd, ctypes.byref(processID))
-                if threadID != dwEventThread:
-                    self.logError("Window thread != event thread? %s != %s" %
-                             (threadID, dwEventThread))
-                if processID:
-                    processID = processID.value
-                else:
-                    errors.append(
-                        "GetWindowThreadProcessID(%s) didn't work either: %s" % (
-                        hwnd, ctypes.WinError()))
-                    processID = None
-            else:
-                processID = None
-
-            if not processID:
-                for err in errors:
-                    self.logError(err)
-
-        return processID
-
-    def getProcessFilename(self, processID):
-        hProcess = self.kernel32.OpenProcess(self.processFlag, 0, processID)
-        if not hProcess:
-            self.logError("OpenProcess(%s) failed: %s" % (processID, ctypes.WinError()))
-            return None
-
-        try:
-            filenameBufferSize = ctypes.wintypes.DWORD(4096)
-            filename = ctypes.create_unicode_buffer(filenameBufferSize.value)
-            self.kernel32.QueryFullProcessImageNameW(hProcess, 0, ctypes.byref(filename),
-                                                ctypes.byref(filenameBufferSize))
-
-            return filename.value
-        finally:
-            self.kernel32.CloseHandle(hProcess)
-
-    def callback(self, hWinEventHook, event, hwnd, idObject, idChild, dwEventThread,
-                 dwmsEventTime):
-        length = self.user32.GetWindowTextLengthW(hwnd)
-        title = ctypes.create_unicode_buffer(length + 1)
-        self.user32.GetWindowTextW(hwnd, title, length + 1)
-
-        processID = self.getProcessID(dwEventThread, hwnd)
-
-        shortName = '?'
-        if processID:
-            filename = self.getProcessFilename(processID)
-            if filename:
-                shortName = '\\'.join(filename.rsplit('\\', 2)[-2:])
-
-        if hwnd:
-            hwnd = hex(hwnd)
-        elif idObject == win32con.OBJID_CURSOR:
-            hwnd = '<Cursor>'
-
-        #self.log(u"%s:%04.2f\t%-10s\t"
-            #u"W:%-8s\tP:%-8d\tT:%-8d\t"
-            #u"%s\t%s" % (
-            #dwmsEventTime, float(dwmsEventTime - self.lastTime)/1000, self.eventTypes.get(event, hex(event)),
-            #hwnd, processID or -1, dwEventThread or -1,
-            #shortName, title.value))
-        self.log(u"P:%-8d\t%s\t%s" % (processID or -1, shortName, title.value))
-        self.lastTime = dwmsEventTime
-
-    def setHook(self, WinEventProc, eventType):
-        return self.user32.SetWinEventHook(
-            eventType,
-            eventType,
-            0,
-            WinEventProc,
-            0,
-            0,
-            win32con.WINEVENT_OUTOFCONTEXT
-        )
-
-    def run(self):
-        self.ole32.CoInitialize(0)
-        WinEventProc = self.WinEventProcType(self.callback)
-        self.user32.SetWinEventHook.restype = ctypes.wintypes.HANDLE
-
-        hookIDs = [self.setHook(WinEventProc, et) for et in self.eventTypes.keys()]
-
-        msg = ctypes.wintypes.MSG()
-        while self.user32.GetMessageW(ctypes.byref(msg), 0, 0, 0) != 0:
-            self.user32.TranslateMessageW(msg)
-            self.user32.DispatchMessageW(msg)
-
-        for hookID in hookIDs:
-            self.user32.UnhookWinEvent(hookID)
-        ole32.CoUninitialize()
 
 
 class ProgramSelectorComboBox(QComboBox):
@@ -732,10 +252,9 @@ class WinFocusListenTab(QWidget):
     keyb_layer_set_signal = Signal(int)
     num_program_selectors = 3
 
-    def __init__(self):
-        self.defaultLayer = Keyboard.DEFAULT_LAYER
-        self.currentLayer = self.defaultLayer
-
+    def __init__(self, num_keyb_layers=8):
+        self.currentLayer = 0
+        self.num_keyb_layers = num_keyb_layers
         super().__init__()
         self.initUI()
 
@@ -752,9 +271,10 @@ class WinFocusListenTab(QWidget):
         layout.addWidget(self.defaultLayerLabel)
         # QComboBox for selecting layer
         self.defLayerSelector = QComboBox()
-        self.defLayerSelector.addItems([str(i) for i in range(Keyboard.MAX_LAYERS)])
+        self.defLayerSelector.addItems([str(i) for i in range(self.num_keyb_layers)])
         layout.addWidget(self.defLayerSelector)
-        self.defLayerSelector.setCurrentIndex(self.defaultLayer)
+        self.defLayerSelector.setCurrentIndex(0)
+        #self.defLayerSelector.currentIndexChanged.connect(self.on_default_layer_change)
         #---------------------------------------
 
         # Label for instructions
@@ -782,8 +302,8 @@ class WinFocusListenTab(QWidget):
             layout.addWidget(self.programSelector[i])
 
             self.layerSelector.append(QComboBox())
-            self.layerSelector[i].addItems([str(i) for i in range(Keyboard.MAX_LAYERS)])
-            self.layerSelector[i].setCurrentIndex(self.defaultLayer)
+            self.layerSelector[i].addItems([str(i) for i in range(self.num_keyb_layers)])
+            self.layerSelector[i].setCurrentIndex(0)
             layout.addWidget(self.layerSelector[i])
 
         #---------------------------------------
@@ -792,13 +312,13 @@ class WinFocusListenTab(QWidget):
         # Connect winfocusTextEdit mouse press event
         self.winfocusTextEdit.mousePressEvent = self.selectLine
 
-    # todo: remove, no need to do anything here.
     # this python program has focus and only relevant if python program was selected to use separate layer and is now unselected
     # which is not a likely use case.
     def on_program_selector_change(self, index):
-        for i in range(self.num_program_selectors):
-            if self.sender() == self.programSelector[i]:
-                pass
+        pass
+        #for i in range(self.num_program_selectors):
+            #if self.sender() == self.programSelector[i]:
+                #pass
 
 
     def on_winfocus(self, line):
@@ -823,9 +343,10 @@ class WinFocusListenTab(QWidget):
         if layerSet:
             return
 
-        if self.currentLayer != self.defaultLayer:
-            self.keyb_layer_set_signal.emit(self.defaultLayer)
-            self.currentLayer = self.defaultLayer
+        defaultLayer = self.defLayerSelector.currentIndex()
+        if self.currentLayer != defaultLayer:
+            self.keyb_layer_set_signal.emit(defaultLayer)
+            self.currentLayer = defaultLayer
 
     def updateWinfocusText(self, line):
         self.winfocusTextEdit.append(line)
@@ -913,9 +434,10 @@ class CodeTextEdit(QTextEdit):
 class RGBAnimationTab(QWidget):
     rgb_frame_signal = Signal(QImage, object)  # Signal to send rgb frame
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
+    def __init__(self, rgb_matrix_size):
+        super().__init__()
         self.initUI()
+        self.rgb_matrix_size = rgb_matrix_size
 
     def initUI(self):
         # Create a figure for plotting
@@ -998,8 +520,8 @@ class RGBAnimationTab(QWidget):
         img = buffer.reshape(int(height), int(width), 4)
         img = rgba2rgb(img)
         qimage = QImage(img.data, width, height, QImage.Format_RGB888)
-        keyb_rgb = qimage.scaled(Keyboard.RGB_MAXTRIX_W, Keyboard.RGB_MAXTRIX_H)
-        self.rgb_frame_signal.emit(keyb_rgb, (10.0,10.0,10.0))
+        keyb_rgb = qimage.scaled(self.rgb_matrix_size[0], self.rgb_matrix_size[1])
+        self.rgb_frame_signal.emit(keyb_rgb, (1.0,1.0,1.0))
 
         self.ani.resume()
 
@@ -1008,52 +530,6 @@ class RGBAnimationTab(QWidget):
         if i == self.frames:
             self.figure.clear()
         return ret
-
-    def init_wave(self):
-        # Line object for the standing wave
-        self.standing_wave_line, = self.ax.plot([], [], color='cyan', lw=50)
-        self.standing_wave_line.set_data([], [])
-        return self.standing_wave_line,
-
-
-    def animate_wave(self, i):
-        x = np.linspace(0, self.x_size, 1000)
-        #x = np.linspace(0, 2 * np.pi, 1000)
-
-        amplitude = np.sin(np.pi * i / self.frames) * 1
-        y = amplitude * np.sin(2 * 2 * np.pi * 2 * (x - self.x_size / 2) / self.x_size) * np.cos(2 * np.pi * i / 50)
-        self.standing_wave_line.set_data((x - self.x_size / 2)/100, y/30)
-
-        return self.standing_wave_line,
-
-
-    def init_rect(self):
-        self.frames = 1000
-        self.rect = plt.Rectangle((0.5, 0.5), 0.15, 0.3, color="blue")
-        self.ax.add_patch(self.rect)
-        self.ax.set_xlim(0, 1)
-        self.ax.set_ylim(0, 1)
-
-        # Initialize velocity and direction
-        self.velocity = np.array([0.01, 0.007])
-
-        # Set the initial state of the rectangle, if needed
-        self.rect.set_xy((0.45, 0.45))
-        return self.rect,
-
-    def animate_rect(self, i):
-        pos = self.rect.get_xy()
-        pos += self.velocity
-
-        # Check for collision with the walls and reverse velocity if needed
-        if pos[0] <= 0 or pos[0] + self.rect.get_width() >= 1:
-            self.velocity[0] = -self.velocity[0]
-        if pos[1] <= 0 or pos[1] + self.rect.get_height() >= 1:
-            self.velocity[1] = -self.velocity[1]
-
-        self.rect.set_xy(pos)
-        return self.rect,
-
 
 #-------------------------------------------------------------------------------
 
@@ -1067,32 +543,34 @@ class MainWindow(QMainWindow):
         self.setGeometry(100, 100, app_width, app_height)
         self.setFixedSize(app_width, app_height)
 
+        # instantiate firmata keyboard
+        self.keyboard = FirmataKeyboard(port=firmata_port, vid_pid=(0x19f5, 0x3265)) # todo pass vid, pid
+        rgb_matrix_size = self.keyboard.rgb_matrix_size()
+        num_keyb_layers = self.keyboard.num_layers()
+
         #-----------------------------------------------------------
         # add tabs
         tab_widget = QTabWidget()
         self.console_tab = ConsoleTab()
-        self.rgb_matrix_tab = RGBMatrixTab()
-        self.rgb_animation_tab = RGBAnimationTab()
-        self.winfocus_tab = WinFocusListenTab()
+        self.rgb_matrix_tab = RGBMatrixTab(rgb_matrix_size) # todo one rgb tab for video, animation and audio
+        self.rgb_animation_tab = RGBAnimationTab(rgb_matrix_size)
+        self.winfocus_tab = WinFocusListenTab(num_keyb_layers)
 
         tab_widget.addTab(self.console_tab, 'console')
         tab_widget.addTab(self.rgb_matrix_tab, 'rgb video')
         tab_widget.addTab(self.rgb_animation_tab, 'rgb animation')
         tab_widget.addTab(self.winfocus_tab, 'layer auto switch')
 
-
         self.setCentralWidget(tab_widget)
         #-----------------------------------------------------------
 
-        # instantiate firmata keyboard
-        self.keyboard = FirmataKeyboard(port=firmata_port)
         self.keyboard.signal_console_output.connect(self.console_tab.update_text)
         self.keyboard.signal_debug_mask.connect(self.console_tab.update_debug_mask)
         self.keyboard.signal_macwin_mode.connect(self.console_tab.update_macwin_mode)
 
-        self.winfocus_listen_thread = WinFocusListenThread()
-        self.winfocus_listen_thread.winfocus_signal.connect(self.winfocus_tab.on_winfocus)
-        self.winfocus_listen_thread.start()
+        self.winfocus_listener = WinFocusListener()
+        self.winfocus_listener.winfocus_signal.connect(self.winfocus_tab.on_winfocus)
+        self.winfocus_listener.start()
 
         self.console_tab.signal_dbg_mask.connect(self.keyboard.keyb_dbg_mask_set)
         self.console_tab.signal_macwin_mode.connect(self.keyboard.keyb_macwin_mode_set)
@@ -1103,8 +581,7 @@ class MainWindow(QMainWindow):
         self.keyboard.start()
 
     def closeEvent(self, event):
-        #print("closeEvent")
-        self.winfocus_listen_thread.terminate()
+        self.winfocus_listener.terminate()
         self.keyboard.stop()
         event.accept()
 
