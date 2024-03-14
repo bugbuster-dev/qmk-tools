@@ -9,7 +9,7 @@ class DebugTracer:
             if arg == "trace":
                 self.trace = kwargs[arg]
 
-    def pr(self, *args, **kwargs):
+    def pr(self, *args, **kwargs): # todo remove replace with tr
         if self.print:
             msg = " ".join(str(arg) for arg in args)
             print(msg)
@@ -17,4 +17,11 @@ class DebugTracer:
             # todo: put in trace buffer
             pass
 
+    def tr(self, *args, **kwargs):
+        if self.print:
+            msg = " ".join(str(arg) for arg in args)
+            print(msg)
+        if self.trace:
+            # todo: put in trace buffer
+            pass
 

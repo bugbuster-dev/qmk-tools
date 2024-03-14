@@ -23,8 +23,8 @@ from DebugTracer import DebugTracer
 
 #-------------------------------------------------------------------------------
 
-firmata_port    = pyfirmata2.Arduino.AUTODETECT
-#firmata_port    = "COM9"
+firmata_port        = pyfirmata2.Arduino.AUTODETECT
+keyboard_vid_pid    =(0x19f5, 0x3265)
 
 app_width       = 800
 app_height      = 800
@@ -116,7 +116,6 @@ class RGBMatrixTab(QWidget):
         self.rgb_video_tab = RGBVideoTab(self.rgb_matrix_size)
         self.rgb_animation_tab = RGBAnimationTab(self.rgb_matrix_size)
         self.rgb_audio_tab = RGBAudioTab(self.rgb_matrix_size)
-        # todo add rgb audio tab
 
         self.tab_widget.addTab(self.rgb_video_tab, 'video')
         self.tab_widget.addTab(self.rgb_animation_tab, 'animation')
@@ -256,14 +255,20 @@ class RGBVideoTab(QWidget):
 
 
 class AudioCaptureThread(QThread):
-    def __init__(self):
+    def __init__(self, freq_ranges):
         super().__init__()
         self.running = False
+        self.freq_ranges = freq_ranges
+
+        self.dbg = {}
+        self.dbg['DEBUG']   = DebugTracer(print=1, trace=1)
 
     def onPeakLevels(self, callback):
         self.callback = callback
 
     def run(self):
+        dbg = self.dbg['DEBUG']
+
         FORMAT = pyaudio.paFloat32
         CHANNELS = 1
         RATE = 44100  # Sample rate
@@ -276,6 +281,7 @@ class AudioCaptureThread(QThread):
                         rate=RATE,
                         input=True,
                         frames_per_buffer=CHUNK)
+        dbg.tr(f"audio stream {stream} opened")
 
         while self.running:
             duration = 0.1  # seconds
@@ -290,24 +296,15 @@ class AudioCaptureThread(QThread):
 
             # Calculate frequency bins
             freq_bins = np.fft.rfftfreq(len(audio_data), d=1./RATE)
-
-            # Define frequency ranges for peak level detection
-            #freq_ranges = [(20, 200), (201, 2000), (2001, 5000), (5001, 20000)]
-            freq_ranges = [(20, 200), (201, 10000), (10001, 20000)]
             peak_levels = []
 
-            for f_min, f_max in freq_ranges:
+            for f_min, f_max in self.freq_ranges:
                 # Find the bin indices corresponding to the frequency range
                 idx = np.where((freq_bins >= f_min) & (freq_bins <= f_max))
                 peak_level = np.max(freq_magnitude[idx])
                 peak_levels.append(peak_level)
 
             self.callback(peak_levels)
-
-            #print("Peak levels for defined frequency ranges:")
-            #for i, (f_min, f_max) in enumerate(freq_ranges):
-                #if peak_levels[i] > 0.1:
-                    #print(f"{f_min}-{f_max} Hz: {peak_levels[i]}")
 
 
         stream.stop_stream()
@@ -321,12 +318,21 @@ class AudioCaptureThread(QThread):
 class RGBAudioTab(QWidget):
     rgb_frame_signal = Signal(QImage, object)  # Signal to send rgb frame
 
+    freq_ranges = [(20, 200), (500, 2000), (2000, 4000), (4000, 6000), (6000, 8000), (8000, 10000), (10000, 20000)]
+
     def __init__(self, rgb_matrix_size):
+        self.dbg = {}
+        self.dbg['PEAK_LEVEL']  = DebugTracer(print=1, trace=1)
+        self.dbg['MAX_PEAK']    = DebugTracer(print=1, trace=1)
+
         super().__init__()
         self.rgb_matrix_size = rgb_matrix_size
         self.RGB_multiplier = (1.0,1.0,1.0)
 
-        self.audioThread = AudioCaptureThread()
+        self.max_levels = [10, 10, 10] # max level used for scaling
+        self.max_level_running = 0# max level updated every sample
+        self.sample_count = 0
+        self.audioThread = AudioCaptureThread(self.freq_ranges)
         self.initUI()
 
     def initUI(self):
@@ -338,25 +344,45 @@ class RGBAudioTab(QWidget):
 
         self.setLayout(layout)
 
+
+    #-------------------------------------------------------------------------------
+    @staticmethod
+    def peak_level_to_rgb(peak_levels, max_levels):
+        r = g = b = 0
+        try:
+            r = min(peak_levels[0]/max_levels[0] * 255, 255)
+            g = min(peak_levels[1]/max_levels[1] * 255, 100)
+            b = min(peak_levels[2]/max_levels[2] * 255, 200)
+        except:
+            pass
+        return r,g,b
+    #-------------------------------------------------------------------------------
     def processAudioPeakLevels(self, peak_levels):
-        #print(peak_levels)
+        self.sample_count += 1
+
+        self.dbg['PEAK_LEVEL'].tr(f"peak {self.sample_count}: {peak_levels}")
+        for i, lvl in enumerate(peak_levels):
+            if peak_levels[i] > self.max_level_running:
+                self.max_level_running = peak_levels[i]
+
+        # update max levels every N "peak samples"
+        if self.sample_count == 50:
+            self.sample_count = 0
+            self.max_levels = [self.max_level_running] * 3
+            self.max_level_running = 0
+            self.dbg['MAX_PEAK'].tr(f"max levels: {self.max_levels}")
+
         keyb_rgb = QImage(self.rgb_matrix_size[0], self.rgb_matrix_size[1], QImage.Format_RGB888)
-        if all(level < 1 for (level) in peak_levels):
-            #print("no audio")
+        if all(level < 0.05 for (level) in peak_levels):
+            # no audio
             return
 
-        if peak_levels[0] > 20:
-            keyb_rgb.fill(QColor(255,10,10))
-        elif peak_levels[0] > 15:
-            keyb_rgb.fill(QColor(180,5,0))
-        elif peak_levels[0] > 10:
-            keyb_rgb.fill(QColor(50,50,10))
-        elif peak_levels[0] > 5:
-            keyb_rgb.fill(QColor(0,10,10))
-        elif peak_levels[0] > 1:
-            keyb_rgb.fill(QColor(0,0,10))
+        r,g,b = self.peak_level_to_rgb(peak_levels, self.max_levels)
+        keyb_rgb.fill(QColor(r,g,b))
 
         self.rgb_frame_signal.emit(keyb_rgb, self.RGB_multiplier)
+
+    #-------------------------------------------------------------------------------
 
     def start(self):
         if not self.audioThread.isRunning():
@@ -682,7 +708,7 @@ class MainWindow(QMainWindow):
         self.setFixedSize(app_width, app_height)
 
         # instantiate firmata keyboard
-        self.keyboard = FirmataKeyboard(port=firmata_port, vid_pid=(0x19f5, 0x3265))
+        self.keyboard = FirmataKeyboard(port=firmata_port, vid_pid=keyboard_vid_pid)
         rgb_matrix_size = self.keyboard.rgb_matrix_size()
         num_keyb_layers = self.keyboard.num_layers()
 
