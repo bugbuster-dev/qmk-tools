@@ -11,7 +11,8 @@ from PySide6.QtCore import Qt, QThread, Signal, QUrl, QTimer, QSize
 from PySide6.QtCore import QRegularExpression
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
-from PySide6.QtGui import QImage, QPixmap, QColor, QFont, QTextCursor, QFontMetrics, QMouseEvent, QRegularExpressionValidator, QKeyEvent
+from PySide6.QtGui import QImage, QPixmap, QColor, QFont, QTextCursor, QFontMetrics, QMouseEvent, QKeyEvent
+from PySide6.QtGui import QRegularExpressionValidator, QIntValidator, QDoubleValidator
 
 from serial.tools import list_ports
 
@@ -255,16 +256,21 @@ class RGBVideoTab(QWidget):
 
 
 class AudioCaptureThread(QThread):
-    def __init__(self, freq_ranges):
+
+    def __init__(self, freq_ranges, interval=0.1):
         super().__init__()
         self.running = False
         self.freq_ranges = freq_ranges
+        self.interval = interval
 
         self.dbg = {}
         self.dbg['DEBUG']   = DebugTracer(print=1, trace=1)
 
-    def onPeakLevels(self, callback):
+    def connect_callback(self, callback):
         self.callback = callback
+
+    def set_freq_ranges(self, freq_ranges):
+        self.freq_ranges = freq_ranges
 
     def run(self):
         dbg = self.dbg['DEBUG']
@@ -284,7 +290,7 @@ class AudioCaptureThread(QThread):
         dbg.tr(f"audio stream {stream} opened")
 
         while self.running:
-            duration = 0.1  # seconds
+            duration = self.interval  # seconds
             frames = []
             for _ in range(0, int(RATE / CHUNK * duration)):
                 data = stream.read(CHUNK)
@@ -318,26 +324,105 @@ class AudioCaptureThread(QThread):
 class RGBAudioTab(QWidget):
     rgb_frame_signal = Signal(QImage, object)  # Signal to send rgb frame
 
-    freq_ranges = [(20, 200), (500, 2000), (2000, 4000), (4000, 6000), (6000, 8000), (8000, 10000), (10000, 20000)]
+    freq_ranges = []
+
+    @staticmethod
+    def freq_subranges(freq_low, freq_high, num_ranges):
+        freq_range = []
+        step = (freq_high - freq_low)/num_ranges
+        for i in range(num_ranges):
+            freq_range.append((freq_low + i*step, freq_low + (i+1)*step))
+
+        return freq_range
+
 
     def __init__(self, rgb_matrix_size):
         self.dbg = {}
+        self.dbg['FREQ_RANGE']  = DebugTracer(print=1, trace=1)
         self.dbg['PEAK_LEVEL']  = DebugTracer(print=1, trace=1)
         self.dbg['MAX_PEAK']    = DebugTracer(print=1, trace=1)
 
         super().__init__()
+        self.initUI()
+
+        #-----------------------------------------------------------
         self.rgb_matrix_size = rgb_matrix_size
         self.RGB_multiplier = (1.0,1.0,1.0)
 
-        self.max_levels = [10, 10, 10] # max level used for scaling
-        self.max_level_running = 0# max level updated every sample
+        self.max_level = 10  # max level used for rgb intensity
+        self.max_level_running = 0  # max level updated every sample
         self.sample_count = 0
-        self.audioThread = AudioCaptureThread(self.freq_ranges)
-        self.initUI()
+        self.audioThread = AudioCaptureThread(self.freq_ranges, 0.15)
 
     def initUI(self):
         layout = QVBoxLayout()
+        layout.addStretch(1)
 
+        freqRangeLayout = QHBoxLayout()
+        # frequency range input
+        self.freqRangeLabel = QLabel("frequency range")
+        self.freqRangeLowInput = QLineEdit()
+        self.frequencyHighInput = QLineEdit()
+        self.freqRangeLowInput.setValidator(QIntValidator(20,20000))
+        self.frequencyHighInput.setValidator(QIntValidator(20,20000))
+        self.freqRangeLabel.setFixedWidth(100)
+        self.freqRangeLowInput.setFixedWidth(50)
+        self.frequencyHighInput.setFixedWidth(50)
+        self.freqRangeLowInput.setText("20")
+        self.frequencyHighInput.setText("12000")
+
+        self.nSubRangesLabel = QLabel("number of subranges")
+        self.nSubRangesInput = QLineEdit()
+        self.nSubRangesInput.setValidator(QIntValidator(1,20))
+        self.nSubRangesInput.setText("12")
+        self.nSubRangesLabel.setFixedWidth(120)
+        self.nSubRangesInput.setFixedWidth(50)
+
+        freqRangeLayout.addWidget(self.freqRangeLabel)
+        freqRangeLayout.addWidget(self.freqRangeLowInput)
+        freqRangeLayout.addWidget(self.frequencyHighInput)
+        freqRangeLayout.addWidget(self.nSubRangesLabel)
+        freqRangeLayout.addWidget(self.nSubRangesInput)
+
+        freqRangeLayout.addStretch(1)
+        layout.addLayout(freqRangeLayout)
+
+        #-----------------------------------------------------------
+        redRangeLayout = QHBoxLayout()
+        self.redRangeLabel = QLabel("r")
+        self.redRangeInput = []
+        redRangeLayout.addWidget(self.redRangeLabel)
+        for i in range(20):
+            self.redRangeInput.append(QLineEdit())
+            self.redRangeInput[i].setValidator(QDoubleValidator(0.0,5.0,1))
+            self.redRangeInput[i].setText("1.0")
+            redRangeLayout.addWidget(self.redRangeInput[i])
+
+        greenRangeLayout = QHBoxLayout()
+        self.greenRangeLabel = QLabel("g")
+        self.greenRangeInput = []
+        greenRangeLayout.addWidget(self.greenRangeLabel)
+        for i in range(20):
+            self.greenRangeInput.append(QLineEdit())
+            self.greenRangeInput[i].setValidator(QDoubleValidator(0.0,5.0,1))
+            self.greenRangeInput[i].setText("1.0")
+            greenRangeLayout.addWidget(self.greenRangeInput[i])
+
+        blueRangeLayout = QHBoxLayout()
+        self.blueRangeLabel = QLabel("b")
+        self.blueRangeInput = []
+        blueRangeLayout.addWidget(self.blueRangeLabel)
+        for i in range(20):
+            self.blueRangeInput.append(QLineEdit())
+            self.blueRangeInput[i].setValidator(QDoubleValidator(0.0,5.0,1))
+            self.blueRangeInput[i].setText("1.0")
+            blueRangeLayout.addWidget(self.blueRangeInput[i])
+
+        layout.addLayout(redRangeLayout)
+        layout.addLayout(greenRangeLayout)
+        layout.addLayout(blueRangeLayout)
+
+        #-----------------------------------------------------------
         self.startButton = QPushButton("start")
         self.startButton.clicked.connect(self.start)
         layout.addWidget(self.startButton)
@@ -345,39 +430,57 @@ class RGBAudioTab(QWidget):
         self.setLayout(layout)
 
 
+    def update_freq_rgb(self):
+        n_ranges = int(self.nSubRangesInput.text())
+        self.freq_rgb_r = [float(self.redRangeInput[i].text()) for i in range(n_ranges)]
+        self.freq_rgb_g = [float(self.greenRangeInput[i].text()) for i in range(n_ranges)]
+        self.freq_rgb_b = [float(self.blueRangeInput[i].text()) for i in range(n_ranges)]
+
     #-------------------------------------------------------------------------------
-    @staticmethod
-    def peak_level_to_rgb(peak_levels, max_levels):
+    def peak_level_to_rgb(self, freq_ranges, peak_levels, max_level):
         r = g = b = 0
-        try:
-            r = min(peak_levels[0]/max_levels[0] * 255, 255)
-            g = min(peak_levels[1]/max_levels[1] * 255, 100)
-            b = min(peak_levels[2]/max_levels[2] * 255, 200)
-        except:
-            pass
+
+        #freq_rgb_r = [1, 1, 0.8, 0.6, 0.4, 0.2, 0, 0, 0, 0, 0, 0]
+        #freq_rgb_g = [0, 0, 0, 0.2, 0.6, 1, 1, 0.8, 0.6, 0, 0, 0]
+        #freq_rgb_b = [0, 0, 0, 0, 0, 0, 0.2, 0.6, 0.8, 1, 1, 0.8]
+
+        for i in range(len(freq_ranges)):
+            r += peak_levels[i] * self.freq_rgb_r[i]
+            g += peak_levels[i] * self.freq_rgb_g[i]
+            b += peak_levels[i] * self.freq_rgb_b[i]
+
+        r /= 4
+        g /= 4
+        b /= 4
+
+        # red for low, green for mid, blue for high tones
+        r = min(r/max_level * 255, 255)
+        g = min(g/max_level * 255, 255)
+        b = min(b/max_level * 255, 255)
+
         return r,g,b
+
     #-------------------------------------------------------------------------------
     def processAudioPeakLevels(self, peak_levels):
         self.sample_count += 1
-
         self.dbg['PEAK_LEVEL'].tr(f"peak {self.sample_count}: {peak_levels}")
         for i, lvl in enumerate(peak_levels):
             if peak_levels[i] > self.max_level_running:
                 self.max_level_running = peak_levels[i]
 
         # update max levels every N "peak samples"
-        if self.sample_count == 50:
+        if self.sample_count == 30:
             self.sample_count = 0
-            self.max_levels = [self.max_level_running] * 3
+            self.max_level += (self.max_level_running - self.max_level)/2
             self.max_level_running = 0
-            self.dbg['MAX_PEAK'].tr(f"max levels: {self.max_levels}")
+            self.dbg['MAX_PEAK'].tr(f"max levels: {self.max_level}")
 
         keyb_rgb = QImage(self.rgb_matrix_size[0], self.rgb_matrix_size[1], QImage.Format_RGB888)
         if all(level < 0.05 for (level) in peak_levels):
             # no audio
             return
 
-        r,g,b = self.peak_level_to_rgb(peak_levels, self.max_levels)
+        r,g,b = self.peak_level_to_rgb(self.freq_ranges, peak_levels, self.max_level)
         keyb_rgb.fill(QColor(r,g,b))
 
         self.rgb_frame_signal.emit(keyb_rgb, self.RGB_multiplier)
@@ -386,7 +489,11 @@ class RGBAudioTab(QWidget):
 
     def start(self):
         if not self.audioThread.isRunning():
-            self.audioThread.onPeakLevels(self.processAudioPeakLevels)
+            self.update_freq_rgb()
+            self.freq_ranges = self.freq_subranges(int(self.freqRangeLowInput.text()), int(self.frequencyHighInput.text()), int(self.nSubRangesInput.text()))
+            self.dbg['FREQ_RANGE'].tr(f"audio peak freq range {self.freq_ranges}")
+            self.audioThread.set_freq_ranges(self.freq_ranges)
+            self.audioThread.connect_callback(self.processAudioPeakLevels)
             self.audioThread.start()
             self.startButton.setText("stop")
         else:
@@ -758,9 +865,9 @@ def main():
 def list_com_ports(vid = None, pid = None):
     device_list = list_ports.comports()
     for device in device_list:
-        print(f"{device}: vid={device.vid:04x}, pid={device.pid:04x}")
+        print(f"{device}: {device.vid:04x}:{device.pid:04x}")
         if device.vid == vid and (pid == None or device.pid == pid):
-            port = device.device
+            return device.device
 
 #-------------------------------------------------------------------------------
 
