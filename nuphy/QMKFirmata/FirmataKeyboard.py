@@ -66,7 +66,7 @@ class FirmataKeybCmd:
     ID_RGB_MATRIX_BUF      = 1
     ID_DEFAULT_LAYER       = 2 # todo get default layer
     ID_DEBUG_MASK          = 3
-    ID_BATTERY_STATUS      = 4 # todo battery state/level, mac/win mode, ...   0=charging, 1=discharging, 2=full, 3=not charging, 4=unknown
+    ID_BATTERY_STATUS      = 4
     ID_MACWIN_MODE         = 5
 
 class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
@@ -148,14 +148,14 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.keyboardModel, self.keyboardModelVidPid = self.loadKeyboardModels()
         if dbg.print:
             for class_name, class_type in self.keyboardModel.items():
-                dbg.pr(f"keyboard model: {class_name} ({hex(class_type.vid_pid()[0])}:{hex(class_type.vid_pid()[1])}), {class_type}")
+                dbg.tr(f"keyboard model: {class_name} ({hex(class_type.vid_pid()[0])}:{hex(class_type.vid_pid()[1])}), {class_type}")
             #for vid_pid, class_type in self.keyboardModelVidPid.items():
-                #dbg.pr(f"vid pid: {vid_pid}, Class Type: {class_type}")
+                #dbg.tr(f"vid pid: {vid_pid}, Class Type: {class_type}")
 
         if self.port == None and self.vid_pid:
             self.port = find_com_port(self.vid_pid[0], self.vid_pid[1])
             self.keyboardModel = self.keyboardModelVidPid[(self.vid_pid[0], self.vid_pid[1])]
-            dbg.pr(f"using keyboard: {self.keyboardModel}")
+            dbg.tr(f"using keyboard: {self.keyboardModel}")
             self.name = self.keyboardModel.name()
 
         self.samplerThread = pyfirmata2.util.Iterator(self)
@@ -226,11 +226,11 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
     def sysex_response_handler(self, *data):
         dbg = self.dbg['SYSEX_RESPONSE']
-        #dbg.pr(f"sysex_response_handler: {data}")
+        #dbg.tr(f"sysex_response_handler: {data}")
 
         buf = bytearray()
         if len(data) % 2 != 0:
-            dbg.pr(f"sysex_response_handler: invalid data length {len(data)}")
+            dbg.tr(f"sysex_response_handler: invalid data length {len(data)}")
             return
 
         for i in range(0, len(data), 2):
@@ -238,21 +238,21 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             buf.append(data[i+1] << 7 | data[i])
 
         if dbg.print:
-            dbg.pr("-"*40)
-            dbg.pr(f"sysex response:\n{buf.hex(' ')}")
+            dbg.tr("-"*40)
+            dbg.tr(f"sysex response:\n{buf.hex(' ')}")
 
         if buf[0] == FirmataKeybCmd.ID_MACWIN_MODE:
             macwin_mode = chr(buf[1])
-            dbg.pr(f"macwin mode: {macwin_mode}")
+            dbg.tr(f"macwin mode: {macwin_mode}")
             self.signal_macwin_mode.emit(macwin_mode)
         elif buf[0] == FirmataKeybCmd.ID_DEBUG_MASK:
             dbg_mask = buf[1]
-            dbg.pr(f"debug mask: {dbg_mask}")
+            dbg.tr(f"debug mask: {dbg_mask}")
             self.signal_debug_mask.emit(dbg_mask)
         elif buf[0] == FirmataKeybCmd.ID_BATTERY_STATUS:
             battery_charging = buf[1]
             battery_level = buf[2]
-            dbg.pr(f"battery charging: {battery_charging}, battery level: {battery_level}")
+            dbg.tr(f"battery charging: {battery_charging}, battery level: {battery_level}")
             #self.signal_battery_status.emit(battery_charging, battery_level)
 
 
@@ -265,8 +265,8 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
     def keyb_rgb_buf_set(self, img, rgb_multiplier):
         dbg = self.dbg['RGB_BUF']
         if dbg.print:
-            dbg.pr("-"*120)
-            dbg.pr(f"rgb mult {rgb_multiplier}")
+            dbg.tr("-"*120)
+            dbg.tr(f"rgb mult {rgb_multiplier}")
 
         height = img.height()
         width = img.width()
@@ -284,8 +284,8 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 data.extend(rgb_pixel)
 
                 if dbg.print:
-                    dbg.pr(f"{x:2},{y:2}=({pixel[0]:3},{pixel[1]:3},{pixel[2]:3})", end=" ")
-                    dbg.pr(rgb_pixel)
+                    dbg.tr(f"{x:2},{y:2}=({pixel[0]:3},{pixel[1]:3},{pixel[2]:3})", end=" ")
+                    dbg.tr(rgb_pixel.hex(' '))
 
                 if len(data) >= self.MAX_LEN_SYSEX_DATA:
                     self.send_sysex(FirmataKeybCmd.SET, data)
@@ -298,7 +298,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
     def keyb_default_layer_set(self, layer):
         dbg = self.dbg['SYSEX_COMMAND']
-        dbg.pr(f"keyb_default_layer_set: {layer}")
+        dbg.tr(f"keyb_default_layer_set: {layer}")
 
         data = bytearray()
         data.append(FirmataKeybCmd.ID_DEFAULT_LAYER)
@@ -308,7 +308,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
     def keyb_dbg_mask_set(self, dbg_mask):
         dbg = self.dbg['SYSEX_COMMAND']
-        dbg.pr(f"keyb_dbg_mask_set: {dbg_mask}")
+        dbg.tr(f"keyb_dbg_mask_set: {dbg_mask}")
 
         data = bytearray()
         data.append(FirmataKeybCmd.ID_DEBUG_MASK)
@@ -317,7 +317,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
     def keyb_macwin_mode_set(self, macwin_mode):
         dbg = self.dbg['SYSEX_COMMAND']
-        dbg.pr(f"keyb_macwin_mode_set: {macwin_mode}")
+        dbg.tr(f"keyb_macwin_mode_set: {macwin_mode}")
 
         data = bytearray()
         data.append(FirmataKeybCmd.ID_MACWIN_MODE)
