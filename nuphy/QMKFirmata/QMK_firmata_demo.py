@@ -584,6 +584,9 @@ class LayerAutoSwitchTab(QWidget):
     num_program_selectors = 3
 
     def __init__(self, num_keyb_layers=8):
+        self.dbg = {}
+        self.dbg['DEBUG'] = DebugTracer(print=1, trace=1)
+
         self.currentLayer = 0
         self.num_keyb_layers = num_keyb_layers
         super().__init__()
@@ -605,7 +608,6 @@ class LayerAutoSwitchTab(QWidget):
         self.defLayerSelector.addItems([str(i) for i in range(self.num_keyb_layers)])
         layout.addWidget(self.defLayerSelector)
         self.defLayerSelector.setCurrentIndex(0)
-        #self.defLayerSelector.currentIndexChanged.connect(self.on_default_layer_change)
         #---------------------------------------
 
         # Label for instructions
@@ -629,7 +631,6 @@ class LayerAutoSwitchTab(QWidget):
             self.programSelector.append(ProgramSelectorComboBox(self.winfocusTextEdit))
             self.programSelector[i].addItems(["" for i in range(5)])
             self.programSelector[i].setCurrentIndex(0)
-            self.programSelector[i].currentIndexChanged.connect(self.on_program_selector_change)
             layout.addWidget(self.programSelector[i])
 
             self.layerSelector.append(QComboBox())
@@ -643,13 +644,10 @@ class LayerAutoSwitchTab(QWidget):
         # Connect winfocusTextEdit mouse press event
         self.winfocusTextEdit.mousePressEvent = self.selectLine
 
-    # this python program has focus and only relevant if python program was selected to use separate layer and is now unselected
-    # which is not a likely use case.
-    def on_program_selector_change(self, index):
-        pass
-        #for i in range(self.num_program_selectors):
-            #if self.sender() == self.programSelector[i]:
-                #pass
+
+    def on_default_layer_changed(self, layer):
+        self.dbg['DEBUG'].tr(f"default layer changed to {layer}")
+        self.defLayerSelector.setCurrentIndex(layer)
 
 
     def on_winfocus(self, line):
@@ -897,6 +895,7 @@ class MainWindow(QMainWindow):
         self.keyboard.signal_console_output.connect(self.console_tab.update_text)
         self.keyboard.signal_debug_mask.connect(self.console_tab.update_debug_mask)
         self.keyboard.signal_macwin_mode.connect(self.console_tab.update_macwin_mode)
+        self.keyboard.signal_default_layer.connect(self.layer_switch_tab.on_default_layer_changed)
 
         self.winfocus_listener = WinFocusListener()
         self.winfocus_listener.winfocus_signal.connect(self.layer_switch_tab.on_winfocus)

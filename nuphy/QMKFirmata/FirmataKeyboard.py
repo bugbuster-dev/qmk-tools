@@ -60,14 +60,15 @@ class FirmataKeybCmd:
     GET        = 2 # get a value for 'ID_...'
     ADD        = 3 # add a value to 'ID_...'
     DEL        = 4 # delete a value from 'ID_...'
-    PUB        = 5 # todo needed? can put it in 'RESPONSE'
+    PUB        = 5 # battery status, mcu load, diagnostics, debug traces, ...
     SUB        = 6 # todo subscribe to for example battery status, mcu load, ...
 
     ID_RGB_MATRIX_BUF      = 1
-    ID_DEFAULT_LAYER       = 2 # todo get default layer
+    ID_DEFAULT_LAYER       = 2 # todo get default layer needed?
     ID_DEBUG_MASK          = 3
     ID_BATTERY_STATUS      = 4
     ID_MACWIN_MODE         = 5
+
 
 class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
     """
@@ -77,6 +78,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
     signal_console_output = Signal(str)  # signal new console output
     signal_debug_mask = Signal(int)
     signal_macwin_mode = Signal(str)
+    signal_default_layer = Signal(int)
     #-------------------------------------------------------------------------------
 
     MAX_LEN_SYSEX_DATA = 60
@@ -185,6 +187,14 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             return self.keyboardModel.num_rgb_leds()
         return DefaultKeyboardModel.NUM_RGB_LEDS
 
+    def default_layer(self, mode):
+        try:
+            if self.keyboardModel:
+                return self.keyboardModel.default_layer(mode)
+        except Exception as e:
+            self.dbg['DEBUG'].tr(f"default_layer: {e}")
+        return DefaultKeyboardModel.DEFAULT_LAYER
+
     def xy_to_rgb_index(self, x, y):
         xy_to_rgb_index =  DefaultKeyboardModel.xy_to_rgb_index
         if self.keyboardModel:
@@ -245,6 +255,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             macwin_mode = chr(buf[1])
             dbg.tr(f"macwin mode: {macwin_mode}")
             self.signal_macwin_mode.emit(macwin_mode)
+            self.signal_default_layer.emit(self.default_layer(macwin_mode))
         elif buf[0] == FirmataKeybCmd.ID_DEBUG_MASK:
             dbg_mask = buf[1]
             dbg.tr(f"debug mask: {dbg_mask}")
