@@ -360,7 +360,7 @@ class RGBAudioTab(QWidget):
         self.rgb_matrix_size = rgb_matrix_size
         self.keyb_rgb = QImage(self.rgb_matrix_size[0], self.rgb_matrix_size[1], QImage.Format_RGB888)
         self.keyb_rgb_mask = QImage(self.keyb_rgb.size(), QImage.Format_Grayscale8)
-        self.keyb_rgb_mask_mode = 2
+        self.keyb_rgb_mask_mode = 0
 
         self.RGB_multiplier = (1.0,1.0,1.0)
 
@@ -378,8 +378,8 @@ class RGBAudioTab(QWidget):
         self.freqRangeLabel = QLabel("frequency range")
         self.freqRangeLowInput = QLineEdit()
         self.frequencyHighInput = QLineEdit()
-        self.freqRangeLowInput.setValidator(QIntValidator(20,20000))
-        self.frequencyHighInput.setValidator(QIntValidator(20,20000))
+        self.freqRangeLowInput.setValidator(QIntValidator(0,20000))
+        self.frequencyHighInput.setValidator(QIntValidator(0,20000))
         self.freqRangeLabel.setFixedWidth(100)
         self.freqRangeLowInput.setFixedWidth(50)
         self.frequencyHighInput.setFixedWidth(50)
@@ -396,20 +396,30 @@ class RGBAudioTab(QWidget):
         self.nSubRangesInput.setText("16")
         self.nSubRangesInput.textChanged.connect(self.update_freq_ranges)
 
+        self.maxLevelLabel = QLabel("max level (0 for auto)")
+        self.maxLevelInput = QLineEdit()
+        self.maxLevelInput.setValidator(QIntValidator(0,100))
+        self.maxLevelLabel.setFixedWidth(120)
+        self.maxLevelInput.setFixedWidth(50)
+        self.maxLevelInput.setText("0")
+
         freqRangeLayout.addWidget(self.freqRangeLabel)
         freqRangeLayout.addWidget(self.freqRangeLowInput)
         freqRangeLayout.addWidget(self.frequencyHighInput)
         freqRangeLayout.addWidget(self.nSubRangesLabel)
         freqRangeLayout.addWidget(self.nSubRangesInput)
 
+        freqRangeLayout.addWidget(self.maxLevelLabel)
+        freqRangeLayout.addWidget(self.maxLevelInput)
+
         freqRangeLayout.addStretch(1)
         layout.addLayout(freqRangeLayout)
 
         #-------------------------------------------------------------------------------
         num_subranges = 16
-        range_red_values =      [ 3.0, 1.0, 1.0, 0.6, 0.4, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0 ]
-        range_green_values =    [ 0.0, 0.0, 0.0, 0.4, 0.8, 1.2, 1.6, 2.0, 2.0, 1.0, 1.0, 0.2, 0.0, 0.0, 0.0, 0.0 ]
-        range_blue_values =     [ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2, 0.8, 1.0, 1.8, 2.0, 3.0 ]
+        range_red_values =      [ 3.0, 2.0, 1.4, 1.0, 0.4, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0 ]
+        range_green_values =    [ 0.0, 0.2, 0.6, 0.8, 0.8, 1.2, 1.6, 2.0, 2.0, 1.6, 1.2, 0.8, 0.4, 0.0, 0.0, 0.0 ]
+        range_blue_values =     [ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.4, 0.6, 1.0, 1.2, 1.8, 2.0, 3.0 ]
 
         redRangeLayout = QHBoxLayout()
         self.redRangeLabel = QLabel("r")
@@ -502,9 +512,21 @@ class RGBAudioTab(QWidget):
         # update max level every N "peak samples"
         if self.sample_count == 30:
             self.sample_count = 0
-            self.max_level += (self.max_level_running - self.max_level)/2
+
+            max_level_input = 0
+            max_level_running = self.max_level_running
+            try:
+                max_level_input = int(self.maxLevelInput.text())
+            except:
+                pass
+
+            if max_level_input > 0:
+                self.max_level = max_level_input
+            else:
+                self.max_level += (self.max_level_running - self.max_level)/2
+
             self.max_level_running = 0
-            self.dbg['MAX_PEAK'].tr(f"max level: {self.max_level}")
+            self.dbg['MAX_PEAK'].tr(f"max level: {max_level_running} ({self.max_level})")
 
         if all(level < 0.05 for (level) in peak_levels):
             # no audio
