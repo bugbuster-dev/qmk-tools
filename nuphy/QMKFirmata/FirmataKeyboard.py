@@ -2,6 +2,7 @@
 import pyfirmata2
 
 from PySide6 import QtCore
+from PySide6.QtGui import QImage, QColor, QPainter
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
 import numpy as np
 
@@ -34,6 +35,33 @@ def find_com_port(vid, pid):
             return device.device
     return None
 #endregion
+
+
+def combine_qimages(img1, img2):
+    # Ensure the images are the same size
+    if img1.size() != img2.size():
+        print("Images are not the same size!")
+        return None
+
+    # Combine the images
+    for x in range(img1.width()):
+        for y in range(img1.height()):
+            pixel1 = img1.pixel(x, y)
+            pixel2 = img2.pixel(x, y)
+
+            # Extract RGB values
+            r1, g1, b1, _ = QColor(pixel1).getRgb()
+            r2, g2, b2, _ = QColor(pixel2).getRgb()
+
+            # Add the RGB values, with a maximum of 255
+            r = min(r1 + r2, 255)
+            g = min(g1 + g2, 255)
+            b = min(b1 + b2, 255)
+
+            # Set the new pixel value
+            img1.setPixel(x, y, QColor(r, g, b).rgb())
+
+    return img1
 
 #-------------------------------------------------------------------------------
 
@@ -132,6 +160,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         dbg = self.dbg['DEBUG']
         #endregion
         #----------------------------------------------------
+        self.img = {}   # sender -> rgb QImage
         self.name = None
         self.port = None
         self.vid_pid = None
@@ -279,6 +308,21 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             dbg.tr("-"*120)
             dbg.tr(f"rgb mult {rgb_multiplier}")
 
+        # multiple images senders -> combine images
+        #self.dbg['DEBUG'].tr(f"sender: {self.sender()}")
+        combined_img = img.copy()
+        # todo: use prev image to reduce flicker
+        #prev_img = self.img[self.sender()]
+        if len(self.img) > 1:
+            for key in self.img:
+                if key != self.sender():
+                    combined_img = combine_qimages(combined_img, self.img[key])
+
+        self.img[self.sender()] = img
+        img = combined_img
+
+        #-------------------------------------------------------------------------------
+        # iterate through the image pixels and convert to "keyboard rgb pixels" and send to keyboard
         height = img.height()
         width = img.width()
         arr = np.ndarray((height, width, 3), buffer=img.constBits(), strides=[img.bytesPerLine(), 3, 1], dtype=np.uint8)
@@ -288,9 +332,6 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         for y in range(height):
             for x in range(width):
                 pixel = arr[y, x]
-                #color = QColor(img.pixelColor(x, y))
-                #pixel = (color.red(), color.green(), color.blue())
-
                 rgb_pixel = self.pixel_to_rgb_index_duration(pixel, self.xy_to_rgb_index(x, y), 200, rgb_multiplier)
                 data.extend(rgb_pixel)
 
@@ -305,6 +346,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
         if len(data) > 0:
             self.send_sysex(FirmataKeybCmd.SET, data)
+
 
 
     def keyb_default_layer_set(self, layer):
