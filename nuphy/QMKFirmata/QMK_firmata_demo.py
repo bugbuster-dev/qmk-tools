@@ -227,7 +227,7 @@ class RGBVideoTab(QWidget):
             self.cap.release()
             self.timer.stop()
 
-        fileName, _ = QFileDialog.getOpenFileName(self, "open file", "", "Video Files (*.mp4 *.avi *.mov *.webm)")
+        fileName, _ = QFileDialog.getOpenFileName(self, "open file", "", "Video Files (*.mp4 *.avi *.mov *.webm *.gif)")
         if fileName:
             self.cap = cv2.VideoCapture(fileName)
             fps = self.cap.get(cv2.CAP_PROP_FPS)  # Get the video's frame rate
@@ -249,6 +249,9 @@ class RGBVideoTab(QWidget):
             keyb_rgb = p.scaled(self.rgb_matrix_size[0], self.rgb_matrix_size[1])
             #self.videoLabel.setPixmap(QPixmap.fromImage(keyb_rgb))
             self.rgb_frame_signal.emit(keyb_rgb, self.RGB_multiplier)
+        else:
+            #print("Reached the end of the video, restarting...")
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Rewind the video
 
     def printRGBData(self, frame):
         # Example function to print RGB data of a frame
