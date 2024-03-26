@@ -35,6 +35,7 @@ app_height      = 1000
 class ConsoleTab(QWidget):
     signal_dbg_mask = Signal(int)
     signal_macwin_mode = Signal(str)
+    signal_rgb_matrix_mode = Signal(int)
 
     def __init__(self):
         super().__init__()
@@ -44,10 +45,13 @@ class ConsoleTab(QWidget):
         dbg_mask = int(self.dbgMaskInput.text(),16)
         self.signal_dbg_mask.emit(dbg_mask)
 
-    def update_keyb_macwin_mode(self, event):
+    def update_keyb_macwin_mode(self):
         macwin_mode = self.macWinModeSelector.currentText()
         self.signal_macwin_mode.emit(macwin_mode)
 
+    def update_keyb_rgb_matrix_mode(self):
+        matrix_mode = int(self.rgbMatrixModeInput.text())
+        self.signal_rgb_matrix_mode.emit(matrix_mode)
 
     def initUI(self):
         hLayout = QHBoxLayout()
@@ -68,6 +72,20 @@ class ConsoleTab(QWidget):
         hLayout.addWidget(dbgMaskLabel)
         hLayout.addWidget(self.dbgMaskInput)
 
+        # rgb matrix mode
+        rgbMaxtrixModeLabel = QLabel("rgb matrix mode")
+        self.rgbMatrixModeInput = QLineEdit()
+        regExp = QRegularExpression("[0-9]{1,2}")
+        self.rgbMatrixModeInput.setValidator(QRegularExpressionValidator(regExp))
+
+        self.rgbModeUpdateButton = QPushButton("set")
+        self.rgbModeUpdateButton.clicked.connect(self.update_keyb_rgb_matrix_mode)
+
+        hLayout.addWidget(self.rgbModeUpdateButton)
+        hLayout.addWidget(rgbMaxtrixModeLabel)
+        hLayout.addWidget(self.rgbMatrixModeInput)
+
+        # mac/win mode
         macWinLabel = QLabel("mac/win mode")
         self.macWinModeSelector = QComboBox()
         self.macWinModeSelector.addItem('m')
@@ -101,6 +119,9 @@ class ConsoleTab(QWidget):
 
     def update_macwin_mode(self, macwin_mode):
         self.macWinModeSelector.setCurrentIndex(0 if macwin_mode == 'm' else 1)
+
+    def update_rgb_matrix_mode(self, matrix_mode):
+        self.rgbMatrixModeInput.setText(f"{matrix_mode}")
 
 #-------------------------------------------------------------------------------
 
@@ -921,6 +942,7 @@ class MainWindow(QMainWindow):
         self.keyboard.signal_debug_mask.connect(self.console_tab.update_debug_mask)
         self.keyboard.signal_macwin_mode.connect(self.console_tab.update_macwin_mode)
         self.keyboard.signal_default_layer.connect(self.layer_switch_tab.on_default_layer_changed)
+        self.keyboard.signal_rgb_matrix_mode.connect(self.console_tab.update_rgb_matrix_mode)
 
         self.winfocus_listener = WinFocusListener()
         self.winfocus_listener.winfocus_signal.connect(self.layer_switch_tab.on_winfocus)
@@ -928,9 +950,12 @@ class MainWindow(QMainWindow):
 
         self.console_tab.signal_dbg_mask.connect(self.keyboard.keyb_dbg_mask_set)
         self.console_tab.signal_macwin_mode.connect(self.keyboard.keyb_macwin_mode_set)
+        self.console_tab.signal_rgb_matrix_mode.connect(self.keyboard.keyb_rgb_matrix_mode_set)
+
         self.rgb_matrix_tab.rgb_video_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
         self.rgb_matrix_tab.rgb_animation_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
         self.rgb_matrix_tab.rgb_audio_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
+
         self.layer_switch_tab.keyb_layer_set_signal.connect(self.keyboard.keyb_default_layer_set)
 
         self.keyboard.start()

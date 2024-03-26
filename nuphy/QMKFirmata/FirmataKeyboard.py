@@ -91,11 +91,12 @@ class FirmataKeybCmd:
     PUB        = 5 # battery status, mcu load, diagnostics, debug traces, ...
     SUB        = 6 # todo subscribe to for example battery status, mcu load, ...
 
-    ID_RGB_MATRIX_BUF      = 1
-    ID_DEFAULT_LAYER       = 2 # todo get default layer needed?
-    ID_DEBUG_MASK          = 3
-    ID_BATTERY_STATUS      = 4
-    ID_MACWIN_MODE         = 5
+    ID_RGB_MATRIX_BUF   = 1
+    ID_DEFAULT_LAYER    = 2
+    ID_DEBUG_MASK       = 3
+    ID_BATTERY_STATUS   = 4
+    ID_MACWIN_MODE      = 5
+    ID_RGB_MATRIX_MODE  = 6
 
 
 class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
@@ -107,6 +108,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
     signal_debug_mask = Signal(int)
     signal_macwin_mode = Signal(str)
     signal_default_layer = Signal(int)
+    signal_rgb_matrix_mode = Signal(int)
     #-------------------------------------------------------------------------------
 
     MAX_LEN_SYSEX_DATA = 60
@@ -248,6 +250,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_MACWIN_MODE])
         self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_DEBUG_MASK])
         self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_BATTERY_STATUS])
+        self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_RGB_MATRIX_MODE])
 
         time.sleep(0.5)
         print("-"*80)
@@ -294,6 +297,10 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             battery_level = buf[2]
             dbg.tr(f"battery charging: {battery_charging}, battery level: {battery_level}")
             #self.signal_battery_status.emit(battery_charging, battery_level)
+        elif buf[0] == FirmataKeybCmd.ID_RGB_MATRIX_MODE:
+            matrix_mode = buf[1]
+            dbg.tr(f"matrix mode: {matrix_mode}")
+            self.signal_rgb_matrix_mode.emit(matrix_mode)
 
 
     def console_line_handler(self, *data):
@@ -348,7 +355,6 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             self.send_sysex(FirmataKeybCmd.SET, data)
 
 
-
     def keyb_default_layer_set(self, layer):
         dbg = self.dbg['SYSEX_COMMAND']
         dbg.tr(f"keyb_default_layer_set: {layer}")
@@ -357,7 +363,6 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         data.append(FirmataKeybCmd.ID_DEFAULT_LAYER)
         data.append(min(layer, 255))
         self.send_sysex(FirmataKeybCmd.SET, data)
-
 
     def keyb_dbg_mask_set(self, dbg_mask):
         dbg = self.dbg['SYSEX_COMMAND']
@@ -375,6 +380,15 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         data = bytearray()
         data.append(FirmataKeybCmd.ID_MACWIN_MODE)
         data.append(ord(macwin_mode))
+        self.send_sysex(FirmataKeybCmd.SET, data)
+
+    def keyb_rgb_matrix_mode_set(self, mode):
+        dbg = self.dbg['SYSEX_COMMAND']
+        dbg.tr(f"keyb_rgb_matrix_mode_set: {mode}")
+
+        data = bytearray()
+        data.append(FirmataKeybCmd.ID_RGB_MATRIX_MODE)
+        data.append(mode)
         self.send_sysex(FirmataKeybCmd.SET, data)
 
 
