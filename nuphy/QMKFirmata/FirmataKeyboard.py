@@ -41,7 +41,7 @@ def combine_qimages(img1, img2):
     # Ensure the images are the same size
     if img1.size() != img2.size():
         print("Images are not the same size!")
-        return None
+        return img1
 
     # Combine the images
     for x in range(img1.width()):
@@ -154,6 +154,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         QtCore.QObject.__init__(self)
         #----------------------------------------------------
         #region debug tracers
+        self.debug = 0
         self.dbg = {}
         self.dbg['DEBUG']           = DebugTracer(print=1, trace=1)
         self.dbg['SYSEX_COMMAND']   = DebugTracer(print=0, trace=1)
@@ -310,20 +311,29 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
 
     def keyb_rgb_buf_set(self, img, rgb_multiplier):
-        dbg = self.dbg['RGB_BUF']
-        if dbg.print:
-            dbg.tr("-"*120)
-            dbg.tr(f"rgb mult {rgb_multiplier}")
+        if self.debug:
+            self.dbg['RGB_BUF'].tr("-"*120)
+            self.dbg['RGB_BUF'].tr(f"rgb mult {rgb_multiplier}")
+
+        #self.dbg['DEBUG'].tr(f"rgb img from sender {self.sender()} {img}")
+        if not img:
+            self.dbg['DEBUG'].tr(f"sender {self.sender()} stopped")
+            if self.sender() in self.img:
+                self.img.pop(self.sender())
+            return
 
         # multiple images senders -> combine images
-        #self.dbg['DEBUG'].tr(f"sender: {self.sender()}")
         combined_img = img.copy()
         # todo: use prev image to reduce flicker
         #prev_img = self.img[self.sender()]
         if len(self.img) > 1:
             for key in self.img:
                 if key != self.sender():
+                    #self.dbg['DEBUG'].tr(f"combine image from {key}")
                     combined_img = combine_qimages(combined_img, self.img[key])
+
+        #if not self.sender() in self.img:
+            #self.dbg['DEBUG'].tr(f"new sender {self.sender()} {img}")
 
         self.img[self.sender()] = img
         img = combined_img
@@ -342,9 +352,9 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 rgb_pixel = self.pixel_to_rgb_index_duration(pixel, self.xy_to_rgb_index(x, y), 200, rgb_multiplier)
                 data.extend(rgb_pixel)
 
-                if dbg.print:
-                    dbg.tr(f"{x:2},{y:2}=({pixel[0]:3},{pixel[1]:3},{pixel[2]:3})", end=" ")
-                    dbg.tr(rgb_pixel.hex(' '))
+                if self.debug:
+                    self.dbg['RGB_BUF'].tr(f"{x:2},{y:2}=({pixel[0]:3},{pixel[1]:3},{pixel[2]:3})", end=" ")
+                    self.dbg['RGB_BUF'].tr(rgb_pixel.hex(' '))
 
                 if len(data) >= self.MAX_LEN_SYSEX_DATA:
                     self.send_sysex(FirmataKeybCmd.SET, data)

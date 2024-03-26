@@ -1,5 +1,5 @@
 
-import sys, traceback
+import sys, time, traceback
 import cv2
 import numpy as np
 import pyaudio
@@ -250,6 +250,8 @@ class RGBVideoTab(QWidget):
         if self.cap is not None and self.cap.isOpened():
             self.cap.release()
             self.timer.stop()
+            self.rgb_frame_signal.emit(None, self.RGB_multiplier)
+
 
         fileName, _ = QFileDialog.getOpenFileName(self, "open file", "", "Video Files (*.mp4 *.avi *.mov *.webm *.gif)")
         if fileName:
@@ -351,6 +353,7 @@ class AudioCaptureThread(QThread):
 
         stream.stop_stream()
         stream.close()
+        dbg.tr(f"audio stream {stream} closed")
         p.terminate()
 
     def stop(self):
@@ -375,6 +378,7 @@ class RGBAudioTab(QWidget):
     def __init__(self, rgb_matrix_size):
         #-----------------------------------------------------------
         self.dbg = {}
+        self.dbg['DEBUG']       = DebugTracer(print=1, trace=1)
         self.dbg['FREQ_RANGE']  = DebugTracer(print=1, trace=1)
         self.dbg['PEAK_LEVEL']  = DebugTracer(print=0, trace=1)
         self.dbg['MAX_PEAK']    = DebugTracer(print=1, trace=1)
@@ -592,21 +596,28 @@ class RGBAudioTab(QWidget):
             self.keyb_rgb = img
 
         #-----------------------------------------------------------
-
-        self.rgb_frame_signal.emit(self.keyb_rgb, self.RGB_multiplier)
+        #self.dbg['DEBUG'].tr(f"send rgb {self.keyb_rgb}")
+        if self.running:
+            self.rgb_frame_signal.emit(self.keyb_rgb, self.RGB_multiplier)
+        else:
+            self.rgb_frame_signal.emit(None, self.RGB_multiplier)
 
     #-------------------------------------------------------------------------------
 
     def start(self):
         if not self.audioThread.isRunning():
+            self.running = True
             self.update_freq_rgb()
             self.update_freq_ranges()
             self.audioThread.connect_callback(self.processAudioPeakLevels)
             self.audioThread.start()
             self.startButton.setText("stop")
         else:
+            self.running = False
             self.audioThread.stop()
+            self.audioThread.wait()
             self.startButton.setText("start")
+
 
 #-------------------------------------------------------------------------------
 
@@ -792,7 +803,7 @@ class CodeTextEdit(QTextEdit):
         super().__init__(parent)
 
         self.setFont(QFont("Courier New", 9))
-        self.load_text_file("animation.pyfunc")
+        self.load_text_file("animation.py")
 
     def load_text_file(self, filepath):
         try:
@@ -814,11 +825,15 @@ class RGBAnimationTab(QWidget):
     rgb_frame_signal = Signal(QImage, object)  # Signal to send rgb frame
 
     def __init__(self, rgb_matrix_size):
+        self.dbg = {}
+        self.dbg['DEBUG']   = DebugTracer(print=1, trace=1)
+
+        self.rgb_matrix_size = rgb_matrix_size
         super().__init__()
         self.initUI()
-        self.rgb_matrix_size = rgb_matrix_size
 
     def initUI(self):
+        dbg = self.dbg['DEBUG']
         # Create a figure for plotting
         self.figure = Figure(facecolor='black')
         self.figure.subplots_adjust(left=0, right=1, bottom=0, top=1)  # Adjust margins
@@ -841,8 +856,13 @@ class RGBAnimationTab(QWidget):
         layout.addWidget(self.startButton)
         self.setLayout(layout)
 
-        self.figure.set_size_inches((4,3))
+        w_inch = 4
+        h_inch = self.rgb_matrix_size[1] / self.rgb_matrix_size[0] * w_inch
+        self.figure.set_size_inches((w_inch, h_inch))
         self.figure.set_dpi(100)
+        if dbg.print:
+            width, height = self.figure.get_size_inches() * self.figure.get_dpi()
+            dbg.tr(f"canvas size: {width}x{height}")
 
         # Parameters for the animation
         self.x_size = 20
@@ -870,20 +890,14 @@ class RGBAnimationTab(QWidget):
 
 
             if self.ani:
-                self.timer = QTimer()
-                self.timer.timeout.connect(self.captureAnimationFrame)
-                self.timer.start(1000/self.interval)
-
                 self.startButton.setText("stop")
         else:
-            self.timer.stop()
             self.ani.event_source.stop()
             self.ani = None
-
+            self.rgb_frame_signal.emit(None, (0,0,0))
             self.startButton.setText("start")
 
 
-    print_canvas_size = 0
     def captureAnimationFrame(self):
         if self.ani == None:
             return
@@ -893,9 +907,6 @@ class RGBAnimationTab(QWidget):
         self.canvas.draw()
         buffer = np.frombuffer(self.canvas.buffer_rgba(), dtype=np.uint8)
         width, height = self.figure.get_size_inches() * self.figure.get_dpi()
-        if self.print_canvas_size:
-            print(f"canvas size: {width}x{height}")
-            self.print_canvas_size = 0
         img = buffer.reshape(int(height), int(width), 4)
         img = rgba2rgb(img)
         qimage = QImage(img.data, width, height, QImage.Format_RGB888)
@@ -904,10 +915,13 @@ class RGBAnimationTab(QWidget):
 
         self.ani.resume()
 
+
     def _animate(self, i):
         ret = self.animate(i)
         if i == self.frames:
             self.figure.clear()
+
+        QTimer.singleShot(0, self.captureAnimationFrame)
         return ret
 
 #-------------------------------------------------------------------------------
@@ -941,15 +955,13 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(tab_widget)
         #-----------------------------------------------------------
 
+        #-----------------------------------------------------------
+        # connect signals
         self.keyboard.signal_console_output.connect(self.console_tab.update_text)
         self.keyboard.signal_debug_mask.connect(self.console_tab.update_debug_mask)
         self.keyboard.signal_macwin_mode.connect(self.console_tab.update_macwin_mode)
         self.keyboard.signal_default_layer.connect(self.layer_switch_tab.on_default_layer_changed)
         self.keyboard.signal_rgb_matrix_mode.connect(self.console_tab.update_rgb_matrix_mode)
-
-        self.winfocus_listener = WinFocusListener()
-        self.winfocus_listener.winfocus_signal.connect(self.layer_switch_tab.on_winfocus)
-        self.winfocus_listener.start()
 
         self.console_tab.signal_dbg_mask.connect(self.keyboard.keyb_dbg_mask_set)
         self.console_tab.signal_macwin_mode.connect(self.keyboard.keyb_macwin_mode_set)
@@ -961,6 +973,14 @@ class MainWindow(QMainWindow):
 
         self.layer_switch_tab.keyb_layer_set_signal.connect(self.keyboard.keyb_default_layer_set)
 
+        #-----------------------------------------------------------
+        # window focus listener
+        self.winfocus_listener = WinFocusListener()
+        self.winfocus_listener.winfocus_signal.connect(self.layer_switch_tab.on_winfocus)
+        self.winfocus_listener.start()
+
+        #-----------------------------------------------------------
+        # start keyboard communication
         self.keyboard.start()
 
     def closeEvent(self, event):
