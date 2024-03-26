@@ -111,6 +111,9 @@ class ConsoleTab(QWidget):
 
 
     def update_text(self, text):
+        cursor = self.console_output.textCursor()
+        cursor.movePosition(QTextCursor.End)
+        self.console_output.setTextCursor(cursor)
         self.console_output.insertPlainText(text)
         self.console_output.ensureCursorVisible()
 
