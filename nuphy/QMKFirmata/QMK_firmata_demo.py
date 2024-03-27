@@ -12,8 +12,6 @@ from PySide6.QtGui import QRegularExpressionValidator, QIntValidator, QDoubleVal
 #from PySide6.QtMultimedia import QMediaPlayer
 #from PySide6.QtMultimediaWidgets import QVideoWidget
 
-from windows_capture import WindowsCapture, Frame, InternalCaptureControl
-
 from WinFocusListener import WinFocusListener
 from FirmataKeyboard import FirmataKeyboard
 from DebugTracer import DebugTracer
@@ -623,11 +621,67 @@ class RGBAudioTab(QWidget):
 #-------------------------------------------------------------------------------
 
 # todo: capture window
-# - https://pyautogui.readthedocs.io/en/latest/screenshot.html
-# - https://github.com/learncodebygaming/opencv_tutorials/tree/master/004_window_capture
-# -
 class RGBWinCaptureTab(QWidget):
     rgb_frame_signal = Signal(QImage, object)  # Signal to send rgb frame
+
+    class WindowSelectorComboBox(QComboBox):
+
+        def __init__(self, parent):
+            self.parent = parent
+            super().__init__(None)
+
+        def mousePressEvent(self, event: QMouseEvent):
+            if event.button() == Qt.LeftButton:
+                self.clear()
+                window_names = self.parent.list_windows()
+                for name in window_names:
+                    if name[1]:
+                        self.addItems([name[1]])
+
+            # Call the base class implementation to ensure default behavior
+            super().mousePressEvent(event)
+
+
+    class WindowCaptureThread(QThread):
+        def __init__(self, window_name, resize, interval):
+            self.dbg = {}
+            self.dbg['DEBUG'] = DebugTracer(print=1, trace=1)
+
+            self.running = False
+            self.window_name = window_name
+            self.resize = resize
+            self.interval = interval
+            super().__init__()
+
+        def connect_callback(self, callback):
+            self.callback = callback
+
+        def run(self):
+            dbg = self.dbg['DEBUG']
+
+            self.running = True
+            self.windowcapture = WindowCapture(window_name=self.window_name)
+
+            while self.running:
+                try:
+                    img = self.windowcapture.get_screenshot()
+                    h, w, ch = img.shape
+                    #dbg.tr(f"window capture img shape: {w}x{h} {ch}")
+                    bytesPerLine = w*ch
+                    qimage = QImage(img.data, w, h, bytesPerLine, QImage.Format_BGR888)
+                    keyb_rgb = qimage.scaled(self.resize[0], self.resize[1])
+                    keyb_rgb = keyb_rgb.convertToFormat(QImage.Format_RGB888)
+                    self.callback(keyb_rgb)
+                except Exception as e:
+                    dbg.tr(f"error: {e}")
+                    pass
+
+                time.sleep(self.interval)
+
+            dbg.tr(f"window capture stopped")
+
+        def stop(self):
+            self.running = False
 
 
     def __init__(self, rgb_matrix_size):
@@ -636,14 +690,32 @@ class RGBWinCaptureTab(QWidget):
         self.dbg['DEBUG']       = DebugTracer(print=1, trace=1)
         #-----------------------------------------------------------
         self.rgb_matrix_size = rgb_matrix_size
+        self.windowCaptureThread = None
 
         super().__init__()
         self.initUI()
+
+    def list_windows(self):
+        window_names = WindowCapture.list_window_names()
+        return window_names
 
     def initUI(self):
         layout = QVBoxLayout()
         layout.addStretch(1)
 
+        #---------------------------------------
+        # (hwnd, window_name)
+        window_names = WindowCapture.list_window_names()
+        self.dbg['DEBUG'].tr(window_names)
+
+        self.windowSelector = self.WindowSelectorComboBox(self)
+        for name in window_names:
+            if name[1]:
+                self.windowSelector.addItems([name[1]])
+        layout.addWidget(self.windowSelector)
+        self.windowSelector.setCurrentIndex(0)
+
+        #---------------------------------------
         self.captureButton = QPushButton("start")
         self.captureButton.clicked.connect(self.start)
         layout.addWidget(self.captureButton)
@@ -651,49 +723,39 @@ class RGBWinCaptureTab(QWidget):
         self.setLayout(layout)
 
 
-    def start(self, winbdow_name=None):
+    def on_screen_capture(self, keyb_rgb):
+        if self.running:
+            self.rgb_frame_signal.emit(keyb_rgb, (1.0,1.0,1.0))
+        else:
+            self.rgb_frame_signal.emit(None, (0,0,0))
+
+
+    def start(self, window_name=None):
+        if self.windowCaptureThread:
+            self.stop()
+            return
+
         self.dbg['DEBUG'].tr("start win capture")
-        self.windowcapture = WindowCapture(window_name="Notepad")
 
-
-    def start_rust_windowscapture(self):
-        self.dbg['DEBUG'].tr("start win capture")
-
-        # Every Error From on_closed and on_frame_arrived Will End Up Here
-        capture = WindowsCapture(
-            cursor_capture=None,
-            draw_border=None,
-            monitor_index=None,
-            window_name=None,
-        )
-        self.capture = capture
-
-        # Called Every Time A New Frame Is Available
-        @capture.event
-        def on_frame_arrived(frame: Frame, capture_control: InternalCaptureControl):
-            print("New Frame Arrived")
-
-            # Save The Frame As An Image To The Specified Path
-            frame.save_as_image("image.png")
-
-            # Gracefully Stop The Capture Thread
-            capture_control.stop()
-
-
-        # Called When The Capture Item Closes Usually When The Window Closes, Capture
-        # Session Will End After This Function Ends
-        @capture.event
-        def on_closed():
-            print("Capture Session Closed")
-
-
-        capture.start()
+        try:
+            window_name = self.windowSelector.currentText()
+            self.windowCaptureThread = self.WindowCaptureThread(window_name, self.rgb_matrix_size, 0.1)
+            self.windowCaptureThread.connect_callback(self.on_screen_capture)
+            self.windowCaptureThread.start()
+        except Exception as e:
+            self.dbg['DEBUG'].tr(f"error: {e}")
+            self.stop()
+        else:
+            self.running = True
+            self.captureButton.setText("stop")
 
     def stop(self):
-        self.capture.stop()
+        self.windowCaptureThread.stop()
+        self.windowCaptureThread.wait()
+        self.windowCaptureThread = None
+        self.running = False
         self.dbg['DEBUG'].tr("win capture stopped")
-
-
+        self.captureButton.setText("start")
 
 
 #-------------------------------------------------------------------------------
@@ -1047,6 +1109,7 @@ class MainWindow(QMainWindow):
         self.rgb_matrix_tab.rgb_video_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
         self.rgb_matrix_tab.rgb_animation_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
         self.rgb_matrix_tab.rgb_audio_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
+        self.rgb_matrix_tab.rgb_capture_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
 
         self.layer_switch_tab.keyb_layer_set_signal.connect(self.keyboard.keyb_default_layer_set)
 

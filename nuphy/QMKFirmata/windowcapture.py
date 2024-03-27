@@ -80,11 +80,15 @@ class WindowCapture:
     # find the name of the window you're interested in.
     # once you have it, update window_capture()
     # https://stackoverflow.com/questions/55547940/how-to-get-a-list-of-the-name-of-every-open-window
-    def list_window_names(self):
+    @staticmethod
+    def list_window_names():
+        window_names = []
         def winEnumHandler(hwnd, ctx):
             if win32gui.IsWindowVisible(hwnd):
-                print(hex(hwnd), win32gui.GetWindowText(hwnd))
+                #print(hex(hwnd), win32gui.GetWindowText(hwnd))
+                window_names.append((hwnd, win32gui.GetWindowText(hwnd)))
         win32gui.EnumWindows(winEnumHandler, None)
+        return window_names
 
     # translate a pixel position on a screenshot image to a pixel position on the screen.
     # pos = (x, y)
