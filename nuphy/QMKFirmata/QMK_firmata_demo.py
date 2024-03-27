@@ -1,30 +1,28 @@
 
 import sys, time, traceback
-import cv2
-import numpy as np
-import pyaudio
+import cv2, pyaudio, numpy as np
 
 from PySide6 import QtCore
 from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout
 from PySide6.QtWidgets import QTextEdit, QPushButton, QFileDialog, QLabel, QSlider, QLineEdit, QComboBox, QSpacerItem, QSizePolicy
 from PySide6.QtCore import Qt, QThread, Signal, QUrl, QTimer, QSize
 from PySide6.QtCore import QRegularExpression
-from PySide6.QtMultimedia import QMediaPlayer
-from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtGui import QImage, QPixmap, QColor, QFont, QTextCursor, QFontMetrics, QMouseEvent, QKeyEvent
 from PySide6.QtGui import QRegularExpressionValidator, QIntValidator, QDoubleValidator
+#from PySide6.QtMultimedia import QMediaPlayer
+#from PySide6.QtMultimediaWidgets import QVideoWidget
 
-from serial.tools import list_ports
-
-import pyfirmata2
+from windows_capture import WindowsCapture, Frame, InternalCaptureControl
 
 from WinFocusListener import WinFocusListener
 from FirmataKeyboard import FirmataKeyboard
 from DebugTracer import DebugTracer
 
+from windowcapture import WindowCapture
+
 #-------------------------------------------------------------------------------
 
-firmata_port        = pyfirmata2.Arduino.AUTODETECT
+firmata_port        = None
 keyboard_vid_pid    =(0x19f5, 0x3265)
 
 app_width       = 800
@@ -143,10 +141,12 @@ class RGBMatrixTab(QWidget):
         self.rgb_video_tab = RGBVideoTab(self.rgb_matrix_size)
         self.rgb_animation_tab = RGBAnimationTab(self.rgb_matrix_size)
         self.rgb_audio_tab = RGBAudioTab(self.rgb_matrix_size)
+        self.rgb_capture_tab = RGBWinCaptureTab(self.rgb_matrix_size)
 
         self.tab_widget.addTab(self.rgb_video_tab, 'video')
         self.tab_widget.addTab(self.rgb_animation_tab, 'animation')
         self.tab_widget.addTab(self.rgb_audio_tab, 'audio')
+        self.tab_widget.addTab(self.rgb_capture_tab, 'capture')
 
         self.layout.addWidget(self.tab_widget)
         self.setLayout(self.layout)
@@ -251,7 +251,8 @@ class RGBVideoTab(QWidget):
             self.cap.release()
             self.timer.stop()
             self.rgb_frame_signal.emit(None, self.RGB_multiplier)
-
+            self.openButton.setText("open file")
+            return
 
         fileName, _ = QFileDialog.getOpenFileName(self, "open file", "", "Video Files (*.mp4 *.avi *.mov *.webm *.gif)")
         if fileName:
@@ -260,6 +261,7 @@ class RGBVideoTab(QWidget):
             self.frameRate = fps if fps > 0 else 25
             self.framerateSlider.setValue(int(self.frameRate))
             self.timer.start(1000 / self.frameRate)
+            self.openButton.setText("stop")
 
     def displayVideoFrame(self):
         ret, frame = self.cap.read()
@@ -617,6 +619,81 @@ class RGBAudioTab(QWidget):
             self.audioThread.stop()
             self.audioThread.wait()
             self.startButton.setText("start")
+
+#-------------------------------------------------------------------------------
+
+# todo: capture window
+# - https://pyautogui.readthedocs.io/en/latest/screenshot.html
+# - https://github.com/learncodebygaming/opencv_tutorials/tree/master/004_window_capture
+# -
+class RGBWinCaptureTab(QWidget):
+    rgb_frame_signal = Signal(QImage, object)  # Signal to send rgb frame
+
+
+    def __init__(self, rgb_matrix_size):
+        #-----------------------------------------------------------
+        self.dbg = {}
+        self.dbg['DEBUG']       = DebugTracer(print=1, trace=1)
+        #-----------------------------------------------------------
+        self.rgb_matrix_size = rgb_matrix_size
+
+        super().__init__()
+        self.initUI()
+
+    def initUI(self):
+        layout = QVBoxLayout()
+        layout.addStretch(1)
+
+        self.captureButton = QPushButton("start")
+        self.captureButton.clicked.connect(self.start)
+        layout.addWidget(self.captureButton)
+
+        self.setLayout(layout)
+
+
+    def start(self, winbdow_name=None):
+        self.dbg['DEBUG'].tr("start win capture")
+        self.windowcapture = WindowCapture(window_name="Notepad")
+
+
+    def start_rust_windowscapture(self):
+        self.dbg['DEBUG'].tr("start win capture")
+
+        # Every Error From on_closed and on_frame_arrived Will End Up Here
+        capture = WindowsCapture(
+            cursor_capture=None,
+            draw_border=None,
+            monitor_index=None,
+            window_name=None,
+        )
+        self.capture = capture
+
+        # Called Every Time A New Frame Is Available
+        @capture.event
+        def on_frame_arrived(frame: Frame, capture_control: InternalCaptureControl):
+            print("New Frame Arrived")
+
+            # Save The Frame As An Image To The Specified Path
+            frame.save_as_image("image.png")
+
+            # Gracefully Stop The Capture Thread
+            capture_control.stop()
+
+
+        # Called When The Capture Item Closes Usually When The Window Closes, Capture
+        # Session Will End After This Function Ends
+        @capture.event
+        def on_closed():
+            print("Capture Session Closed")
+
+
+        capture.start()
+
+    def stop(self):
+        self.capture.stop()
+        self.dbg['DEBUG'].tr("win capture stopped")
+
+
 
 
 #-------------------------------------------------------------------------------
@@ -996,6 +1073,7 @@ def main():
     sys.exit(app.exec())
 
 def list_com_ports(vid = None, pid = None):
+    from serial.tools import list_ports
     device_list = list_ports.comports()
     for device in device_list:
         print(f"{device}: {device.vid:04x}:{device.pid:04x}")

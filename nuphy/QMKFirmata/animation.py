@@ -68,7 +68,7 @@ def animate_spiral(self, i):
     for rect in self.rectangles:
         rect.set_facecolor('black')
 
-    self.angle += 10  # Increase the angle for rotation
+    self.angle += 10 + ((i/10)%15) * 5  # Increase the angle for rotation
 
     image_size = (self.cols, self.rows)
     center = (image_size[0] // 2, image_size[1] // 2)
