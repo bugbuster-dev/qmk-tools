@@ -72,7 +72,7 @@ def animate_spiral(self, i):
 
     image_size = (self.cols, self.rows)
     center = (image_size[0] // 2, image_size[1] // 2)
-    radius = min(image_size) // 2 + 1
+    radius = self.cols // 2
     spiral_width = 2  # Width of the spiral band
 
     # Draw the spiral
