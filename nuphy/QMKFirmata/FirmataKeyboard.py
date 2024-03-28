@@ -97,7 +97,7 @@ class FirmataKeybCmd:
     ID_BATTERY_STATUS   = 4
     ID_MACWIN_MODE      = 5
     ID_RGB_MATRIX_MODE  = 6
-
+    ID_DYNLD_FUNCTION   = 7 # dynamic loaded function
 
 class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
     """
@@ -157,7 +157,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.debug = 0
         self.dbg = {}
         self.dbg['DEBUG']           = DebugTracer(print=1, trace=1)
-        self.dbg['SYSEX_COMMAND']   = DebugTracer(print=0, trace=1)
+        self.dbg['SYSEX_COMMAND']   = DebugTracer(print=1, trace=1)
         self.dbg['SYSEX_RESPONSE']  = DebugTracer(print=0, trace=1)
         self.dbg['RGB_BUF']         = DebugTracer(print=0, trace=1)
         dbg = self.dbg['DEBUG']
@@ -383,6 +383,16 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         data.append(min(dbg_mask, 255))
         self.send_sysex(FirmataKeybCmd.SET, data)
 
+        # todo: remove tmp code
+        if dbg_mask == 0x1:
+            data = bytearray([0xa5, 0x20, 0x70, 0x47])
+            #data = bytearray([0x03 , 0x78 , 0x40 , 0x78 , 0x18 , 0x18 , 0x70 , 0x47])
+            self.keyb_dynld_function_set(9, data)
+
+        if dbg_mask == 0x11:
+            data = bytearray([ 0x1e, 0x21, 0x03, 0x78, 0x10, 0xb5, 0x59, 0x43, 0x00, 0x23, 0x14, 0x68, 0x18, 0x00, 0xff, 0x22, 0xc9,0xb2, 0xa0, 0x47, 0x01, 0x20, 0x10, 0xbd ])
+            self.keyb_dynld_function_set(0, data)
+
     def keyb_macwin_mode_set(self, macwin_mode):
         dbg = self.dbg['SYSEX_COMMAND']
         dbg.tr(f"keyb_macwin_mode_set: {macwin_mode}")
@@ -401,7 +411,36 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         data.append(mode)
         self.send_sysex(FirmataKeybCmd.SET, data)
 
+    def keyb_dynld_function_set(self, fun_id, buf):
+        dbg = self.dbg['SYSEX_COMMAND']
+        dbg.tr(f"keyb_dynld_function_set: {fun_id} {buf.hex(' ')}")
 
+        data = bytearray()
+        data.append(FirmataKeybCmd.ID_DYNLD_FUNCTION)
+        id = [fun_id & 0xff, (fun_id >> 8) & 0xff]
+        offset = [0, 0]
+        data.extend(id)
+        data.extend(offset)
+
+        i = 0
+        while i < len(buf):
+            if len(data) >= self.MAX_LEN_SYSEX_DATA:
+                self.send_sysex(FirmataKeybCmd.SET, data)
+
+                data = bytearray()
+                data.append(FirmataKeybCmd.ID_DYNLD_FUNCTION)
+                id = [fun_id & 0xff, (fun_id >> 8) & 0xff]
+                offset = [i & 0xff, (i >> 8) & 0xff]
+                data.extend(id)
+                data.extend(offset)
+
+            data.append(buf[i])
+            i += 1
+
+        if len(data) > 0:
+            self.send_sysex(FirmataKeybCmd.SET, data)
+
+'''
     def loop_leds(self, pos):
         if 0:
             data = bytearray()
@@ -427,4 +466,4 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             self.send_sysex(FirmataKeybCmd.SET, data)
 
             pos.i = (pos.i + 1) % self.num_rgb_leds()
-
+'''

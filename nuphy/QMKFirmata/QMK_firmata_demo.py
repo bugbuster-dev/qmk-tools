@@ -4,10 +4,10 @@ import cv2, pyaudio, numpy as np
 
 from PySide6 import QtCore
 from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout
-from PySide6.QtWidgets import QTextEdit, QPushButton, QFileDialog, QLabel, QSlider, QLineEdit, QComboBox, QSpacerItem, QSizePolicy
+from PySide6.QtWidgets import QTextEdit, QPushButton, QFileDialog, QLabel, QSlider, QLineEdit, QComboBox, QSpacerItem, QSizePolicy, QMessageBox
 from PySide6.QtCore import Qt, QThread, Signal, QUrl, QTimer, QSize
 from PySide6.QtCore import QRegularExpression
-from PySide6.QtGui import QImage, QPixmap, QColor, QFont, QTextCursor, QFontMetrics, QMouseEvent, QKeyEvent
+from PySide6.QtGui import QImage, QPixmap, QColor, QFont, QTextCursor, QFontMetrics, QMouseEvent, QKeyEvent, QKeySequence
 from PySide6.QtGui import QRegularExpressionValidator, QIntValidator, QDoubleValidator
 #from PySide6.QtMultimedia import QMediaPlayer
 #from PySide6.QtMultimediaWidgets import QVideoWidget
@@ -140,11 +140,13 @@ class RGBMatrixTab(QWidget):
         self.rgb_animation_tab = RGBAnimationTab(self.rgb_matrix_size)
         self.rgb_audio_tab = RGBAudioTab(self.rgb_matrix_size)
         self.rgb_capture_tab = RGBWinCaptureTab(self.rgb_matrix_size)
+        self.rgb_dynld_animation_tab = RGBDynLDAnimationTab()
 
         self.tab_widget.addTab(self.rgb_video_tab, 'video')
         self.tab_widget.addTab(self.rgb_animation_tab, 'animation')
         self.tab_widget.addTab(self.rgb_audio_tab, 'audio')
         self.tab_widget.addTab(self.rgb_capture_tab, 'capture')
+        self.tab_widget.addTab(self.rgb_dynld_animation_tab, 'dynld animation')
 
         self.layout.addWidget(self.tab_widget)
         self.setLayout(self.layout)
@@ -620,7 +622,6 @@ class RGBAudioTab(QWidget):
 
 #-------------------------------------------------------------------------------
 
-# todo: capture window
 class RGBWinCaptureTab(QWidget):
     rgb_frame_signal = Signal(QImage, object)  # Signal to send rgb frame
 
@@ -706,7 +707,7 @@ class RGBWinCaptureTab(QWidget):
         #---------------------------------------
         # (hwnd, window_name)
         window_names = WindowCapture.list_window_names()
-        self.dbg['DEBUG'].tr(window_names)
+        #self.dbg['DEBUG'].tr(window_names)
 
         self.windowSelector = self.WindowSelectorComboBox(self)
         for name in window_names:
@@ -756,6 +757,153 @@ class RGBWinCaptureTab(QWidget):
         self.running = False
         self.dbg['DEBUG'].tr("win capture stopped")
         self.captureButton.setText("start")
+
+
+#-------------------------------------------------------------------------------
+
+class HexEditor1(QTextEdit):
+    def __init__(self):
+        super().__init__()
+        self.setFont(QFont("Courier New", 9))
+        self.setAcceptRichText(False)  # Accept only plain text
+
+    def keyPressEvent (self, event: QKeyEvent):
+        # Filter for hex characters (0-9, a-f, A-F) and control characters
+        key = event.key()
+        text = event.text()
+        if (text.isdigit() or text.lower() in 'abcdef') or key in (Qt.Key_Backspace, Qt.Key_Delete, Qt.Key_Left, Qt.Key_Right, Qt.Key_Space):
+            super().keyPressEvent(event)
+            self.formatText()
+        elif key == Qt.Key_V and (event.modifiers() & Qt.ControlModifier):
+            # Allow pasting and then format
+            super().keyPressEvent(event)
+            self.formatText()
+
+    def formatText(self):
+            cursor_pos = self.textCursor().position()
+            # Remove spaces and newlines for clean formatting
+            text = self.toPlainText().replace(" ", "").replace("\n", "")
+            # Insert space after every 2 hex characters and newline after every 32 characters
+            formatted_text = ' '.join(text[i:i+2] for i in range(0, len(text), 2))
+            formatted_text = '\n'.join(formatted_text[i:i+48] for i in range(0, len(formatted_text), 48))  # 32 hex chars + 16 spaces = 48
+            self.setPlainText(formatted_text)
+            # Attempt to restore cursor position, adjusted for spaces added/removed
+            line_adjustment = (cursor_pos // 48) * 48  # Adjust for newlines
+            new_cursor_pos = cursor_pos + (cursor_pos // 2) + line_adjustment
+            self.textCursor().setPosition(min(new_cursor_pos, len(formatted_text)))
+            self.setTextCursor(self.textCursor())
+
+    def is_hex(self, s):
+        try:
+            int(s, 16)
+            return True
+        except ValueError:
+            return False
+
+
+class HexEditor(QTextEdit):
+    def __init__(self):
+        super().__init__()
+        self.setFont(QFont("Courier New", 9))
+        self.setAcceptRichText(False)  # Only plain text to avoid formatting
+
+    def keyPressEvent(self, event: QKeyEvent):
+        if event.matches(QKeySequence.Paste):
+            self.handlePaste()
+            return
+
+        # Allow undo
+        if event.matches(QKeySequence.Undo):
+            self.undo()
+            return
+        # Allow redo
+        elif event.matches(QKeySequence.Redo):
+            self.redo()
+            return
+
+        text = event.text()
+        # Only allow hexadecimal characters
+        if text.upper() in '0123456789ABCDEF':
+            super().keyPressEvent(event)
+            self.formatText()
+        # Allow backspace and delete
+        elif event.key() in (Qt.Key_Backspace, Qt.Key_Delete):
+            super().keyPressEvent(event)
+            self.formatText()
+        # Ignore other keys
+        else:
+            event.ignore()
+
+    def handlePaste(self):
+            clipboard = QApplication.clipboard()
+            text = clipboard.text()
+            # Validate and clean the pasted text
+            cleaned_text = ''.join(filter(lambda x: x.upper() in '0123456789ABCDEF', text.upper()))
+            if cleaned_text:
+                # Only insert cleaned text
+                self.insertPlainText(cleaned_text)
+                self.formatText()
+                cursor = self.textCursor()
+                cursor.movePosition(QTextCursor.End)
+                self.setTextCursor(cursor)
+            else:
+                QMessageBox.warning(self, "Invalid Paste Content", "Pasted text contains non-hexadecimal characters.")
+
+    def formatText_(self):
+        text = self.toPlainText().upper().replace(" ", "")  # Remove existing spaces and convert to uppercase
+        formatted_text = " ".join(text[i:i+2] for i in range(0, len(text), 2))  # Add space after every 2 characters
+        self.setPlainText(formatted_text)
+
+        # Move cursor to the end
+        cursor = self.textCursor()
+        cursor.movePosition(QTextCursor.End)
+        self.setTextCursor(cursor)
+
+
+    def formatText(self):
+        cursor_pos = self.textCursor().position()
+        # Remove spaces and newlines for clean formatting
+        text = self.toPlainText().replace(" ", "").replace("\n", "")
+        # Insert space after every 2 hex characters and newline after every 32 characters
+        formatted_text = ' '.join(text[i:i+2] for i in range(0, len(text), 2))
+        formatted_text = '\n'.join(formatted_text[i:i+48] for i in range(0, len(formatted_text), 48))  # 32 hex chars + 16 spaces = 48
+        self.setPlainText(formatted_text)
+        # Attempt to restore cursor position, adjusted for spaces added/removed
+        #line_adjustment = (cursor_pos // 48) * 48  # Adjust for newlines
+        #new_cursor_pos = cursor_pos + (cursor_pos // 2) + line_adjustment
+        #self.textCursor().setPosition(min(new_cursor_pos, len(formatted_text)))
+        # Move cursor to the end
+        cursor = self.textCursor()
+        cursor.setPosition(cursor_pos)
+        self.setTextCursor(cursor)
+
+
+class RGBDynLDAnimationTab(QWidget):
+    def __init__(self):
+        #-----------------------------------------------------------
+        self.dbg = {}
+        self.dbg['DEBUG']       = DebugTracer(print=1, trace=1)
+        #-----------------------------------------------------------
+
+        super().__init__()
+        self.initUI()
+
+    def initUI(self):
+        layout = QVBoxLayout()
+        layout.addStretch(1)
+
+        self.dynldFunTextEdit = HexEditor()
+        layout.addWidget(self.dynldFunTextEdit)
+
+        #---------------------------------------
+        self.loadButton = QPushButton("load")
+        self.loadButton.clicked.connect(self.loadDynLDAnimationFunc)
+        layout.addWidget(self.loadButton)
+
+        self.setLayout(layout)
+
+    def loadDynLDAnimationFunc(self):
+        pass
 
 
 #-------------------------------------------------------------------------------
