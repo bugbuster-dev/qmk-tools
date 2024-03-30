@@ -43,7 +43,6 @@ def combine_qimages(img1, img2):
         print("Images are not the same size!")
         return img1
 
-    # Combine the images
     for x in range(img1.width()):
         for y in range(img1.height()):
             pixel1 = img1.pixel(x, y)
@@ -61,6 +60,19 @@ def combine_qimages(img1, img2):
             # Set the new pixel value
             img1.setPixel(x, y, QColor(r, g, b).rgb())
 
+    return img1
+
+
+def combine_qimages_painter(img1, img2):
+    # Ensure the images are the same size
+    if img1.size() != img2.size():
+        print("Images are not the same size!")
+        return img1
+
+    # Combine the images
+    painter = QPainter(img1)
+    painter.drawImage(0, 0, img2)  # Adjust coordinates as needed
+    painter.end()
     return img1
 
 #-------------------------------------------------------------------------------
@@ -349,6 +361,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         width = img.width()
         arr = np.ndarray((height, width, 3), buffer=img.constBits(), strides=[img.bytesPerLine(), 3, 1], dtype=np.uint8)
 
+        num_sends = 0
         data = bytearray()
         data.append(FirmataKeybCmd.ID_RGB_MATRIX_BUF)
         for y in range(height):
@@ -363,11 +376,20 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
                 if len(data) >= self.MAX_LEN_SYSEX_DATA:
                     self.send_sysex(FirmataKeybCmd.SET, data)
+                    num_sends += 1
+
+                    # todo sync with keyboard to avoid buffer overflow
+                    if num_sends % 2 == 0:
+                        time.sleep(0.002)
+
                     data = bytearray()
                     data.append(FirmataKeybCmd.ID_RGB_MATRIX_BUF)
 
         if len(data) > 0:
             self.send_sysex(FirmataKeybCmd.SET, data)
+            num_sends += 1
+
+        #time.sleep(0.005)
 
 
     def keyb_default_layer_set(self, layer):
@@ -417,11 +439,15 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         data.extend(id)
         data.extend(offset)
 
+        num_sends = 0
         i = 0
         while i < len(buf):
             if len(data) >= self.MAX_LEN_SYSEX_DATA:
                 self.send_sysex(FirmataKeybCmd.SET, data)
+                num_sends += 1
                 # todo: sync with keyboard to avoid buffer overflow
+                if num_sends % 2 == 0:
+                    time.sleep(0.002)
 
                 data = bytearray()
                 data.append(FirmataKeybCmd.ID_DYNLD_FUNCTION)
@@ -435,6 +461,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
         if len(data) > 0:
             self.send_sysex(FirmataKeybCmd.SET, data)
+            num_sends += 1
 
         # todo define DYNLD_... function ids
         DYNLD_TEST_FUNCTION = 1
