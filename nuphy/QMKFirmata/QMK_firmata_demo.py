@@ -3,7 +3,7 @@ import sys, time, traceback
 import cv2, pyaudio, numpy as np
 
 from PySide6 import QtCore
-from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout
+from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QFrame
 from PySide6.QtWidgets import QTextEdit, QPushButton, QFileDialog, QLabel, QSlider, QLineEdit, QComboBox, QSpacerItem, QSizePolicy, QMessageBox
 from PySide6.QtCore import Qt, QThread, Signal, QUrl, QTimer, QSize
 from PySide6.QtCore import QRegularExpression
@@ -32,6 +32,7 @@ class ConsoleTab(QWidget):
     signal_dbg_mask = Signal(int)
     signal_macwin_mode = Signal(str)
     signal_rgb_matrix_mode = Signal(int)
+    signal_dynld_function = Signal(int, bytearray)
 
     def __init__(self):
         super().__init__()
@@ -49,38 +50,75 @@ class ConsoleTab(QWidget):
         matrix_mode = int(self.rgbMatrixModeInput.text())
         self.signal_rgb_matrix_mode.emit(matrix_mode)
 
+    def update_keyb_dynld_test_fun(self):
+        DYNLD_TEST_FUNC = 1
+        bin_file = 'V:\\shared\\nuphy\\custom_testfunc.bin'
+        # Open the file in binary read mode and read its contents into a bytearray
+        with open(bin_file, 'rb') as file:
+            buf = bytearray(file.read())
+            self.signal_dynld_function.emit(DYNLD_TEST_FUNC, buf)
+
+
+
     def initUI(self):
         hLayout = QHBoxLayout()
         dbgMaskLabel = QLabel("debug mask")
         metrics = QFontMetrics(dbgMaskLabel.font())
         dbgMaskLabel.setFixedHeight(metrics.height())
 
+        #---------------------------------------
         # debug mask hex byte input
         self.dbgMaskInput = QLineEdit()
         # Set a validator to allow only hex characters (0-9, A-F, a-f) and limit to 2 characters
         regExp = QRegularExpression("[0-9A-Fa-f]{1,2}")
         self.dbgMaskInput.setValidator(QRegularExpressionValidator(regExp))
+        metrics = QFontMetrics(self.dbgMaskInput.font())
+        width = metrics.horizontalAdvance('W') * 3  # 'W' is used as it's typically the widest character
+        self.dbgMaskInput.setFixedWidth(width)
 
         self.dbgMaskUpdateButton = QPushButton("set")
         self.dbgMaskUpdateButton.clicked.connect(self.update_keyb_dbg_mask)
+        self.dbgMaskUpdateButton.setFixedWidth(width)
 
-        hLayout.addWidget(self.dbgMaskUpdateButton)
         hLayout.addWidget(dbgMaskLabel)
         hLayout.addWidget(self.dbgMaskInput)
+        hLayout.addWidget(self.dbgMaskUpdateButton)
+        separator = QFrame()
+        separator.setFrameShape(QFrame.VLine)  # Set the frame shape to a vertical line
+        hLayout.addWidget(separator)
 
+        #---------------------------------------
         # rgb matrix mode
         rgbMaxtrixModeLabel = QLabel("rgb matrix mode")
         self.rgbMatrixModeInput = QLineEdit()
         regExp = QRegularExpression("[0-9]{1,2}")
         self.rgbMatrixModeInput.setValidator(QRegularExpressionValidator(regExp))
+        metrics = QFontMetrics(self.rgbMatrixModeInput.font())
+        width = metrics.horizontalAdvance('W') * 3  # 'W' is used as it's typically the widest character
+        self.rgbMatrixModeInput.setFixedWidth(width)
 
         self.rgbModeUpdateButton = QPushButton("set")
         self.rgbModeUpdateButton.clicked.connect(self.update_keyb_rgb_matrix_mode)
+        self.rgbModeUpdateButton.setFixedWidth(width)
 
-        hLayout.addWidget(self.rgbModeUpdateButton)
         hLayout.addWidget(rgbMaxtrixModeLabel)
         hLayout.addWidget(self.rgbMatrixModeInput)
+        hLayout.addWidget(self.rgbModeUpdateButton)
+        separator = QFrame()
+        separator.setFrameShape(QFrame.VLine)  # Set the frame shape to a vertical line
+        hLayout.addWidget(separator)
 
+        #---------------------------------------
+        # dynld test function
+        self.dynldTestFunButton = QPushButton("dynld test")
+        self.dynldTestFunButton.clicked.connect(self.update_keyb_dynld_test_fun)
+
+        hLayout.addWidget(self.dynldTestFunButton)
+        separator = QFrame()
+        separator.setFrameShape(QFrame.VLine)  # Set the frame shape to a vertical line
+        hLayout.addWidget(separator)
+
+        #---------------------------------------
         # mac/win mode
         macWinLabel = QLabel("mac/win mode")
         self.macWinModeSelector = QComboBox()
@@ -91,8 +129,10 @@ class ConsoleTab(QWidget):
         hLayout.addWidget(self.macWinModeSelector)
         self.macWinModeSelector.setCurrentIndex(1)
         self.macWinModeSelector.currentIndexChanged.connect(self.update_keyb_macwin_mode)
+        self.macWinModeSelector.setFixedWidth(width)
 
         #---------------------------------------
+        # console output
         layout = QVBoxLayout()
         self.console_output = QTextEdit()
         self.console_output.setReadOnly(True)
@@ -751,55 +791,15 @@ class RGBWinCaptureTab(QWidget):
             self.captureButton.setText("stop")
 
     def stop(self):
+        self.running = False
         self.windowCaptureThread.stop()
         self.windowCaptureThread.wait()
         self.windowCaptureThread = None
-        self.running = False
         self.dbg['DEBUG'].tr("win capture stopped")
         self.captureButton.setText("start")
 
 
 #-------------------------------------------------------------------------------
-
-class HexEditor1(QTextEdit):
-    def __init__(self):
-        super().__init__()
-        self.setFont(QFont("Courier New", 9))
-        self.setAcceptRichText(False)  # Accept only plain text
-
-    def keyPressEvent (self, event: QKeyEvent):
-        # Filter for hex characters (0-9, a-f, A-F) and control characters
-        key = event.key()
-        text = event.text()
-        if (text.isdigit() or text.lower() in 'abcdef') or key in (Qt.Key_Backspace, Qt.Key_Delete, Qt.Key_Left, Qt.Key_Right, Qt.Key_Space):
-            super().keyPressEvent(event)
-            self.formatText()
-        elif key == Qt.Key_V and (event.modifiers() & Qt.ControlModifier):
-            # Allow pasting and then format
-            super().keyPressEvent(event)
-            self.formatText()
-
-    def formatText(self):
-            cursor_pos = self.textCursor().position()
-            # Remove spaces and newlines for clean formatting
-            text = self.toPlainText().replace(" ", "").replace("\n", "")
-            # Insert space after every 2 hex characters and newline after every 32 characters
-            formatted_text = ' '.join(text[i:i+2] for i in range(0, len(text), 2))
-            formatted_text = '\n'.join(formatted_text[i:i+48] for i in range(0, len(formatted_text), 48))  # 32 hex chars + 16 spaces = 48
-            self.setPlainText(formatted_text)
-            # Attempt to restore cursor position, adjusted for spaces added/removed
-            line_adjustment = (cursor_pos // 48) * 48  # Adjust for newlines
-            new_cursor_pos = cursor_pos + (cursor_pos // 2) + line_adjustment
-            self.textCursor().setPosition(min(new_cursor_pos, len(formatted_text)))
-            self.setTextCursor(self.textCursor())
-
-    def is_hex(self, s):
-        try:
-            int(s, 16)
-            return True
-        except ValueError:
-            return False
-
 
 class HexEditor(QTextEdit):
     def __init__(self):
@@ -849,16 +849,6 @@ class HexEditor(QTextEdit):
             else:
                 QMessageBox.warning(self, "Invalid Paste Content", "Pasted text contains non-hexadecimal characters.")
 
-    def formatText_(self):
-        text = self.toPlainText().upper().replace(" ", "")  # Remove existing spaces and convert to uppercase
-        formatted_text = " ".join(text[i:i+2] for i in range(0, len(text), 2))  # Add space after every 2 characters
-        self.setPlainText(formatted_text)
-
-        # Move cursor to the end
-        cursor = self.textCursor()
-        cursor.movePosition(QTextCursor.End)
-        self.setTextCursor(cursor)
-
 
     def formatText(self):
         cursor_pos = self.textCursor().position()
@@ -868,17 +858,32 @@ class HexEditor(QTextEdit):
         formatted_text = ' '.join(text[i:i+2] for i in range(0, len(text), 2))
         formatted_text = '\n'.join(formatted_text[i:i+48] for i in range(0, len(formatted_text), 48))  # 32 hex chars + 16 spaces = 48
         self.setPlainText(formatted_text)
-        # Attempt to restore cursor position, adjusted for spaces added/removed
-        #line_adjustment = (cursor_pos // 48) * 48  # Adjust for newlines
-        #new_cursor_pos = cursor_pos + (cursor_pos // 2) + line_adjustment
-        #self.textCursor().setPosition(min(new_cursor_pos, len(formatted_text)))
-        # Move cursor to the end
         cursor = self.textCursor()
         cursor.setPosition(cursor_pos)
         self.setTextCursor(cursor)
 
+    def is_hex(self, s):
+        try:
+            int(s, 16)
+            return True
+        except ValueError:
+            return False
+
+    def getBinaryContent(self):
+        # Remove spaces and newlines to get a clean hex string
+        hex_str = self.toPlainText().replace(" ", "").replace("\n", "")
+        try:
+            # Convert hex string to a binary array (bytes object)
+            data = bytes.fromhex(hex_str)
+            return data
+        except ValueError:
+            # Handle the case where the hex string is invalid
+            QMessageBox.warning(self, "Invalid Hex Content", "The content contains non-hexadecimal characters or an incomplete byte.")
+            return None
 
 class RGBDynLDAnimationTab(QWidget):
+    signal_dynld_function = Signal(int, bytearray)
+
     def __init__(self):
         #-----------------------------------------------------------
         self.dbg = {}
@@ -903,7 +908,11 @@ class RGBDynLDAnimationTab(QWidget):
         self.setLayout(layout)
 
     def loadDynLDAnimationFunc(self):
-        pass
+        fundata = self.dynldFunTextEdit.getBinaryContent()
+        if fundata:
+            DYNLD_ANIMATION_FUNC = 0
+            self.signal_dynld_function.emit(DYNLD_ANIMATION_FUNC, fundata)
+
 
 
 #-------------------------------------------------------------------------------
@@ -1253,13 +1262,17 @@ class MainWindow(QMainWindow):
         self.console_tab.signal_dbg_mask.connect(self.keyboard.keyb_dbg_mask_set)
         self.console_tab.signal_macwin_mode.connect(self.keyboard.keyb_macwin_mode_set)
         self.console_tab.signal_rgb_matrix_mode.connect(self.keyboard.keyb_rgb_matrix_mode_set)
+        self.console_tab.signal_dynld_function.connect(self.keyboard.keyb_dynld_function_set)
 
         self.rgb_matrix_tab.rgb_video_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
         self.rgb_matrix_tab.rgb_animation_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
         self.rgb_matrix_tab.rgb_audio_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
         self.rgb_matrix_tab.rgb_capture_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
+        self.rgb_matrix_tab.rgb_dynld_animation_tab.signal_dynld_function.connect(self.keyboard.keyb_dynld_function_set)
 
         self.layer_switch_tab.keyb_layer_set_signal.connect(self.keyboard.keyb_default_layer_set)
+
+
 
         #-----------------------------------------------------------
         # window focus listener
