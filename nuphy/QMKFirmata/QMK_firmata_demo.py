@@ -897,17 +897,42 @@ class RGBDynLDAnimationTab(QWidget):
         layout = QVBoxLayout()
         layout.addStretch(1)
 
+        #---------------------------------------
+        # dynld animation bin file
+        hLayout = QHBoxLayout()
+        dynldBinLabel = QLabel("animation bin")
+        self.dynldBinInput = QLineEdit("v:\shared\qmk\dynld_animation.bin")
+        hLayout.addWidget(dynldBinLabel)
+        hLayout.addWidget(self.dynldBinInput)
+        self.loadButton = QPushButton("load")
+        self.loadButton.clicked.connect(self.loadDynLDAnimationFunc)
+        hLayout.addWidget(self.loadButton)
+        layout.addLayout(hLayout)
+
+        #---------------------------------------
         self.dynldFunTextEdit = HexEditor()
+        self.loadDynLDAnimationFunc()
+
         layout.addWidget(self.dynldFunTextEdit)
 
         #---------------------------------------
-        self.loadButton = QPushButton("load")
-        self.loadButton.clicked.connect(self.loadDynLDAnimationFunc)
-        layout.addWidget(self.loadButton)
+        self.sendButton = QPushButton("send to keyboard")
+        self.sendButton.clicked.connect(self.sendDynLDAnimationFunc)
+        layout.addWidget(self.sendButton)
 
         self.setLayout(layout)
 
     def loadDynLDAnimationFunc(self):
+        try:
+            with open(self.dynldBinInput.text(), 'rb') as file:
+                buf = bytearray(file.read())
+                hexbuf = buf.hex(' ')
+                self.dynldFunTextEdit.setText(hexbuf)
+                self.dynldFunTextEdit.formatText()
+        except Exception as e:
+            self.dbg['DEBUG'].tr(f"error: {e}")
+
+    def sendDynLDAnimationFunc(self):
         fundata = self.dynldFunTextEdit.getBinaryContent()
         if fundata:
             DYNLD_ANIMATION_FUNC = 0
