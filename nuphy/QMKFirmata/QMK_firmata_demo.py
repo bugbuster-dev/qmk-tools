@@ -719,6 +719,7 @@ class RGBWinCaptureTab(QWidget):
 
                 time.sleep(self.interval)
 
+            self.callback(None)
             dbg.tr(f"window capture stopped")
 
         def stop(self):
@@ -765,11 +766,7 @@ class RGBWinCaptureTab(QWidget):
 
 
     def on_screen_capture(self, keyb_rgb):
-        if self.running:
-            self.rgb_frame_signal.emit(keyb_rgb, (1.0,1.0,1.0))
-        else:
-            self.rgb_frame_signal.emit(None, (0,0,0))
-
+        self.rgb_frame_signal.emit(keyb_rgb, (1.0,1.0,1.0))
 
     def start(self, window_name=None):
         if self.windowCaptureThread:
