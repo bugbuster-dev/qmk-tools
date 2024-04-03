@@ -21,7 +21,7 @@ from windowcapture import WindowCapture
 #-------------------------------------------------------------------------------
 
 firmata_port        = None
-keyboard_vid_pid    =(0x19f5, 0x3265)
+keyboard_vid_pid    = None
 
 app_width       = 800
 app_height      = 1000
@@ -1294,8 +1294,6 @@ class MainWindow(QMainWindow):
 
         self.layer_switch_tab.keyb_layer_set_signal.connect(self.keyboard.keyb_default_layer_set)
 
-
-
         #-----------------------------------------------------------
         # window focus listener
         self.winfocus_listener = WinFocusListener()
@@ -1328,6 +1326,14 @@ def list_com_ports(vid = None, pid = None):
 
 #-------------------------------------------------------------------------------
 
+from keyboards.NuphyAir96V2 import NuphyAir96V2
+from keyboards.KeychronQ3Max import KeychronQ3Max
+
+keyboard = NuphyAir96V2
+keyboard = KeychronQ3Max
+
 if __name__ == "__main__":
     #list_com_ports()
+    keyboard_vid_pid = keyboard.VID, keyboard.PID
+    print (f"keyboard: {keyboard.NAME} ({hex(keyboard_vid_pid[0])}:{hex(keyboard_vid_pid[1])})")
     main()

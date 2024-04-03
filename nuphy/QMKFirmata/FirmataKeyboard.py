@@ -5,10 +5,12 @@ from PySide6 import QtCore
 from PySide6.QtGui import QImage, QColor, QPainter
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
 import numpy as np
-
-import serial
-from serial.tools import list_ports
 import time
+
+import hid
+import serial
+from serial import SerialBase, SerialException
+from serial.tools import list_ports
 
 from DebugTracer import DebugTracer
 
@@ -17,7 +19,6 @@ import importlib.util
 import inspect
 import os
 from pathlib import Path
-
 
 #-------------------------------------------------------------------------------
 
@@ -36,7 +37,7 @@ def find_com_port(vid, pid):
     return None
 #endregion
 
-
+#region combine images
 def combine_qimages(img1, img2):
     # Ensure the images are the same size
     if img1.size() != img2.size():
@@ -62,7 +63,6 @@ def combine_qimages(img1, img2):
 
     return img1
 
-
 def combine_qimages_painter(img1, img2):
     # Ensure the images are the same size
     if img1.size() != img2.size():
@@ -74,6 +74,89 @@ def combine_qimages_painter(img1, img2):
     painter.drawImage(0, 0, img2)  # Adjust coordinates as needed
     painter.end()
     return img1
+#endregion
+
+#-------------------------------------------------------------------------------
+
+class SerialRawHID(SerialBase):
+    def __init__(self, vid, pid, timeout=100):
+        self.vid = vid
+        self.pid = pid
+        self.timeout = timeout
+        self.hid_device = None
+        self._port = "{:04x}:{:04x}".format(vid, pid)
+        self.open()
+
+        self.data = bytearray()
+        self.write(bytearray([0x00]))
+        self._read_msg()
+
+    def _reconfigure_port(self):
+        pass
+
+    def __str__(self) -> str:
+        return "RAWHID: vid={:04x}, pid={:04x}".format(self.vid, self.pid)
+
+    def _reconfigure_port(self):
+        pass
+
+    def _read_msg(self):
+        data = bytearray(self.hid_device.read(32, self.timeout))
+        #print(f"rawhid read:{data.hex(' ')}")
+        if len(data) == 0:
+            return
+
+        if data[0] == 0xFA:
+            data.pop(0)
+
+        self.data.extend(data)
+
+    def inWaiting(self):
+        if len(self.data) == 0:
+            self._read_msg()
+        return len(self.data)
+
+    def open(self):
+        try:
+            self.hid_device = hid.device()
+            self.hid_device.open(self.vid, self.pid)
+            self.hid_device.set_nonblocking(False)
+            print(f"Opened HID device: {self.hid_device}"  )
+        except IOError as e:
+            self.hid_device = None
+            raise SerialException(f"Could not open HID device: {e}")
+
+    def is_open(self):
+        return self.hid_device != None
+
+    def close(self):
+        if self.hid_device:
+            self.hid_device.close()
+            self.hid_device = None
+
+    def write(self, data):
+        if not self.hid_device:
+            raise SerialException("device not open")
+
+        data = bytearray([0x00, 0xFA]) + data
+        #print(f"rawhid write:{data.hex(' ')}")
+        return self.hid_device.write(data)
+
+    def read(self, size=1):
+        if not self.hid_device:
+            raise SerialException("device not open")
+
+        if len(self.data) == 0:
+            self._read_msg()
+
+        if len(self.data) > 0:
+            return chr(self.data.pop(0))
+
+    def read_all(self):
+        pass
+
+    def read_until(self, expected=b'\n', size=None):
+        pass
 
 #-------------------------------------------------------------------------------
 
@@ -130,6 +213,9 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
     @staticmethod
     def pixel_to_rgb_index_duration(pixel, index, duration, brightness=(1.0,1.0,1.0)):
+        if index < 0:
+            return None
+
         data = bytearray()
         #print(brightness)
         data.append(index)
@@ -195,6 +281,8 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         if self.name == None:
             self.name = self.port
 
+        self.port_type = "serial"
+
         # load "keyboard models", keyboard model contains name, vid/pid, rgb matrix size, ...
         self.keyboardModel, self.keyboardModelVidPid = self.loadKeyboardModels()
         if dbg.print:
@@ -204,13 +292,23 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 #dbg.tr(f"vid pid: {vid_pid}, Class Type: {class_type}")
 
         if self.port == None and self.vid_pid:
-            self.port = find_com_port(self.vid_pid[0], self.vid_pid[1])
             self.keyboardModel = self.keyboardModelVidPid[(self.vid_pid[0], self.vid_pid[1])]
-            dbg.tr(f"using keyboard: {self.keyboardModel}")
+            try:
+                self.port_type = self.keyboardModel.PORT_TYPE
+            except Exception as e:
+                pass
+
+            self.port = find_com_port(self.vid_pid[0], self.vid_pid[1])
+            dbg.tr(f"using keyboard: {self.keyboardModel} on port {self.port}")
             self.name = self.keyboardModel.name()
 
         self.samplerThread = pyfirmata2.util.Iterator(self)
-        self.sp = serial.Serial(self.port, 115200, timeout=1)
+
+        if self.port_type == "rawhid":
+            self.sp = SerialRawHID(self.vid_pid[0], self.vid_pid[1])
+            self.MAX_LEN_SYSEX_DATA = 24
+        else:
+            self.sp = serial.Serial(self.port, 115200, timeout=1)
 
         # pretend its an arduino
         self._layout = pyfirmata2.BOARDS['arduino']
@@ -368,7 +466,8 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             for x in range(width):
                 pixel = arr[y, x]
                 rgb_pixel = self.pixel_to_rgb_index_duration(pixel, self.xy_to_rgb_index(x, y), 200, rgb_multiplier)
-                data.extend(rgb_pixel)
+                if rgb_pixel:
+                    data.extend(rgb_pixel)
 
                 if self.debug:
                     self.dbg['RGB_BUF'].tr(f"{x:2},{y:2}=({pixel[0]:3},{pixel[1]:3},{pixel[2]:3})", end=" ")
@@ -379,8 +478,13 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                     num_sends += 1
 
                     # todo sync with keyboard to avoid buffer overflow
-                    if num_sends % 2 == 0:
-                        time.sleep(0.002)
+                    # rawhid uses small msg size so sleep after more sends
+                    if self.port_type == "rawhid":
+                        if num_sends % 10 == 0:
+                            time.sleep(0.002)
+                    else:
+                        if num_sends % 2 == 0:
+                            time.sleep(0.002)
 
                     data = bytearray()
                     data.append(FirmataKeybCmd.ID_RGB_MATRIX_BUF)

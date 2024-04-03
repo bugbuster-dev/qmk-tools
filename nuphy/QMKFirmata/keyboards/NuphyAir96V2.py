@@ -40,56 +40,20 @@ class NuphyAir96V2:
     def num_layers():
         return NuphyAir96V2.NUM_LAYERS
 
-    # pixel position to RGB index
-    #(0,0)..(18,0)  ->      0..18
-    #(0,1)..(18,1)  ->      19..36
-    #(0,2)..(18,2)  ->      37..54
-    #(0,3)..(18,3)  ->      55..70
-    #(0,4)..(18,4)  ->      71..87
-    #(0,5)..(18,5)  ->      88..99
+    # pixel position to (rgb) led index
     @staticmethod
     def xy_to_rgb_index(x, y):
-        if y == 0:
-            return min(x,18)
-        if y == 1:
-            if x >= 14:
-                x = x - 1
-            return min(x+19,36)
-        if y == 2:
-            if x < 2:
-                x = 0
-            else:
-                x = x - 1
-            return min(x+37,54)
-        if y == 3:
-            if x < 2:
-                x = 0
-            elif x == 18:
-                return 54
-            elif x <= 13:
-                x = x - 1
-            else:
-                x = x - 2
-            return min(x+55,70)
-        if y == 4:
-            if x < 2:
-                x = 0
-            elif x <= 12:
-                x = x - 1
-            else:
-                x = x - 2
-            return min(x+71,87)
-        if y == 5:
-            if x < 4:
-                if x == 3:
-                    x = 2
-            elif x >= 4 and x <= 9:
-                x = 3
-            elif x == 18:
-                return 87
-            else:
-                x = x - 6
-            return min(x+88,99)
-
-        return 0
-
+        __ = -1
+        xy_to_led = [
+        [  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18 ],
+        [ 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 32, 33, 34, 35, 36 ],
+        [ 37, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54 ],
+        [ 55, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 67, 68, 69, 70, 54 ],
+        [ 71, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 82, 83, 84, 85, 86, 87 ],
+        [ 88, 89, 90, 90, 91, 91, 91, 91, 91, 91, 92, 93, 94, 95, 96, 97, 98, 99, 87 ],
+        ]
+        #print(f"xy_to_led[{y}][{x}] = {xy_to_led[y][x]}")
+        try:
+            return xy_to_led[y][x]
+        except:
+            return -1
