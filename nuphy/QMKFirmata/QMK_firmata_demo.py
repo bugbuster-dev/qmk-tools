@@ -397,6 +397,7 @@ class AudioCaptureThread(QThread):
         stream.close()
         dbg.tr(f"audio stream {stream} closed")
         p.terminate()
+        self.callback(None)
 
     def stop(self):
         self.running = False
@@ -572,34 +573,37 @@ class RGBAudioTab(QWidget):
 
     #-------------------------------------------------------------------------------
     def processAudioPeakLevels(self, peak_levels):
+        if peak_levels is None:
+            self.rgb_frame_signal.emit(None, self.RGB_multiplier)
+            return
+
         self.sample_count += 1
         self.dbg['PEAK_LEVEL'].tr(f"peak {self.sample_count}: {peak_levels}")
 
-        peak_level = 0
+        # update "running max level", after N samples "max level" is adjusted with this
+        peak_level = 0 # current sample peak level
         for i, lvl in enumerate(peak_levels):
-            if peak_levels[i] > self.max_level_running:
-                self.max_level_running = peak_levels[i]
-            if peak_levels[i] > peak_level:
-                peak_level = peak_levels[i]
+            if lvl > self.max_level_running:
+                self.max_level_running = lvl
+            if lvl > peak_level:
+                peak_level = lvl
 
-        # update max level every N "peak samples"
+        # update "max level" every N samples, brightness is based on current peak levels and "max level"
         if self.sample_count == 30:
             self.sample_count = 0
-
             max_level_input = 0
-            max_level_running = self.max_level_running
             try:
                 max_level_input = int(self.maxLevelInput.text())
             except:
                 pass
 
-            if max_level_input > 0:
+            if max_level_input > 0: # user defined max level
                 self.max_level = max_level_input
             else:
                 self.max_level += (self.max_level_running - self.max_level)/2
 
+            self.dbg['MAX_PEAK'].tr(f"max level: {self.max_level_running} ({self.max_level})")
             self.max_level_running = 0
-            self.dbg['MAX_PEAK'].tr(f"max level: {max_level_running} ({self.max_level})")
 
         if all(level < 0.05 for (level) in peak_levels):
             # no audio
@@ -609,6 +613,7 @@ class RGBAudioTab(QWidget):
         self.keyb_rgb.fill(QColor(r,g,b))
 
         #-----------------------------------------------------------
+        # mask image to disable leds depending on peak level
         if self.keyb_rgb_mask_mode != 0:
             img = self.keyb_rgb.convertToFormat(QImage.Format_ARGB32)
             self.keyb_rgb_mask.fill(0)
@@ -641,8 +646,6 @@ class RGBAudioTab(QWidget):
         #self.dbg['DEBUG'].tr(f"send rgb {self.keyb_rgb}")
         if self.running:
             self.rgb_frame_signal.emit(self.keyb_rgb, self.RGB_multiplier)
-        else:
-            self.rgb_frame_signal.emit(None, self.RGB_multiplier)
 
     #-------------------------------------------------------------------------------
 

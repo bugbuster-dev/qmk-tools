@@ -267,6 +267,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.samplerThread = None
 
         self.img = {}   # sender -> rgb QImage
+        self.img_ts_prev = 0 # previous image timestamp
         self.name = None
         self.port = None
         self.vid_pid = None
@@ -306,7 +307,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
         if self.port_type == "rawhid":
             self.sp = SerialRawHID(self.vid_pid[0], self.vid_pid[1])
-            self.MAX_LEN_SYSEX_DATA = 24
+            self.MAX_LEN_SYSEX_DATA = 26
         else:
             self.sp = serial.Serial(self.port, 115200, timeout=1)
 
@@ -439,7 +440,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
         # multiple images senders -> combine images
         combined_img = img.copy()
-        # todo: use prev image to reduce flicker
+        # todo: use prev image to smoothen brightness changes
         #prev_img = self.img[self.sender()]
         if len(self.img) > 1:
             for key in self.img:
@@ -453,6 +454,12 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.img[self.sender()] = img
         img = combined_img
 
+        # send max N images per second
+        if time.monotonic() - self.img_ts_prev < 0.040:
+            #print("skip")
+            return
+
+        self.img_ts_prev = time.monotonic()
         #-------------------------------------------------------------------------------
         # iterate through the image pixels and convert to "keyboard rgb pixels" and send to keyboard
         height = img.height()
