@@ -663,6 +663,11 @@ class RGBAudioTab(QWidget):
             self.audioThread.wait()
             self.startButton.setText("start")
 
+    def closeEvent(self, event):
+        if self.audioThread.isRunning():
+            self.audioThread.stop()
+            self.audioThread.wait()
+
 #-------------------------------------------------------------------------------
 
 class RGBWinCaptureTab(QWidget):
@@ -798,6 +803,9 @@ class RGBWinCaptureTab(QWidget):
         self.dbg['DEBUG'].tr("win capture stopped")
         self.captureButton.setText("start")
 
+    def closeEvent(self, event):
+        if self.windowCaptureThread:
+            self.stop()
 
 #-------------------------------------------------------------------------------
 
@@ -1244,6 +1252,11 @@ class RGBAnimationTab(QWidget):
 
         QTimer.singleShot(0, self.captureAnimationFrame)
         return ret
+
+    def closeEvent(self, event):
+        if self.ani:
+            self.ani.event_source.stop()
+            self.ani = None
 
 #-------------------------------------------------------------------------------
 

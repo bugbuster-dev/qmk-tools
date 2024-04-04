@@ -104,6 +104,7 @@ class SerialRawHID(SerialBase):
         data = bytearray(self.hid_device.read(32, self.timeout))
         #print(f"rawhid read:{data.hex(' ')}")
         if len(data) == 0:
+            #self.data.append(0) # dummy data to feed firmata
             return
 
         if data[0] == 0xFA:
@@ -210,6 +211,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
     #-------------------------------------------------------------------------------
 
     MAX_LEN_SYSEX_DATA = 60
+    RAW_EPSIZE_FIRMATA = 64 # 32
 
     @staticmethod
     def pixel_to_rgb_index_duration(pixel, index, duration, brightness=(1.0,1.0,1.0)):
@@ -307,7 +309,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
         if self.port_type == "rawhid":
             self.sp = SerialRawHID(self.vid_pid[0], self.vid_pid[1])
-            self.MAX_LEN_SYSEX_DATA = 26
+            self.MAX_LEN_SYSEX_DATA = self.RAW_EPSIZE_FIRMATA - 4
         else:
             self.sp = serial.Serial(self.port, 115200, timeout=1)
 
@@ -466,6 +468,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         width = img.width()
         arr = np.ndarray((height, width, 3), buffer=img.constBits(), strides=[img.bytesPerLine(), 3, 1], dtype=np.uint8)
 
+        RGB_PIXEL_SIZE = 5
         num_sends = 0
         data = bytearray()
         data.append(FirmataKeybCmd.ID_RGB_MATRIX_BUF)
@@ -480,7 +483,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                     self.dbg['RGB_BUF'].tr(f"{x:2},{y:2}=({pixel[0]:3},{pixel[1]:3},{pixel[2]:3})", end=" ")
                     self.dbg['RGB_BUF'].tr(rgb_pixel.hex(' '))
 
-                if len(data) >= self.MAX_LEN_SYSEX_DATA:
+                if len(data) + RGB_PIXEL_SIZE > self.MAX_LEN_SYSEX_DATA:
                     self.send_sysex(FirmataKeybCmd.SET, data)
                     num_sends += 1
 
