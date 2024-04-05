@@ -692,12 +692,13 @@ class RGBWinCaptureTab(QWidget):
 
 
     class WindowCaptureThread(QThread):
-        def __init__(self, window_name, resize, interval):
+        def __init__(self, window_name, window_off_size, resize, interval):
             self.dbg = {}
             self.dbg['DEBUG'] = DebugTracer(print=1, trace=1)
 
             self.running = False
             self.window_name = window_name
+            self.window_off_size = window_off_size
             self.resize = resize
             self.interval = interval
             super().__init__()
@@ -710,25 +711,37 @@ class RGBWinCaptureTab(QWidget):
 
             self.running = True
             self.windowcapture = WindowCapture(window_name=self.window_name)
+            try:
+                img = self.windowcapture.get_screenshot()
+                h, w, ch = img.shape
+                dbg.tr(f"window capture img shape: {w}x{h} {ch}")
+            except Exception as e:
+                pass
 
+            self.update_off_size(self.window_off_size)
             while self.running:
                 try:
                     img = self.windowcapture.get_screenshot()
                     h, w, ch = img.shape
-                    #dbg.tr(f"window capture img shape: {w}x{h} {ch}")
                     bytesPerLine = w*ch
                     qimage = QImage(img.data, w, h, bytesPerLine, QImage.Format_BGR888)
                     keyb_rgb = qimage.scaled(self.resize[0], self.resize[1])
-                    keyb_rgb = keyb_rgb.convertToFormat(QImage.Format_RGB888)
+                    #keyb_rgb = keyb_rgb.convertToFormat(QImage.Format_RGB888)
                     self.callback(keyb_rgb)
                 except Exception as e:
                     dbg.tr(f"error: {e}")
-                    pass
+                    break
 
                 time.sleep(self.interval)
 
             self.callback(None)
-            dbg.tr(f"window capture stopped")
+            dbg.tr(f"window capture thread stopped")
+
+
+        def update_off_size(self, window_off_size):
+            self.window_off_size = window_off_size
+            if self.windowcapture:
+                self.windowcapture.update_off_size(window_off_size)
 
         def stop(self):
             self.running = False
@@ -754,10 +767,36 @@ class RGBWinCaptureTab(QWidget):
         layout.addStretch(1)
 
         #---------------------------------------
+        hlayout = QHBoxLayout()
+        hlayout.addStretch(1)
+        capturePosLabel = QLabel("select window to capture below and select x,y,w,h of this window")
+        self.capturePosX = QLineEdit()
+        self.capturePosY = QLineEdit()
+        self.captureWidth = QLineEdit()
+        self.captureHeight = QLineEdit()
+        self.capturePosX.setValidator(QIntValidator())
+        self.capturePosY.setValidator(QIntValidator())
+        self.captureWidth.setValidator(QIntValidator())
+        self.captureHeight.setValidator(QIntValidator())
+        self.capturePosX.setText("0")
+        self.capturePosY.setText("0")
+        self.captureWidth.setText("360")
+        self.captureHeight.setText("280")
+        self.capturePosX.setFixedWidth(50)
+        self.capturePosY.setFixedWidth(50)
+        self.captureWidth.setFixedWidth(50)
+        self.captureHeight.setFixedWidth(50)
+        hlayout.addWidget(capturePosLabel)
+        hlayout.addWidget(self.capturePosX)
+        hlayout.addWidget(self.capturePosY)
+        hlayout.addWidget(self.captureWidth)
+        hlayout.addWidget(self.captureHeight)
+        layout.addLayout(hlayout)
+
+        #---------------------------------------
         # (hwnd, window_name)
         window_names = WindowCapture.list_window_names()
         #self.dbg['DEBUG'].tr(window_names)
-
         self.windowSelector = self.WindowSelectorComboBox(self)
         for name in window_names:
             if name[1]:
@@ -772,12 +811,13 @@ class RGBWinCaptureTab(QWidget):
 
         self.setLayout(layout)
 
-
     def on_screen_capture(self, keyb_rgb):
         self.rgb_frame_signal.emit(keyb_rgb, (1.0,1.0,1.0))
+        if keyb_rgb == None:
+            self._stopped()
 
     def start(self, window_name=None):
-        if self.windowCaptureThread:
+        if self.windowCaptureThread and self.windowCaptureThread.isRunning():
             self.stop()
             return
 
@@ -785,7 +825,8 @@ class RGBWinCaptureTab(QWidget):
 
         try:
             window_name = self.windowSelector.currentText()
-            self.windowCaptureThread = self.WindowCaptureThread(window_name, self.rgb_matrix_size, 0.1)
+            window_off_size = (int(self.capturePosX.text()), int(self.capturePosY.text()), int(self.captureWidth.text()), int(self.captureHeight.text()))
+            self.windowCaptureThread = self.WindowCaptureThread(window_name, window_off_size, self.rgb_matrix_size, 0.1)
             self.windowCaptureThread.connect_callback(self.on_screen_capture)
             self.windowCaptureThread.start()
         except Exception as e:
@@ -795,13 +836,16 @@ class RGBWinCaptureTab(QWidget):
             self.running = True
             self.captureButton.setText("stop")
 
-    def stop(self):
+    def _stopped(self):
         self.running = False
+        self.dbg['DEBUG'].tr("win capture stopped")
+        self.captureButton.setText("start")
+
+    def stop(self):
         self.windowCaptureThread.stop()
         self.windowCaptureThread.wait()
         self.windowCaptureThread = None
-        self.dbg['DEBUG'].tr("win capture stopped")
-        self.captureButton.setText("start")
+        self._stopped()
 
     def closeEvent(self, event):
         if self.windowCaptureThread:
@@ -1326,8 +1370,44 @@ class MainWindow(QMainWindow):
         event.accept()
 
 
+class KeyboardSelectionPopup(QMessageBox):
+    def __init__(self, keyboards):
+        super().__init__()
+        self.setWindowTitle('Select Keyboard')
+        self.setText('select the keyboard:')
+
+        # dropdown (combo box) for keyboard selection
+        self.comboBox = QComboBox()
+        self.comboBox.addItems(keyboards)
+
+        # Add the combo box to the QMessageBox layout
+        layout = self.layout()
+        layout.addWidget(self.comboBox, 1, 1, 1, layout.columnCount())
+
+        # Add an OK button
+        self.addButton(QMessageBox.Ok)
+
+        # Connect the OK button click to a handler (this example uses lambda for simplicity)
+        self.buttonClicked.connect(lambda: self.accept())
+
+    def selected_keyboard(self):
+        return self.comboBox.currentText()
+
+
+def detect_keyboards():
+    return []
+    #return ['Keyboard 1', 'Keyboard 2', 'Keyboard 3']
+
+
 def main():
     app = QApplication(sys.argv)
+
+    keyboards = detect_keyboards()
+    if len(keyboards):
+        selection_popup = KeyboardSelectionPopup(keyboards)
+        if selection_popup.exec():
+            selected_keyboard = selection_popup.selected_keyboard()
+
     main_window = MainWindow()
     main_window.show()
     sys.exit(app.exec())
@@ -1346,7 +1426,7 @@ from keyboards.NuphyAir96V2 import NuphyAir96V2
 from keyboards.KeychronQ3Max import KeychronQ3Max
 
 keyboard = NuphyAir96V2
-keyboard = KeychronQ3Max
+#keyboard = KeychronQ3Max
 
 if __name__ == "__main__":
     #list_com_ports()

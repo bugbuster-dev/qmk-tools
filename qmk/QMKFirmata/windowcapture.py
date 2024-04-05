@@ -40,6 +40,12 @@ class WindowCapture:
         self.offset_x = window_rect[0] + self.cropped_x
         self.offset_y = window_rect[1] + self.cropped_y
 
+    def update_off_size(self, window_off_size):
+        self.cropped_x = window_off_size[0]
+        self.cropped_y = window_off_size[1]
+        self.w = window_off_size[2]
+        self.h = window_off_size[3]
+
     def get_screenshot(self):
 
         # get the window image data
