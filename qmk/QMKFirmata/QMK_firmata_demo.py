@@ -1,5 +1,4 @@
-
-import sys, time, traceback
+import sys, time, hid, argparse
 import cv2, pyaudio, numpy as np
 
 from PySide6 import QtCore
@@ -19,9 +18,6 @@ from DebugTracer import DebugTracer
 from windowcapture import WindowCapture
 
 #-------------------------------------------------------------------------------
-
-firmata_port        = None
-keyboard_vid_pid    = None
 
 app_width       = 800
 app_height      = 1000
@@ -1305,7 +1301,8 @@ class RGBAnimationTab(QWidget):
 #-------------------------------------------------------------------------------
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, keyboard_vid_pid):
+        self.keyboard_vid_pid = keyboard_vid_pid
         super().__init__()
         self.initUI()
 
@@ -1315,7 +1312,7 @@ class MainWindow(QMainWindow):
         self.setFixedSize(app_width, app_height)
 
         # instantiate firmata keyboard
-        self.keyboard = FirmataKeyboard(port=firmata_port, vid_pid=keyboard_vid_pid)
+        self.keyboard = FirmataKeyboard(port=None, vid_pid=self.keyboard_vid_pid)
         rgb_matrix_size = self.keyboard.rgb_matrix_size()
         num_keyb_layers = self.keyboard.num_layers()
 
@@ -1373,8 +1370,8 @@ class MainWindow(QMainWindow):
 class KeyboardSelectionPopup(QMessageBox):
     def __init__(self, keyboards):
         super().__init__()
-        self.setWindowTitle('Select Keyboard')
-        self.setText('select the keyboard:')
+        self.setWindowTitle('select keyboard')
+        self.setText('keyboard:')
 
         # dropdown (combo box) for keyboard selection
         self.comboBox = QComboBox()
@@ -1395,41 +1392,48 @@ class KeyboardSelectionPopup(QMessageBox):
 
 
 def detect_keyboards():
-    return []
-    #return ['Keyboard 1', 'Keyboard 2', 'Keyboard 3']
+    hid_devices = hid.enumerate()
+    def device_attached(vendor_id, product_id):
+        for device in hid_devices:
+            if device['vendor_id'] == vendor_id and device['product_id'] == product_id:
+                return True
+        return False
+
+    keyboard_models = FirmataKeyboard.loadKeyboardModels()
+    keyboards = []
+    print (f"keyboards: {keyboard_models[0]}")
+    for model in keyboard_models[0].values():
+        if device_attached(model.VID, model.PID):
+            print (f"keyboard found: {model.NAME} ({hex(model.VID)}:{hex(model.PID)})")
+            keyboards.append(model.NAME)
+
+    return keyboards, keyboard_models[0]
 
 
-def main():
+def main(keyboard_vid_pid):
     app = QApplication(sys.argv)
 
-    keyboards = detect_keyboards()
-    if len(keyboards):
-        selection_popup = KeyboardSelectionPopup(keyboards)
-        if selection_popup.exec():
-            selected_keyboard = selection_popup.selected_keyboard()
+    selected_keyboard = ""
+    if keyboard_vid_pid[0] == None:
+        keyboards, keyb_models = detect_keyboards()
+        if len(keyboards):
+            selection_popup = KeyboardSelectionPopup(keyboards)
+            if selection_popup.exec():
+                selected_keyboard = selection_popup.selected_keyboard()
+                keyboard_vid_pid = keyb_models[selected_keyboard].VID, keyb_models[selected_keyboard].PID
 
-    main_window = MainWindow()
+    main_window = MainWindow(keyboard_vid_pid)
     main_window.show()
     sys.exit(app.exec())
 
-def list_com_ports(vid = None, pid = None):
-    from serial.tools import list_ports
-    device_list = list_ports.comports()
-    for device in device_list:
-        print(f"{device}: {device.vid:04x}:{device.pid:04x}")
-        if device.vid == vid and (pid == None or device.pid == pid):
-            return device.device
-
 #-------------------------------------------------------------------------------
 
-from keyboards.NuphyAir96V2 import NuphyAir96V2
-from keyboards.KeychronQ3Max import KeychronQ3Max
-
-keyboard = NuphyAir96V2
-#keyboard = KeychronQ3Max
-
 if __name__ == "__main__":
-    #list_com_ports()
-    keyboard_vid_pid = keyboard.VID, keyboard.PID
-    print (f"keyboard: {keyboard.NAME} ({hex(keyboard_vid_pid[0])}:{hex(keyboard_vid_pid[1])})")
-    main()
+    parser = argparse.ArgumentParser(description="keyboard vendor/product id")
+    parser.add_argument('--vid', required=False, type=lambda x: int(x, 16),
+                        help='keyboard vid in hex')
+    parser.add_argument('--pid', required=False, type=lambda x: int(x, 16),
+                        help='keyboard pid in hex')
+    args = parser.parse_args()
+
+    main((args.vid, args.pid))
