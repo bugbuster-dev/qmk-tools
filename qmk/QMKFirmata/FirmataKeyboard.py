@@ -8,6 +8,7 @@ import numpy as np
 import time
 
 import hid
+import pywinusb.hid
 import serial
 from serial import SerialBase, SerialException
 from serial.tools import list_ports
@@ -78,8 +79,77 @@ def combine_qimages_painter(img1, img2):
 
 #-------------------------------------------------------------------------------
 
+FIRMATA_MSG = 0xFA
+QMK_RAW_USAGE_PAGE = 0xFF60
+QMK_RAW_USAGE_ID = 0x61
+
+class RawHIDDevice(pywinusb.hid.HidDevice):
+    def __init__(self, epsize=64):
+        self.epsize = epsize
+        self.out_report = None
+        self.inp_report = None
+        self.input_data = bytearray()
+        #self.out_usage = pywinusb.hid.get_full_usage_id(QMK_RAW_USAGE_PAGE, QMK_RAW_USAGE_ID+2)
+
+    def read(self, size, timeout=100):
+        # only size == self.epsize is supported
+        size -= 1 # remove report id
+        if len(self.input_data) >= size:
+            # Extract the first n bytes
+            data = self.input_data[:size]
+            # Remove the first n bytes from the original buffer
+            self.input_data[:] = self.input_data[size:]
+            return data
+        return None
+
+    def write(self, data):
+        # pywinusb expects report data size of epsize + 1 when sending passing data
+        # not sure if that is correct...
+        report_size = self.epsize + 1
+        if len(data) < report_size:
+            data.extend([0] * (report_size - len(data)))
+        #self.out_report[self.out_usage] = data
+        return self.out_report.send(data)
+
+    def _raw_input_handler(self, data):
+        data = bytearray(data)
+        #print(f"rawhid: {data.hex(' ')}")
+        data.pop(0) # remove report id
+        data.pop(0) # FIRMATA_MSG
+        self.input_data.extend(data)
+
+    def set_nonblocking(self, nonblocking):
+        pass
+
+    def open(self, vid, pid, num=0):
+        devices = pywinusb.hid.HidDeviceFilter(vendor_id=vid, product_id=pid).get_devices()
+        device = devices[num]
+        device.open()
+        device.set_raw_data_handler(self._raw_input_handler)
+        self.device = device
+
+        # get "qmk rawhid usage page/id reports", pywinusb uses usage id +1 for input and +2 for output?
+        inp_report = device.find_input_reports(QMK_RAW_USAGE_PAGE, QMK_RAW_USAGE_ID+1)
+        #print(f"inp report: {inp_report}")
+        self.inp_report = inp_report[0]
+
+        out_report = device.find_output_reports(QMK_RAW_USAGE_PAGE, QMK_RAW_USAGE_ID+2)
+        #print(f"out report: {out_report}")
+        self.out_report = out_report[0]
+
+    def close(self):
+        self.device.close()
+
+    def __del__(self):
+        self.close()
+
+    def __str__(self) -> str:
+        return f"RawHIDDevice: {self.device}"
+
 class SerialRawHID(SerialBase):
+
     def __init__(self, vid, pid, epsize=64, timeout=100):
+        self.dbg = DebugTracer(print=1, trace=1)
         self.vid = vid
         self.pid = pid
         self.epsize = epsize
@@ -87,10 +157,6 @@ class SerialRawHID(SerialBase):
         self.hid_device = None
         self._port = "{:04x}:{:04x}".format(vid, pid)
         self.open()
-
-        self.data = bytearray()
-        self.write(bytearray([0x00]))
-        self._read_msg()
 
     def _reconfigure_port(self):
         pass
@@ -102,13 +168,17 @@ class SerialRawHID(SerialBase):
         pass
 
     def _read_msg(self):
-        data = bytearray(self.hid_device.read(self.epsize, self.timeout))
-        #print(f"rawhid read:{data.hex(' ')}")
+        try:
+            data = bytearray(self.hid_device.read(self.epsize, self.timeout))
+            #self.dbg.tr(f"rawhid read:{data.hex(' ')}")
+        except Exception as e:
+            data = bytearray()
+
         if len(data) == 0:
             #self.data.append(0) # dummy data to feed firmata
             return
 
-        if data[0] == 0xFA:
+        if data[0] == FIRMATA_MSG:
             data.pop(0)
 
         self.data.extend(data)
@@ -119,14 +189,26 @@ class SerialRawHID(SerialBase):
         return len(self.data)
 
     def open(self):
-        try:
+        try: # try hidapi first, then pywinusb (hidapi fails on usb3 ports)
             self.hid_device = hid.device()
             self.hid_device.open(self.vid, self.pid)
             self.hid_device.set_nonblocking(False)
-            print(f"Opened HID device: {self.hid_device}"  )
-        except IOError as e:
-            self.hid_device = None
-            raise SerialException(f"Could not open HID device: {e}")
+
+            self.data = bytearray()
+            self.write(bytearray([0x00]))
+            self._read_msg()
+            if len(self.data) == 0:
+                raise Exception("no response from device")
+        except Exception as e:
+            try:
+                device = RawHIDDevice(self.epsize)
+                device.open(self.vid, self.pid)
+                self.hid_device = device
+            except Exception as e:
+                self.hid_device = None
+                raise SerialException(f"Could not open HID device: {e}")
+
+        print(f"opened HID device: {self.hid_device}")
 
     def is_open(self):
         return self.hid_device != None
@@ -140,7 +222,7 @@ class SerialRawHID(SerialBase):
         if not self.hid_device:
             raise SerialException("device not open")
 
-        data = bytearray([0x00, 0xFA]) + data
+        data = bytearray([0x00, FIRMATA_MSG]) + data
         #print(f"rawhid write:{data.hex(' ')}")
         return self.hid_device.write(data)
 
@@ -150,9 +232,9 @@ class SerialRawHID(SerialBase):
 
         if len(self.data) == 0:
             self._read_msg()
-
         if len(self.data) > 0:
             return chr(self.data.pop(0))
+        return chr(0)
 
     def read_all(self):
         pass
@@ -267,8 +349,9 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         #region debug tracers
         self.debug = 0
         self.dbg = {}
-        self.dbg['DEBUG']           = DebugTracer(print=1, trace=1)
-        self.dbg['SYSEX_COMMAND']   = DebugTracer(print=1, trace=1)
+        self.dbg['ERROR']           = DebugTracer(print=1, trace=1)
+        self.dbg['DEBUG']           = DebugTracer(print=0, trace=1)
+        self.dbg['SYSEX_COMMAND']   = DebugTracer(print=0, trace=1)
         self.dbg['SYSEX_RESPONSE']  = DebugTracer(print=0, trace=1)
         self.dbg['RGB_BUF']         = DebugTracer(print=0, trace=1)
         dbg = self.dbg['DEBUG']
@@ -399,7 +482,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
         buf = bytearray()
         if len(data) % 2 != 0:
-            dbg.tr(f"sysex_response_handler: invalid data length {len(data)}")
+            self.dbg['ERROR'].tr(f"sysex_response_handler: invalid data length {len(data)}")
             return
 
         for i in range(0, len(data), 2):
@@ -423,7 +506,6 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             battery_charging = buf[1]
             battery_level = buf[2]
             dbg.tr(f"battery charging: {battery_charging}, battery level: {battery_level}")
-            #self.signal_battery_status.emit(battery_charging, battery_level)
         elif buf[0] == FirmataKeybCmd.ID_RGB_MATRIX_MODE:
             matrix_mode = buf[1]
             dbg.tr(f"matrix mode: {matrix_mode}")
@@ -433,7 +515,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
     def console_line_handler(self, *data):
         line = pyfirmata2.util.two_byte_iter_to_str(data)
         if line:
-            self.signal_console_output.emit(line)  # Emit signal with the received line
+            self.signal_console_output.emit(line)
 
 
     def keyb_rgb_buf_set(self, img, rgb_multiplier):
@@ -465,7 +547,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         img = combined_img
 
         # send max N images per second
-        if time.monotonic() - self.img_ts_prev < 0.040:
+        if time.monotonic() - self.img_ts_prev < 1/25:
             #print("skip")
             return
 
@@ -485,7 +567,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         for y in range(height):
             for x in range(width):
                 pixel = arr[y, x]
-                rgb_pixel = self.pixel_to_rgb_index_duration(pixel, img_format, self.xy_to_rgb_index(x, y), 200, rgb_multiplier)
+                rgb_pixel = self.pixel_to_rgb_index_duration(pixel, img_format, self.xy_to_rgb_index(x, y), 50, rgb_multiplier)
                 if rgb_pixel:
                     data.extend(rgb_pixel)
 
@@ -498,7 +580,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                     num_sends += 1
 
                     # todo sync with keyboard to avoid buffer overflow
-                    # rawhid uses small msg size so sleep after more sends
+                    # rawhid may use smaller epsize so sleep after more sends
                     if self.port_type == "rawhid":
                         if num_sends % 10 == 0:
                             time.sleep(0.002)

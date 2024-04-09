@@ -1,0 +1,9 @@
+PySide6
+matplotlib
+opencv-python
+PyAudio
+pyserial
+hidapi
+pywinusb
+pywin32
+pyfirmata2
