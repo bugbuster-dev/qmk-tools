@@ -1,4 +1,4 @@
-import win32con
+import win32con, sys
 import ctypes
 import ctypes.wintypes
 import threading
@@ -178,7 +178,7 @@ class WinFocusListener(QThread):
         for hookID in hookIDs:
             self.user32.UnhookWinEvent(hookID)
         self.ole32.CoUninitialize()
-        print("WinFocusListener thread stopped")
+        #print("WinFocusListener thread stopped")
 
     def stop(self):
         self.user32.PostThreadMessageW(self.native_tid, win32con.WM_QUIT, 0, 0)

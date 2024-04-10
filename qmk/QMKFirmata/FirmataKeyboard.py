@@ -3,12 +3,11 @@ import pyfirmata2
 
 from PySide6 import QtCore
 from PySide6.QtGui import QImage, QColor, QPainter
-from PySide6.QtCore import Qt, QThread, Signal, QTimer
+from PySide6.QtCore import Signal #, Qt, QThread, QTimer
 import numpy as np
 import time
 
 import hid
-import pywinusb.hid
 import serial
 from serial import SerialBase, SerialException
 from serial.tools import list_ports
@@ -83,86 +82,10 @@ FIRMATA_MSG = 0xFA
 QMK_RAW_USAGE_PAGE = 0xFF60
 QMK_RAW_USAGE_ID = 0x61
 
-class RawHIDDevice(pywinusb.hid.HidDevice):
-    def __init__(self, epsize=64):
-        self.epsize = epsize
-        self.out_report = None
-        self.inp_report = None
-        self.input_data = bytearray()
-        #self.out_usage = pywinusb.hid.get_full_usage_id(QMK_RAW_USAGE_PAGE, QMK_RAW_USAGE_ID+2)
-
-    def read(self, size, timeout=100):
-        # only size == self.epsize is supported
-        size -= 1 # remove report id
-        if len(self.input_data) >= size:
-            # Extract the first n bytes
-            data = self.input_data[:size]
-            # Remove the first n bytes from the original buffer
-            self.input_data[:] = self.input_data[size:]
-            return data
-        return None
-
-    def write(self, data):
-        # pywinusb expects report data size of epsize + 1 when sending passing data
-        # not sure if that is correct...
-        report_size = self.epsize + 1
-        if len(data) < report_size:
-            data.extend([0] * (report_size - len(data)))
-        #self.out_report[self.out_usage] = data
-        return self.out_report.send(data)
-
-    def _raw_input_handler(self, data):
-        data = bytearray(data)
-        #print(f"rawhid: {data.hex(' ')}")
-        data.pop(0) # remove report id
-        data.pop(0) # FIRMATA_MSG
-        self.input_data.extend(data)
-
-    def set_nonblocking(self, nonblocking):
-        pass
-
-    def open(self, vid, pid, num=0):
-        devices = pywinusb.hid.HidDeviceFilter(vendor_id=vid, product_id=pid).get_devices()
-        device = None
-        for _device in devices:
-            _device.open()
-
-            # get "qmk rawhid usage page/id reports", pywinusb uses usage id +1 for input and +2 for output?
-            inp_report = _device.find_input_reports(QMK_RAW_USAGE_PAGE, QMK_RAW_USAGE_ID+1)
-            #print(f"inp report: {inp_report}")
-            try:
-                self.inp_report = inp_report[0]
-            except:
-                _device.close()
-                continue
-
-            out_report = _device.find_output_reports(QMK_RAW_USAGE_PAGE, QMK_RAW_USAGE_ID+2)
-            #print(f"out report: {out_report}")
-            try:
-                self.out_report = out_report[0]
-            except:
-                _device.close()
-                continue
-
-            device = _device
-            print(f"opened hid device: {device}")
-
-        device.set_raw_data_handler(self._raw_input_handler)
-        self.device = device
-
-    def close(self):
-        self.device.close()
-
-    def __del__(self):
-        self.close()
-
-    def __str__(self) -> str:
-        return f"RawHIDDevice: {self.device}"
-
 class SerialRawHID(SerialBase):
 
     def __init__(self, vid, pid, epsize=64, timeout=100):
-        self.dbg = DebugTracer(print=1, trace=1)
+        self.dbg = DebugTracer(print=1, trace=1, obj=self)
         self.vid = vid
         self.pid = pid
         self.epsize = epsize
@@ -184,6 +107,7 @@ class SerialRawHID(SerialBase):
         try:
             data = bytearray(self.hid_device.read(self.epsize, self.timeout))
             #self.dbg.tr(f"rawhid read:{data.hex(' ')}")
+            data = data.rstrip(bytearray([0])) # remove trailing zeros
         except Exception as e:
             data = bytearray()
 
@@ -193,7 +117,6 @@ class SerialRawHID(SerialBase):
 
         if data[0] == FIRMATA_MSG:
             data.pop(0)
-
         self.data.extend(data)
 
     def inWaiting(self):
@@ -202,7 +125,7 @@ class SerialRawHID(SerialBase):
         return len(self.data)
 
     def open(self):
-        try: # try hidapi first, then pywinusb as fallback
+        try:
             device_list = hid.enumerate(self.vid, self.pid)
             device = None
             for _device in device_list:
@@ -212,6 +135,9 @@ class SerialRawHID(SerialBase):
                     device = _device
                     break
 
+            if not device:
+                raise Exception("no hid device found")
+
             self.hid_device = hid.device()
             self.hid_device.open_path(device['path'])
 
@@ -219,17 +145,12 @@ class SerialRawHID(SerialBase):
             self.write(bytearray([0x00]))
             self._read_msg()
             if len(self.data) == 0:
-                raise Exception("no response from device using hidapi, trying pywinusb")
+                raise Exception("no response from device")
         except Exception as e:
-            try:
-                device = RawHIDDevice(self.epsize)
-                device.open(self.vid, self.pid)
-                self.hid_device = device
-            except Exception as e:
-                self.hid_device = None
-                raise SerialException(f"Could not open HID device: {e}")
+            self.hid_device = None
+            raise SerialException(f"Could not open HID device: {e}")
 
-        print(f"opened HID device: {self.hid_device}")
+        self.dbg.tr(f"opened HID device: {self.hid_device}")
 
     def is_open(self):
         return self.hid_device != None
@@ -254,7 +175,10 @@ class SerialRawHID(SerialBase):
         if len(self.data) == 0:
             self._read_msg()
         if len(self.data) > 0:
+            #self.dbg.tr(f"read:{self.data[0]}")
             return chr(self.data.pop(0))
+
+        self.dbg.tr(f"read: no data")
         return chr(0)
 
     def read_all(self):
@@ -489,13 +413,12 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         print(f"firmware:{self.firmware} {self.firmware_version}, firmata={self.get_firmata_version()}")
         print("-"*80)
 
-
     def stop(self):
-        self.samplingOff()
         try:
             self.sp.close()
-        except:
-            pass
+        except Exception as e:
+            self.dbg['ERROR'].tr(f"{e}")
+        self.samplingOff()
 
     def sysex_response_handler(self, *data):
         dbg = self.dbg['SYSEX_RESPONSE']
