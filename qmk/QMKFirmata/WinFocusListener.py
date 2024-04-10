@@ -1,21 +1,21 @@
-
 import win32con
 import ctypes
 import ctypes.wintypes
+import threading
 
 from PySide6.QtCore import Qt, QThread, Signal
 
-
+#-------------------------------------------------------------------------------
+# window focus listener code from:
+# https://gist.github.com/keturn/6695625
+#
 class WinFocusListener(QThread):
     winfocus_signal = Signal(str)
 
     def __init__(self):
         super().__init__()
 
-        #-------------------------------------------------------------------------------
-        # window focus listener code from:
-        # https://gist.github.com/keturn/6695625
-        #
+        self.native_tid = None
         self.user32 = ctypes.windll.user32
         self.ole32 = ctypes.windll.ole32
         self.kernel32 = ctypes.windll.kernel32
@@ -80,7 +80,7 @@ class WinFocusListener(QThread):
 
             if hwnd:
                 processID = ctypes.wintypes.DWORD()
-                threadID = user32.GetWindowThreadProcessId(
+                threadID = self.user32.GetWindowThreadProcessId(
                     hwnd, ctypes.byref(processID))
                 if threadID != dwEventThread:
                     self.logError("Window thread != event thread? %s != %s" %
@@ -119,6 +119,7 @@ class WinFocusListener(QThread):
 
     def callback(self, hWinEventHook, event, hwnd, idObject, idChild, dwEventThread,
                  dwmsEventTime):
+
         length = self.user32.GetWindowTextLengthW(hwnd)
         title = ctypes.create_unicode_buffer(length + 1)
         self.user32.GetWindowTextW(hwnd, title, length + 1)
@@ -157,17 +158,28 @@ class WinFocusListener(QThread):
         )
 
     def run(self):
+        self.native_tid = threading.get_native_id()
+
         self.ole32.CoInitialize(0)
         WinEventProc = self.WinEventProcType(self.callback)
         self.user32.SetWinEventHook.restype = ctypes.wintypes.HANDLE
 
         hookIDs = [self.setHook(WinEventProc, et) for et in self.eventTypes.keys()]
-
         msg = ctypes.wintypes.MSG()
-        while self.user32.GetMessageW(ctypes.byref(msg), 0, 0, 0) != 0:
-            self.user32.TranslateMessageW(msg)
-            self.user32.DispatchMessageW(msg)
+        while True:
+            ret = self.user32.GetMessageW(ctypes.byref(msg), 0, 0, 0)
+            #print(f"GetMessageW:{ret}")
+            if ret > 0:
+                self.user32.TranslateMessageW(msg)
+                self.user32.DispatchMessageW(msg)
+            elif ret <= 0:
+                break
 
         for hookID in hookIDs:
             self.user32.UnhookWinEvent(hookID)
-        ole32.CoUninitialize()
+        self.ole32.CoUninitialize()
+        print("WinFocusListener thread stopped")
+
+    def stop(self):
+        self.user32.PostThreadMessageW(self.native_tid, win32con.WM_QUIT, 0, 0)
+        self.wait()
