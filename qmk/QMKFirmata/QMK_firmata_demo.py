@@ -4,7 +4,7 @@ import cv2, pyaudio, numpy as np
 from PySide6 import QtCore
 from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QFrame
 from PySide6.QtWidgets import QTextEdit, QPushButton, QFileDialog, QLabel, QSlider, QLineEdit, QComboBox, QSpacerItem, QSizePolicy, QMessageBox
-from PySide6.QtCore import Qt, QThread, Signal, QUrl, QTimer, QSize
+from PySide6.QtCore import Qt, QThread, Signal, QTimer #, QSize, QUrl
 from PySide6.QtCore import QRegularExpression
 from PySide6.QtGui import QImage, QPixmap, QColor, QFont, QTextCursor, QFontMetrics, QMouseEvent, QKeyEvent, QKeySequence
 from PySide6.QtGui import QRegularExpressionValidator, QIntValidator, QDoubleValidator
@@ -1012,27 +1012,38 @@ class LayerAutoSwitchTab(QWidget):
     keyb_layer_set_signal = Signal(int)
     num_program_selectors = 3
 
-    class WSServerThread(QThread):
+    class WSServer(QThread):
         import asyncio
         import websockets
+        import signal
 
         def __init__(self, layer_switcher):
             self.dbg = {}
             self.dbg['DEBUG'] = DebugTracer(print=1, trace=1, obj=self)
 
+            self.loop = None
             self.layer_switcher = layer_switcher
             super().__init__()
 
         def run(self):
-            self.loop = self.asyncio.new_event_loop()
-            self.asyncio.set_event_loop(self.loop)
-            self.ws_server = self.websockets.serve(self.ws_handler, "localhost", 8765)
-            self.loop.run_until_complete(self.ws_server)
-            self.loop.run_forever()
+            self.dbg['DEBUG'].tr("ws server start")
+            self.asyncio.run(self.ws_main())
+
+        async def ws_main(self):
+            self.loop = self.asyncio.get_running_loop()
+            self.stop_ev = self.loop.create_future()
+            async with self.websockets.serve(self.ws_handler, "localhost", 8765):
+                await self.stop_ev
+
+            self.dbg['DEBUG'].tr("ws server ended")
 
         def stop(self):
-            self.loop.stop()
-            self.loop.wait_closed()
+            self.dbg['DEBUG'].tr("ws server stop")
+            if self.loop:
+                #self.ws_server.close()
+                self.loop.stop()
+                self.stop_ev.set_result(None)
+                self.loop.close()
 
         async def ws_handler(self, websocket, path):
             async for message in websocket:
@@ -1051,7 +1062,7 @@ class LayerAutoSwitchTab(QWidget):
 
         self.currentLayer = 0
         self.num_keyb_layers = num_keyb_layers
-        self.wsServer = self.WSServerThread(self) # todo bb: start when user enables it
+        self.wsServer = self.WSServer(self) # todo bb: start when user enables it
         self.wsServer.start()
 
         super().__init__()
@@ -1169,6 +1180,7 @@ class LayerAutoSwitchTab(QWidget):
 
     def closeEvent(self, event):
         self.wsServer.stop()
+        self.wsServer.wait()
 
 #-------------------------------------------------------------------------------
 
@@ -1408,8 +1420,11 @@ class MainWindow(QMainWindow):
         self.keyboard.start()
 
     def closeEvent(self, event):
-        self.winfocus_listener.terminate()
+        self.winfocus_listener.stop()
         self.keyboard.stop()
+        # close event to child widgets
+        for child in self.findChildren(QWidget):
+            child.closeEvent(event)
         event.accept()
 
 
