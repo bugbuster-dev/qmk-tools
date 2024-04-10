@@ -1012,12 +1012,48 @@ class LayerAutoSwitchTab(QWidget):
     keyb_layer_set_signal = Signal(int)
     num_program_selectors = 3
 
+    class WSServerThread(QThread):
+        import asyncio
+        import websockets
+
+        def __init__(self, layer_switcher):
+            self.dbg = {}
+            self.dbg['DEBUG'] = DebugTracer(print=1, trace=1, obj=self)
+
+            self.layer_switcher = layer_switcher
+            super().__init__()
+
+        def run(self):
+            self.loop = self.asyncio.new_event_loop()
+            self.asyncio.set_event_loop(self.loop)
+            self.ws_server = self.websockets.serve(self.ws_handler, "localhost", 8765)
+            self.loop.run_until_complete(self.ws_server)
+            self.loop.run_forever()
+
+        def stop(self):
+            self.loop.stop()
+            self.loop.wait_closed()
+
+        async def ws_handler(self, websocket, path):
+            async for message in websocket:
+                self.dbg['DEBUG'].tr(f"ws_handler: {message}")
+                if message.startswith("layer:"):
+                    try:
+                        layer = int(message.split(":")[1])
+                        self.layer_switcher.keyb_layer_set_signal.emit(layer)
+                    except Exception as e:
+                        self.dbg['DEBUG'].tr(f"error: {e}")
+
+
     def __init__(self, num_keyb_layers=8):
         self.dbg = {}
-        self.dbg['DEBUG'] = DebugTracer(print=1, trace=1)
+        self.dbg['DEBUG'] = DebugTracer(print=1, trace=1, obj=self)
 
         self.currentLayer = 0
         self.num_keyb_layers = num_keyb_layers
+        self.wsServer = self.WSServerThread(self) # todo bb: start when user enables it
+        self.wsServer.start()
+
         super().__init__()
         self.initUI()
 
@@ -1039,10 +1075,16 @@ class LayerAutoSwitchTab(QWidget):
         self.defLayerSelector.setCurrentIndex(0)
         #---------------------------------------
 
-        # Label for instructions
+        # todo bb: add "layer switch ws server" enable checkbox plus port input
+
+        #---------------------------------------
+        # instruction summary
         self.label = QLabel("select default layer above, the foreground application is traced here below.\n"
                             "select program(s) and the layer to use in the dropdown box below.\n"
-                            "select '-' to unselect program."
+                            "select '-' to unselect program.\n"
+                            "\n"
+                            "enabling \"layer switch ws server\" allow applications to send layer switch requests\n"
+                            "by sending \"layer:<number>\" to \"ws://localhost:<port>\"\n"
                             )
         layout.addWidget(self.label)
 
@@ -1123,6 +1165,10 @@ class LayerAutoSwitchTab(QWidget):
         #cursor.select(QTextCursor.LineUnderCursor)
         #selectedText = cursor.selectedText()
         #print(selectedText)
+
+
+    def closeEvent(self, event):
+        self.wsServer.stop()
 
 #-------------------------------------------------------------------------------
 

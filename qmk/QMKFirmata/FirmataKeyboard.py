@@ -123,19 +123,32 @@ class RawHIDDevice(pywinusb.hid.HidDevice):
 
     def open(self, vid, pid, num=0):
         devices = pywinusb.hid.HidDeviceFilter(vendor_id=vid, product_id=pid).get_devices()
-        device = devices[num]
-        device.open()
+        device = None
+        for _device in devices:
+            _device.open()
+
+            # get "qmk rawhid usage page/id reports", pywinusb uses usage id +1 for input and +2 for output?
+            inp_report = _device.find_input_reports(QMK_RAW_USAGE_PAGE, QMK_RAW_USAGE_ID+1)
+            #print(f"inp report: {inp_report}")
+            try:
+                self.inp_report = inp_report[0]
+            except:
+                _device.close()
+                continue
+
+            out_report = _device.find_output_reports(QMK_RAW_USAGE_PAGE, QMK_RAW_USAGE_ID+2)
+            #print(f"out report: {out_report}")
+            try:
+                self.out_report = out_report[0]
+            except:
+                _device.close()
+                continue
+
+            device = _device
+            print(f"opened hid device: {device}")
+
         device.set_raw_data_handler(self._raw_input_handler)
         self.device = device
-
-        # get "qmk rawhid usage page/id reports", pywinusb uses usage id +1 for input and +2 for output?
-        inp_report = device.find_input_reports(QMK_RAW_USAGE_PAGE, QMK_RAW_USAGE_ID+1)
-        #print(f"inp report: {inp_report}")
-        self.inp_report = inp_report[0]
-
-        out_report = device.find_output_reports(QMK_RAW_USAGE_PAGE, QMK_RAW_USAGE_ID+2)
-        #print(f"out report: {out_report}")
-        self.out_report = out_report[0]
 
     def close(self):
         self.device.close()
@@ -189,16 +202,24 @@ class SerialRawHID(SerialBase):
         return len(self.data)
 
     def open(self):
-        try: # try hidapi first, then pywinusb (hidapi fails on usb3 ports)
+        try: # try hidapi first, then pywinusb as fallback
+            device_list = hid.enumerate(self.vid, self.pid)
+            device = None
+            for _device in device_list:
+                #self.dbg.tr(f"found hid device: {_device}")
+                if _device['usage_page'] == QMK_RAW_USAGE_PAGE: # 'usage' should be QMK_RAW_USAGE_ID
+                    self.dbg.tr(f"found qmk raw hid device: {_device}")
+                    device = _device
+                    break
+
             self.hid_device = hid.device()
-            self.hid_device.open(self.vid, self.pid)
-            self.hid_device.set_nonblocking(False)
+            self.hid_device.open_path(device['path'])
 
             self.data = bytearray()
             self.write(bytearray([0x00]))
             self._read_msg()
             if len(self.data) == 0:
-                raise Exception("no response from device")
+                raise Exception("no response from device using hidapi, trying pywinusb")
         except Exception as e:
             try:
                 device = RawHIDDevice(self.epsize)
@@ -532,7 +553,6 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
         # multiple images senders -> combine images
         combined_img = img.copy()
-        # todo: use prev image to smoothen brightness changes
         #prev_img = self.img[self.sender()]
         if len(self.img) > 1:
             for key in self.img:
