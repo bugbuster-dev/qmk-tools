@@ -4,7 +4,6 @@ opencv-python
 PyAudio
 pyserial
 hidapi
-pywinusb
 pywin32
 pyfirmata2
 websockets

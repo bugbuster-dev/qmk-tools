@@ -142,10 +142,10 @@ class SerialRawHID(SerialBase):
             self.hid_device.open_path(device['path'])
 
             self.data = bytearray()
-            self.write(bytearray([0x00]))
-            self._read_msg()
-            if len(self.data) == 0:
-                raise Exception("no response from device")
+            self.write(bytearray([0x00, FIRMATA_MSG, 0xf0, 0x71, 0xf7]))
+            #self._read_msg()
+            #if len(self.data) == 0:
+                #self.dbg.tr(f"no response from device")
         except Exception as e:
             self.hid_device = None
             raise SerialException(f"Could not open HID device: {e}")
@@ -295,11 +295,11 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         #region debug tracers
         self.debug = 0
         self.dbg = {}
-        self.dbg['ERROR']           = DebugTracer(print=1, trace=1)
-        self.dbg['DEBUG']           = DebugTracer(print=0, trace=1)
-        self.dbg['SYSEX_COMMAND']   = DebugTracer(print=0, trace=1)
-        self.dbg['SYSEX_RESPONSE']  = DebugTracer(print=0, trace=1)
-        self.dbg['RGB_BUF']         = DebugTracer(print=0, trace=1)
+        self.dbg['ERROR']           = DebugTracer(print=1, trace=1, obj=self)
+        self.dbg['DEBUG']           = DebugTracer(print=0, trace=1, obj=self)
+        self.dbg['SYSEX_COMMAND']   = DebugTracer(print=0, trace=1, obj=self)
+        self.dbg['SYSEX_RESPONSE']  = DebugTracer(print=0, trace=1, obj=self)
+        self.dbg['RGB_BUF']         = DebugTracer(print=0, trace=1, obj=self)
         dbg = self.dbg['DEBUG']
         #endregion
         #----------------------------------------------------

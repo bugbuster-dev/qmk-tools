@@ -1060,6 +1060,11 @@ class LayerAutoSwitchTab(QWidget):
                         self.layer_switcher.keyb_layer_set_signal.emit(layer)
                     except Exception as e:
                         self.dbg['DEBUG'].tr(f"ws_handler: {e}")
+                if message.startswith("rgb."): # todo rgb message handling
+                    # rgb.mode:<number>
+                    # rgb.buf:<rgb pixels> # 5 bytes per pixel, [index, duration, r, g, b]
+                    pass
+
 
 
     def __init__(self, num_keyb_layers=8):
@@ -1068,12 +1073,13 @@ class LayerAutoSwitchTab(QWidget):
 
         self.currentLayer = 0
         self.num_keyb_layers = num_keyb_layers
+        self.wsServer = None
 
         super().__init__()
         self.initUI()
 
     def wsServerStartStop(self, state):
-        self.dbg['DEBUG'].tr(f"{state}")
+        #self.dbg['DEBUG'].tr(f"{state}")
         if Qt.CheckState(state) == Qt.CheckState.Checked:
             self.dbg['DEBUG'].tr("ws server start")
             self.wsServer = self.WSServer(self, int(self.layerSwitchServerPort.text()))
@@ -1207,8 +1213,9 @@ class LayerAutoSwitchTab(QWidget):
 
 
     def closeEvent(self, event):
-        self.wsServer.stop()
-        self.wsServer.wait()
+        if self.wsServer:
+            self.wsServer.stop()
+            self.wsServer.wait()
 
 #-------------------------------------------------------------------------------
 
