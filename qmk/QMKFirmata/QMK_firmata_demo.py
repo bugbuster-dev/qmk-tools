@@ -3,7 +3,8 @@ import cv2, pyaudio, numpy as np
 
 from PySide6 import QtCore
 from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QFrame
-from PySide6.QtWidgets import QTextEdit, QPushButton, QFileDialog, QLabel, QSlider, QLineEdit, QComboBox, QSpacerItem, QSizePolicy, QMessageBox
+from PySide6.QtWidgets import QTextEdit, QPushButton, QFileDialog, QLabel, QSlider, QLineEdit
+from PySide6.QtWidgets import QCheckBox, QComboBox, QSpacerItem, QSizePolicy, QMessageBox
 from PySide6.QtCore import Qt, QThread, Signal, QTimer #, QSize, QUrl
 from PySide6.QtCore import QRegularExpression
 from PySide6.QtGui import QImage, QPixmap, QColor, QFont, QTextCursor, QFontMetrics, QMouseEvent, QKeyEvent, QKeySequence
@@ -1015,35 +1016,40 @@ class LayerAutoSwitchTab(QWidget):
     class WSServer(QThread):
         import asyncio
         import websockets
-        import signal
 
-        def __init__(self, layer_switcher):
+        def __init__(self, layer_switcher, port = 8765):
             self.dbg = {}
             self.dbg['DEBUG'] = DebugTracer(print=1, trace=1, obj=self)
 
+            self.port = port
             self.loop = None
             self.layer_switcher = layer_switcher
             super().__init__()
 
         def run(self):
-            self.dbg['DEBUG'].tr("ws server start")
+            self.dbg['DEBUG'].tr(f"ws server start on port: {self.port}")
             self.asyncio.run(self.ws_main())
 
         async def ws_main(self):
             self.loop = self.asyncio.get_running_loop()
             self.stop_ev = self.loop.create_future()
-            async with self.websockets.serve(self.ws_handler, "localhost", 8765):
+            async with self.websockets.serve(self.ws_handler, "localhost", self.port):
                 await self.stop_ev
-
             self.dbg['DEBUG'].tr("ws server ended")
 
+        async def ws_close(self):
+            # dummy connect to exit ws_main
+            try:
+                async with self.websockets.connect(f"ws://localhost:{self.port}") as websocket:
+                    await websocket.send("")
+            except Exception as e:
+                pass
+
         def stop(self):
-            self.dbg['DEBUG'].tr("ws server stop")
+            #self.dbg['DEBUG'].tr("ws server stop")
             if self.loop:
-                #self.ws_server.close()
-                self.loop.stop()
                 self.stop_ev.set_result(None)
-                self.loop.close()
+                self.asyncio.run(self.ws_close())
 
         async def ws_handler(self, websocket, path):
             async for message in websocket:
@@ -1053,7 +1059,7 @@ class LayerAutoSwitchTab(QWidget):
                         layer = int(message.split(":")[1])
                         self.layer_switcher.keyb_layer_set_signal.emit(layer)
                     except Exception as e:
-                        self.dbg['DEBUG'].tr(f"error: {e}")
+                        self.dbg['DEBUG'].tr(f"ws_handler: {e}")
 
 
     def __init__(self, num_keyb_layers=8):
@@ -1062,11 +1068,23 @@ class LayerAutoSwitchTab(QWidget):
 
         self.currentLayer = 0
         self.num_keyb_layers = num_keyb_layers
-        self.wsServer = self.WSServer(self) # todo bb: start when user enables it
-        self.wsServer.start()
 
         super().__init__()
         self.initUI()
+
+    def wsServerStartStop(self, state):
+        self.dbg['DEBUG'].tr(f"{state}")
+        if Qt.CheckState(state) == Qt.CheckState.Checked:
+            self.dbg['DEBUG'].tr("ws server start")
+            self.wsServer = self.WSServer(self, int(self.layerSwitchServerPort.text()))
+            self.wsServer.start()
+        else:
+            try:
+                self.wsServer.stop()
+                self.wsServer.wait()
+                self.wsServer = None
+            except Exception as e:
+                self.dbg['DEBUG'].tr(f"{e}")
 
     def initUI(self):
         layout = QVBoxLayout()
@@ -1085,10 +1103,6 @@ class LayerAutoSwitchTab(QWidget):
         layout.addWidget(self.defLayerSelector)
         self.defLayerSelector.setCurrentIndex(0)
         #---------------------------------------
-
-        # todo bb: add "layer switch ws server" enable checkbox plus port input
-
-        #---------------------------------------
         # instruction summary
         self.label = QLabel("select default layer above, the foreground application is traced here below.\n"
                             "select program(s) and the layer to use in the dropdown box below.\n"
@@ -1098,7 +1112,21 @@ class LayerAutoSwitchTab(QWidget):
                             "by sending \"layer:<number>\" to \"ws://localhost:<port>\"\n"
                             )
         layout.addWidget(self.label)
+        #---------------------------------------
+        # "layer switch ws server" enable checkbox plus port input
+        self.layerSwitchServerCheckbox = QCheckBox("enable ws server", self)
+        self.layerSwitchServerPort = QLineEdit("8765")
+        port_validator = QIntValidator(0, 65535, self)
+        self.layerSwitchServerPort.setValidator(port_validator)
+        self.layerSwitchServerPort.setFixedWidth(50)
+        self.layerSwitchServerCheckbox.stateChanged.connect(self.wsServerStartStop)
+        hlayout = QHBoxLayout()
+        hlayout.addStretch(1)
+        hlayout.addWidget(self.layerSwitchServerCheckbox)
+        hlayout.addWidget(self.layerSwitchServerPort)
+        layout.addLayout(hlayout)
 
+        #---------------------------------------
         # for displaying processes which got foreground focus
         self.winfocusTextEdit = QTextEdit()
         self.winfocusTextEdit.setReadOnly(True)
