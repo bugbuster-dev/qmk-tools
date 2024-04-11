@@ -53,10 +53,10 @@ def combine_qimages(img1, img2):
             r1, g1, b1, _ = QColor(pixel1).getRgb()
             r2, g2, b2, _ = QColor(pixel2).getRgb()
 
-            # Add the RGB values, with a maximum of 255
-            r = min(r1 + r2, 255)
-            g = min(g1 + g2, 255)
-            b = min(b1 + b2, 255)
+            # Add the RGB values
+            r = min(r1 + r2, FirmataKeyboard.MAX_RGB_VAL)
+            g = min(g1 + g2, FirmataKeyboard.MAX_RGB_VAL)
+            b = min(b1 + b2, FirmataKeyboard.MAX_RGB_VAL)
 
             # Set the new pixel value
             img1.setPixel(x, y, QColor(r, g, b).rgb())
@@ -237,9 +237,10 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
     signal_rgb_matrix_mode = Signal(int)
 
     #-------------------------------------------------------------------------------
-
-    MAX_LEN_SYSEX_DATA = 60
     RAW_EPSIZE_FIRMATA = 64 # 32
+    MAX_LEN_SYSEX_DATA = 60
+
+    MAX_RGB_VAL = 255
 
     # format: QImage.Format_RGB888 or QImage.Format_BGR888
     @staticmethod
@@ -252,14 +253,14 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         data.append(index)
         data.append(duration)
         if format == QImage.Format_RGB888:
-            data.append(min(int(pixel[0]*brightness[0]), 255))
+            data.append(min(int(pixel[0]*brightness[0]), FirmataKeyboard.MAX_RGB_VAL))
         else:
-            data.append(min(int(pixel[0]*brightness[2]), 255))
-        data.append(min(int(pixel[1]*brightness[1]), 255))
+            data.append(min(int(pixel[0]*brightness[2]), FirmataKeyboard.MAX_RGB_VAL))
+        data.append(min(int(pixel[1]*brightness[1]), FirmataKeyboard.MAX_RGB_VAL))
         if format == QImage.Format_RGB888:
-            data.append(min(int(pixel[2]*brightness[2]), 255))
+            data.append(min(int(pixel[2]*brightness[2]), FirmataKeyboard.MAX_RGB_VAL))
         else:
-            data.append(min(int(pixel[0]*brightness[0]), 255))
+            data.append(min(int(pixel[0]*brightness[0]), FirmataKeyboard.MAX_RGB_VAL))
         return data
 
     @staticmethod
@@ -522,7 +523,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                     self.send_sysex(FirmataKeybCmd.SET, data)
                     num_sends += 1
 
-                    # todo sync with keyboard to avoid buffer overflow
+                    # todo check if sync with keyboard is needed to avoid buffer overflow
                     # rawhid may use smaller epsize so sleep after more sends
                     if self.port_type == "rawhid":
                         if num_sends % 10 == 0:
@@ -547,7 +548,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
         data = bytearray()
         data.append(FirmataKeybCmd.ID_DEFAULT_LAYER)
-        data.append(min(layer, 255))
+        data.append(min(layer, self.num_layers()-1))
         self.send_sysex(FirmataKeybCmd.SET, data)
 
     def keyb_dbg_mask_set(self, dbg_mask):
