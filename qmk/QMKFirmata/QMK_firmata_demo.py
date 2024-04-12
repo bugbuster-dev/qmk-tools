@@ -210,7 +210,7 @@ class RGBMatrixTab(QWidget):
         hLayout.addStretch(1)
 
         #---------------------------------------
-        self.rgb_video_tab = RGBVideoTab(self.rgb_matrix_size)
+        self.rgb_video_tab = RGBVideoTab(self, self.rgb_matrix_size)
         self.rgb_animation_tab = RGBAnimationTab(self.rgb_matrix_size)
         self.rgb_audio_tab = RGBAudioTab(self.rgb_matrix_size)
         self.rgb_capture_tab = RGBWinCaptureTab(self.rgb_matrix_size)
@@ -231,21 +231,21 @@ class RGBMatrixTab(QWidget):
 class RGBVideoTab(QWidget):
     rgb_frame_signal = Signal(QImage, object)  # Signal to send rgb frame
 
-    def __init__(self, rgb_matrix_size):
+    def __init__(self, rgb_matrix_tab, rgb_matrix_size):
         self.dbg = {}
         self.dbg['DEBUG'] = DebugTracer(print=1, trace=1, obj=self)
         super().__init__()
 
+        self.rgb_matrix_tab = rgb_matrix_tab
         self.cap = None
         self.frameRate = 25
         self.rgb_matrix_size = rgb_matrix_size
         self.RGB_multiplier = (1.0,1.0,1.0)
-
-        #self.wsServer = WSServer(self.msg_handler) # todo
         self.initUI()
 
     async def ws_handler(self, websocket, path):
         async for message in websocket:
+            message = bytearray(message, 'utf-8')
             self.dbg['DEBUG'].tr(f"ws_handler: {message}")
             sub = b"rgb."
             if message.startswith(sub):
@@ -255,15 +255,15 @@ class RGBVideoTab(QWidget):
                     if message.startswith(sub):
                         if sub == b"mode:":
                             try:
-                                mode = int(message.split(":")[1])
-                                #self.keyb_layer_set_signal.emit(mode)
+                                mode = int(message.split(b":")[1])
+                                self.rgb_matrix_tab.signal_rgb_matrix_mode.emit(mode)
                             except Exception as e:
                                 self.dbg['DEBUG'].tr(f"ws_handler: {e}")
                         if sub == b"img:":
                             data = message[len(sub):]
                             w = self.rgb_matrix_size[0]
                             h = self.rgb_matrix_size[1]
-                            self.dbg['DEBUG'].tr(f"ws_handler:{w}x{h} {data}")
+                            #self.dbg['DEBUG'].tr(f"ws_handler:{w}x{h} {data}")
 
                             img = QImage(w, h, QImage.Format_RGB888)
                             img.fill(QColor('black'))
@@ -271,10 +271,8 @@ class RGBVideoTab(QWidget):
                                 for x in range(w):
                                     index = (y * w + x) * 3
                                     try:
-                                        #self.dbg['DEBUG'].tr(f"ws_handler:index={index}")
                                         red, green, blue = data[index], data[index + 1], data[index + 2]
                                         img.setPixelColor(x, y, QColor(red, green, blue))
-                                        #self.dbg['DEBUG'].tr(f"ws_handler:rgb={red},{green},{blue}")
                                     except Exception as e:
                                         #self.dbg['DEBUG'].tr(f"ws_handler: {e}")
                                         pass
@@ -299,13 +297,14 @@ class RGBVideoTab(QWidget):
         self.layout = QVBoxLayout()
         self.videoLabel = QLabel("")
         self.videoLabel.setFixedSize(app_width, app_height)
+        self.videoLabel.setAlignment(Qt.AlignTop)
 
-        #---------------------------------------
         hlayout = QHBoxLayout()
         self.openButton = QPushButton("open file")
         self.openButton.setFixedWidth(100)
         self.openButton.clicked.connect(self.openFile)
-        # "layer switch ws server" enable checkbox plus port input
+        #---------------------------------------
+        #region "rgb video ws server" enable checkbox plus port input
         self.wsServerCheckbox = QCheckBox("enable ws server", self)
         self.wsServerPort = QLineEdit("8787")
         port_validator = QIntValidator(0, 65535, self)
@@ -316,6 +315,7 @@ class RGBVideoTab(QWidget):
         hlayout.addStretch(1)
         hlayout.addWidget(self.wsServerCheckbox)
         hlayout.addWidget(self.wsServerPort)
+        #endregion
 
         controlsLayout = QHBoxLayout()
         self.frameRateLabel = QLabel("frame rate")
@@ -328,6 +328,7 @@ class RGBVideoTab(QWidget):
         self.framerateSlider.setToolTip("frame rate")
         self.framerateSlider.valueChanged.connect(self.adjustFramerate)
 
+        #region framerate/RGB multiplier sliders
         rgbMultiplyLayout = QHBoxLayout()
         self.RGB_R_Label = QLabel("r")
         self.RGB_R_Slider = QSlider(QtCore.Qt.Horizontal)
@@ -365,6 +366,7 @@ class RGBVideoTab(QWidget):
         rgbMultiplyLayout.addWidget(self.RGB_G_Slider)
         rgbMultiplyLayout.addWidget(self.RGB_B_Label)
         rgbMultiplyLayout.addWidget(self.RGB_B_Slider)
+        #endregion
 
         self.layout.addLayout(hlayout)
         self.layout.addWidget(self.videoLabel)
