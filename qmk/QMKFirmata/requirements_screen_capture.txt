@@ -1,0 +1,11 @@
+C:\Users\bugbu\AppData\Local\Programs\Python\Python38\python.exe -m pip list
+Package       Version
+------------- --------
+comtypes      1.1.14
+d3dshot       0.1.5
+numpy         1.24.4
+opencv-python 4.9.0.80
+Pillow        7.1.2
+pip           24.0
+setuptools    41.2.0
+websockets    12.0

@@ -18,6 +18,9 @@ from DebugTracer import DebugTracer
 
 from windowcapture import WindowCapture
 
+import asyncio
+import websockets
+
 #-------------------------------------------------------------------------------
 
 app_width       = 800
@@ -25,9 +28,8 @@ app_height      = 1000
 
 #-------------------------------------------------------------------------------
 
+
 class WSServer(QThread):
-    import asyncio
-    import websockets
 
     def __init__(self, msg_handler, port = 8765):
         self.dbg = {}
@@ -40,19 +42,19 @@ class WSServer(QThread):
 
     def run(self):
         self.dbg['DEBUG'].tr(f"ws server start on port: {self.port}")
-        self.asyncio.run(self.ws_main())
+        asyncio.run(self.ws_main())
 
     async def ws_main(self):
-        self.loop = self.asyncio.get_running_loop()
+        self.loop = asyncio.get_running_loop()
         self.stop_ev = self.loop.create_future()
-        async with self.websockets.serve(self.msg_handler, "localhost", self.port):
+        async with websockets.serve(self.msg_handler, "localhost", self.port):
             await self.stop_ev
         self.dbg['DEBUG'].tr("ws server ended")
 
     async def ws_close(self):
         # dummy connect to exit ws_main
         try:
-            async with self.websockets.connect(f"ws://localhost:{self.port}") as websocket:
+            async with websockets.connect(f"ws://localhost:{self.port}") as websocket:
                 await websocket.send("")
         except Exception as e:
             pass
@@ -61,7 +63,7 @@ class WSServer(QThread):
         #self.dbg['DEBUG'].tr("ws server stop")
         if self.loop:
             self.stop_ev.set_result(None)
-            self.asyncio.run(self.ws_close())
+            asyncio.run(self.ws_close())
 
 
 class ConsoleTab(QWidget):
@@ -244,40 +246,52 @@ class RGBVideoTab(QWidget):
         self.initUI()
 
     async def ws_handler(self, websocket, path):
-        async for message in websocket:
-            message = bytearray(message, 'utf-8')
-            self.dbg['DEBUG'].tr(f"ws_handler: {message}")
-            sub = b"rgb."
-            if message.startswith(sub):
-                message = message[len(sub):]
-                subs = [ b"mode:", b"img:" ]
-                for sub in subs:
-                    if message.startswith(sub):
-                        if sub == b"mode:":
-                            try:
-                                mode = int(message.split(b":")[1])
-                                self.rgb_matrix_tab.signal_rgb_matrix_mode.emit(mode)
-                            except Exception as e:
-                                self.dbg['DEBUG'].tr(f"ws_handler: {e}")
-                        if sub == b"img:":
-                            data = message[len(sub):]
-                            w = self.rgb_matrix_size[0]
-                            h = self.rgb_matrix_size[1]
-                            #self.dbg['DEBUG'].tr(f"ws_handler:{w}x{h} {data}")
+        try:
+            async for message in websocket:
+                try:
+                    message = bytearray(message, 'utf-8')
+                except:
+                    pass # already bytearray
 
-                            img = QImage(w, h, QImage.Format_RGB888)
-                            img.fill(QColor('black'))
-                            for y in range(h):
-                                for x in range(w):
-                                    index = (y * w + x) * 3
-                                    try:
-                                        red, green, blue = data[index], data[index + 1], data[index + 2]
-                                        img.setPixelColor(x, y, QColor(red, green, blue))
-                                    except Exception as e:
-                                        #self.dbg['DEBUG'].tr(f"ws_handler: {e}")
-                                        pass
+                self.dbg['DEBUG'].tr(f"ws_handler: {message}")
+                sub = b"rgb."
+                if message.startswith(sub):
+                    message = message[len(sub):]
+                    subs = [ b"mode:", b"img:" ]
+                    for sub in subs:
+                        if message.startswith(sub):
+                            if sub == b"mode:":
+                                try:
+                                    mode = int(message.split(b":")[1])
+                                    self.rgb_matrix_tab.signal_rgb_matrix_mode.emit(mode)
+                                except Exception as e:
+                                    self.dbg['DEBUG'].tr(f"ws_handler: {e}")
+                            if sub == b"img:":
+                                data = message[len(sub):]
+                                w = self.rgb_matrix_size[0]
+                                h = self.rgb_matrix_size[1]
+                                #self.dbg['DEBUG'].tr(f"ws_handler:{w}x{h} {data}")
 
-                            self.rgb_frame_signal.emit(img, self.RGB_multiplier)
+                                img = QImage(w, h, QImage.Format_RGB888)
+                                img.fill(QColor('black'))
+                                for y in range(h):
+                                    for x in range(w):
+                                        index = (y * w + x) * 3
+                                        try:
+                                            red, green, blue = data[index], data[index + 1], data[index + 2]
+                                            img.setPixelColor(x, y, QColor(red, green, blue))
+                                        except Exception as e:
+                                            #self.dbg['DEBUG'].tr(f"ws_handler: {e}")
+                                            pass
+
+                                self.rgb_frame_signal.emit(img, self.RGB_multiplier)
+                                self.dbg['DEBUG'].tr(f"ws_handler:emit(img) done")
+                self.dbg['DEBUG'].tr(f"ws_handler: message handled")
+                await asyncio.sleep(0)  # Ensures control is yielded back to the event loop
+
+        except Exception as e:
+            self.dbg['DEBUG'].tr(f"ws_handler: {e}")
+        self.dbg['DEBUG'].tr(f"ws_handler: done")
 
     def wsServerStartStop(self, state):
         #self.dbg['DEBUG'].tr(f"{state}")
@@ -1595,6 +1609,9 @@ def detect_keyboards():
 
 
 def main(keyboard_vid_pid):
+    from PySide6.QtCore import QLocale
+    locale = QLocale("C")
+    QLocale.setDefault(locale)
     app = QApplication(sys.argv)
 
     selected_keyboard = ""
