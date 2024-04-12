@@ -25,10 +25,48 @@ app_height      = 1000
 
 #-------------------------------------------------------------------------------
 
+class WSServer(QThread):
+    import asyncio
+    import websockets
+
+    def __init__(self, msg_handler, port = 8765):
+        self.dbg = {}
+        self.dbg['DEBUG'] = DebugTracer(print=1, trace=1, obj=self)
+
+        self.port = port
+        self.loop = None
+        self.msg_handler = msg_handler
+        super().__init__()
+
+    def run(self):
+        self.dbg['DEBUG'].tr(f"ws server start on port: {self.port}")
+        self.asyncio.run(self.ws_main())
+
+    async def ws_main(self):
+        self.loop = self.asyncio.get_running_loop()
+        self.stop_ev = self.loop.create_future()
+        async with self.websockets.serve(self.msg_handler, "localhost", self.port):
+            await self.stop_ev
+        self.dbg['DEBUG'].tr("ws server ended")
+
+    async def ws_close(self):
+        # dummy connect to exit ws_main
+        try:
+            async with self.websockets.connect(f"ws://localhost:{self.port}") as websocket:
+                await websocket.send("")
+        except Exception as e:
+            pass
+
+    def stop(self):
+        #self.dbg['DEBUG'].tr("ws server stop")
+        if self.loop:
+            self.stop_ev.set_result(None)
+            self.asyncio.run(self.ws_close())
+
+
 class ConsoleTab(QWidget):
     signal_dbg_mask = Signal(int)
     signal_macwin_mode = Signal(str)
-    signal_rgb_matrix_mode = Signal(int)
     signal_dynld_function = Signal(int, bytearray)
 
     def __init__(self):
@@ -43,10 +81,6 @@ class ConsoleTab(QWidget):
         macwin_mode = self.macWinModeSelector.currentText()
         self.signal_macwin_mode.emit(macwin_mode)
 
-    def update_keyb_rgb_matrix_mode(self):
-        matrix_mode = int(self.rgbMatrixModeInput.text())
-        self.signal_rgb_matrix_mode.emit(matrix_mode)
-
     def update_keyb_dynld_test_fun(self):
         DYNLD_TEST_FUNC = 1
         bin_file = 'V:\\shared\\nuphy\\custom_testfunc.bin'
@@ -54,8 +88,6 @@ class ConsoleTab(QWidget):
         with open(bin_file, 'rb') as file:
             buf = bytearray(file.read())
             self.signal_dynld_function.emit(DYNLD_TEST_FUNC, buf)
-
-
 
     def initUI(self):
         hLayout = QHBoxLayout()
@@ -80,27 +112,6 @@ class ConsoleTab(QWidget):
         hLayout.addWidget(dbgMaskLabel)
         hLayout.addWidget(self.dbgMaskInput)
         hLayout.addWidget(self.dbgMaskUpdateButton)
-        separator = QFrame()
-        separator.setFrameShape(QFrame.VLine)  # Set the frame shape to a vertical line
-        hLayout.addWidget(separator)
-
-        #---------------------------------------
-        # rgb matrix mode
-        rgbMaxtrixModeLabel = QLabel("rgb matrix mode")
-        self.rgbMatrixModeInput = QLineEdit()
-        regExp = QRegularExpression("[0-9]{1,2}")
-        self.rgbMatrixModeInput.setValidator(QRegularExpressionValidator(regExp))
-        metrics = QFontMetrics(self.rgbMatrixModeInput.font())
-        width = metrics.horizontalAdvance('W') * 3  # 'W' is used as it's typically the widest character
-        self.rgbMatrixModeInput.setFixedWidth(width)
-
-        self.rgbModeUpdateButton = QPushButton("set")
-        self.rgbModeUpdateButton.clicked.connect(self.update_keyb_rgb_matrix_mode)
-        self.rgbModeUpdateButton.setFixedWidth(width)
-
-        hLayout.addWidget(rgbMaxtrixModeLabel)
-        hLayout.addWidget(self.rgbMatrixModeInput)
-        hLayout.addWidget(self.rgbModeUpdateButton)
         separator = QFrame()
         separator.setFrameShape(QFrame.VLine)  # Set the frame shape to a vertical line
         hLayout.addWidget(separator)
@@ -156,23 +167,49 @@ class ConsoleTab(QWidget):
     def update_macwin_mode(self, macwin_mode):
         self.macWinModeSelector.setCurrentIndex(0 if macwin_mode == 'm' else 1)
 
-    def update_rgb_matrix_mode(self, matrix_mode):
-        self.rgbMatrixModeInput.setText(f"{matrix_mode}")
-
 #-------------------------------------------------------------------------------
 
 class RGBMatrixTab(QWidget):
+    signal_rgb_matrix_mode = Signal(int)
+
     def __init__(self, rgb_matrix_size):
         self.rgb_matrix_size = rgb_matrix_size
 
         super().__init__()
         self.initUI()
 
+    def update_keyb_rgb_matrix_mode(self):
+        matrix_mode = int(self.rgbMatrixModeInput.text())
+        self.signal_rgb_matrix_mode.emit(matrix_mode)
+
+    def update_rgb_matrix_mode(self, matrix_mode):
+        self.rgbMatrixModeInput.setText(f"{matrix_mode}")
 
     def initUI(self):
         self.layout = QVBoxLayout()
+        hLayout = QHBoxLayout()
         self.tab_widget = QTabWidget()
 
+        #---------------------------------------
+        # rgb matrix mode
+        rgbMaxtrixModeLabel = QLabel("rgb matrix mode")
+        self.rgbMatrixModeInput = QLineEdit()
+        regExp = QRegularExpression("[0-9]{1,2}")
+        self.rgbMatrixModeInput.setValidator(QRegularExpressionValidator(regExp))
+        metrics = QFontMetrics(self.rgbMatrixModeInput.font())
+        width = metrics.horizontalAdvance('W') * 3  # 'W' is used as it's typically the widest character
+        self.rgbMatrixModeInput.setFixedWidth(width)
+
+        self.rgbModeUpdateButton = QPushButton("set")
+        self.rgbModeUpdateButton.clicked.connect(self.update_keyb_rgb_matrix_mode)
+        self.rgbModeUpdateButton.setFixedWidth(width)
+
+        hLayout.addWidget(rgbMaxtrixModeLabel)
+        hLayout.addWidget(self.rgbMatrixModeInput)
+        hLayout.addWidget(self.rgbModeUpdateButton)
+        hLayout.addStretch(1)
+
+        #---------------------------------------
         self.rgb_video_tab = RGBVideoTab(self.rgb_matrix_size)
         self.rgb_animation_tab = RGBAnimationTab(self.rgb_matrix_size)
         self.rgb_audio_tab = RGBAudioTab(self.rgb_matrix_size)
@@ -185,6 +222,7 @@ class RGBMatrixTab(QWidget):
         self.tab_widget.addTab(self.rgb_capture_tab, 'capture')
         self.tab_widget.addTab(self.rgb_dynld_animation_tab, 'dynld animation')
 
+        self.layout.addLayout(hLayout)
         self.layout.addWidget(self.tab_widget)
         self.setLayout(self.layout)
 
@@ -194,21 +232,90 @@ class RGBVideoTab(QWidget):
     rgb_frame_signal = Signal(QImage, object)  # Signal to send rgb frame
 
     def __init__(self, rgb_matrix_size):
+        self.dbg = {}
+        self.dbg['DEBUG'] = DebugTracer(print=1, trace=1, obj=self)
         super().__init__()
+
         self.cap = None
         self.frameRate = 25
         self.rgb_matrix_size = rgb_matrix_size
         self.RGB_multiplier = (1.0,1.0,1.0)
+
+        #self.wsServer = WSServer(self.msg_handler) # todo
         self.initUI()
+
+    async def ws_handler(self, websocket, path):
+        async for message in websocket:
+            self.dbg['DEBUG'].tr(f"ws_handler: {message}")
+            sub = b"rgb."
+            if message.startswith(sub):
+                message = message[len(sub):]
+                subs = [ b"mode:", b"img:" ]
+                for sub in subs:
+                    if message.startswith(sub):
+                        if sub == b"mode:":
+                            try:
+                                mode = int(message.split(":")[1])
+                                #self.keyb_layer_set_signal.emit(mode)
+                            except Exception as e:
+                                self.dbg['DEBUG'].tr(f"ws_handler: {e}")
+                        if sub == b"img:":
+                            data = message[len(sub):]
+                            w = self.rgb_matrix_size[0]
+                            h = self.rgb_matrix_size[1]
+                            self.dbg['DEBUG'].tr(f"ws_handler:{w}x{h} {data}")
+
+                            img = QImage(w, h, QImage.Format_RGB888)
+                            img.fill(QColor('black'))
+                            for y in range(h):
+                                for x in range(w):
+                                    index = (y * w + x) * 3
+                                    try:
+                                        #self.dbg['DEBUG'].tr(f"ws_handler:index={index}")
+                                        red, green, blue = data[index], data[index + 1], data[index + 2]
+                                        img.setPixelColor(x, y, QColor(red, green, blue))
+                                        #self.dbg['DEBUG'].tr(f"ws_handler:rgb={red},{green},{blue}")
+                                    except Exception as e:
+                                        #self.dbg['DEBUG'].tr(f"ws_handler: {e}")
+                                        pass
+
+                            self.rgb_frame_signal.emit(img, self.RGB_multiplier)
+
+    def wsServerStartStop(self, state):
+        #self.dbg['DEBUG'].tr(f"{state}")
+        if Qt.CheckState(state) == Qt.CheckState.Checked:
+            self.dbg['DEBUG'].tr("ws server start")
+            self.wsServer = WSServer(self.ws_handler, int(self.wsServerPort.text()))
+            self.wsServer.start()
+        else:
+            try:
+                self.wsServer.stop()
+                self.wsServer.wait()
+                self.wsServer = None
+            except Exception as e:
+                self.dbg['DEBUG'].tr(f"{e}")
 
     def initUI(self):
         self.layout = QVBoxLayout()
         self.videoLabel = QLabel("")
-        self.videoLabel.setFixedSize(app_width, app_height)  # Set this to desired size
+        self.videoLabel.setFixedSize(app_width, app_height)
 
+        #---------------------------------------
+        hlayout = QHBoxLayout()
         self.openButton = QPushButton("open file")
         self.openButton.setFixedWidth(100)
         self.openButton.clicked.connect(self.openFile)
+        # "layer switch ws server" enable checkbox plus port input
+        self.wsServerCheckbox = QCheckBox("enable ws server", self)
+        self.wsServerPort = QLineEdit("8787")
+        port_validator = QIntValidator(0, 65535, self)
+        self.wsServerPort.setValidator(port_validator)
+        self.wsServerPort.setFixedWidth(50)
+        self.wsServerCheckbox.stateChanged.connect(self.wsServerStartStop)
+        hlayout = QHBoxLayout()
+        hlayout.addStretch(1)
+        hlayout.addWidget(self.wsServerCheckbox)
+        hlayout.addWidget(self.wsServerPort)
 
         controlsLayout = QHBoxLayout()
         self.frameRateLabel = QLabel("frame rate")
@@ -259,6 +366,7 @@ class RGBVideoTab(QWidget):
         rgbMultiplyLayout.addWidget(self.RGB_B_Label)
         rgbMultiplyLayout.addWidget(self.RGB_B_Slider)
 
+        self.layout.addLayout(hlayout)
         self.layout.addWidget(self.videoLabel)
         self.layout.addWidget(self.openButton)
         self.layout.addLayout(controlsLayout)
@@ -1013,60 +1121,6 @@ class LayerAutoSwitchTab(QWidget):
     keyb_layer_set_signal = Signal(int)
     num_program_selectors = 3
 
-    class WSServer(QThread):
-        import asyncio
-        import websockets
-
-        def __init__(self, layer_switcher, port = 8765):
-            self.dbg = {}
-            self.dbg['DEBUG'] = DebugTracer(print=1, trace=1, obj=self)
-
-            self.port = port
-            self.loop = None
-            self.layer_switcher = layer_switcher
-            super().__init__()
-
-        def run(self):
-            self.dbg['DEBUG'].tr(f"ws server start on port: {self.port}")
-            self.asyncio.run(self.ws_main())
-
-        async def ws_main(self):
-            self.loop = self.asyncio.get_running_loop()
-            self.stop_ev = self.loop.create_future()
-            async with self.websockets.serve(self.ws_handler, "localhost", self.port):
-                await self.stop_ev
-            self.dbg['DEBUG'].tr("ws server ended")
-
-        async def ws_close(self):
-            # dummy connect to exit ws_main
-            try:
-                async with self.websockets.connect(f"ws://localhost:{self.port}") as websocket:
-                    await websocket.send("")
-            except Exception as e:
-                pass
-
-        def stop(self):
-            #self.dbg['DEBUG'].tr("ws server stop")
-            if self.loop:
-                self.stop_ev.set_result(None)
-                self.asyncio.run(self.ws_close())
-
-        async def ws_handler(self, websocket, path):
-            async for message in websocket:
-                self.dbg['DEBUG'].tr(f"ws_handler: {message}")
-                if message.startswith("layer:"):
-                    try:
-                        layer = int(message.split(":")[1])
-                        self.layer_switcher.keyb_layer_set_signal.emit(layer)
-                    except Exception as e:
-                        self.dbg['DEBUG'].tr(f"ws_handler: {e}")
-                if message.startswith("rgb."): # todo rgb message handling
-                    # rgb.mode:<number>
-                    # rgb.buf:<rgb pixels> # 5 bytes per pixel, [index, duration, r, g, b]
-                    pass
-
-
-
     def __init__(self, num_keyb_layers=8):
         self.dbg = {}
         self.dbg['DEBUG'] = DebugTracer(print=1, trace=1, obj=self)
@@ -1078,11 +1132,45 @@ class LayerAutoSwitchTab(QWidget):
         super().__init__()
         self.initUI()
 
+    async def ws_handler(self, websocket, path):
+        async for message in websocket:
+            self.dbg['DEBUG'].tr(f"ws_handler: {message}")
+            if message.startswith("layer:"):
+                try:
+                    layer = int(message.split(":")[1])
+                    self.keyb_layer_set_signal.emit(layer)
+                except Exception as e:
+                    self.dbg['DEBUG'].tr(f"ws_handler: {e}")
+
     def wsServerStartStop(self, state):
         #self.dbg['DEBUG'].tr(f"{state}")
         if Qt.CheckState(state) == Qt.CheckState.Checked:
             self.dbg['DEBUG'].tr("ws server start")
-            self.wsServer = self.WSServer(self, int(self.layerSwitchServerPort.text()))
+            self.wsServer = WSServer(self.ws_handler, int(self.layerSwitchServerPort.text()))
+            self.wsServer.start()
+        else:
+            try:
+                self.wsServer.stop()
+                self.wsServer.wait()
+                self.wsServer = None
+            except Exception as e:
+                self.dbg['DEBUG'].tr(f"{e}")
+
+    async def ws_handler(self, websocket, path):
+        async for message in websocket:
+            self.dbg['DEBUG'].tr(f"ws_handler: {message}")
+            if message.startswith("layer:"):
+                try:
+                    layer = int(message.split(":")[1])
+                    self.keyb_layer_set_signal.emit(layer)
+                except Exception as e:
+                    self.dbg['DEBUG'].tr(f"ws_handler: {e}")
+
+    def wsServerStartStop(self, state):
+        #self.dbg['DEBUG'].tr(f"{state}")
+        if Qt.CheckState(state) == Qt.CheckState.Checked:
+            self.dbg['DEBUG'].tr("ws server start")
+            self.wsServer = WSServer(self.ws_handler, int(self.wsServerPort.text()))
             self.wsServer.start()
         else:
             try:
@@ -1422,20 +1510,18 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(tab_widget)
         #-----------------------------------------------------------
-
-        #-----------------------------------------------------------
         # connect signals
         self.keyboard.signal_console_output.connect(self.console_tab.update_text)
         self.keyboard.signal_debug_mask.connect(self.console_tab.update_debug_mask)
         self.keyboard.signal_macwin_mode.connect(self.console_tab.update_macwin_mode)
         self.keyboard.signal_default_layer.connect(self.layer_switch_tab.on_default_layer_changed)
-        self.keyboard.signal_rgb_matrix_mode.connect(self.console_tab.update_rgb_matrix_mode)
+        self.keyboard.signal_rgb_matrix_mode.connect(self.rgb_matrix_tab.update_rgb_matrix_mode)
 
         self.console_tab.signal_dbg_mask.connect(self.keyboard.keyb_dbg_mask_set)
         self.console_tab.signal_macwin_mode.connect(self.keyboard.keyb_macwin_mode_set)
-        self.console_tab.signal_rgb_matrix_mode.connect(self.keyboard.keyb_rgb_matrix_mode_set)
         self.console_tab.signal_dynld_function.connect(self.keyboard.keyb_dynld_function_set)
 
+        self.rgb_matrix_tab.signal_rgb_matrix_mode.connect(self.keyboard.keyb_rgb_matrix_mode_set)
         self.rgb_matrix_tab.rgb_video_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
         self.rgb_matrix_tab.rgb_animation_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
         self.rgb_matrix_tab.rgb_audio_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
