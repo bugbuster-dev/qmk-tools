@@ -236,6 +236,7 @@ class RGBVideoTab(QWidget):
     def __init__(self, rgb_matrix_tab, rgb_matrix_size):
         self.dbg = {}
         self.dbg['DEBUG'] = DebugTracer(print=0, trace=1, obj=self)
+        self.dbg['WS_MSG'] = DebugTracer(print=0, trace=1, obj=self)
         super().__init__()
 
         self.rgb_matrix_tab = rgb_matrix_tab
@@ -253,7 +254,7 @@ class RGBVideoTab(QWidget):
                 except:
                     pass # already bytearray
 
-                self.dbg['DEBUG'].tr(f"ws_handler: {message}")
+                self.dbg['WS_MSG'].tr(f"ws_handler: {message}")
                 sub = b"rgb."
                 if message.startswith(sub):
                     message = message[len(sub):]
@@ -265,12 +266,11 @@ class RGBVideoTab(QWidget):
                                     mode = int(message.split(b":")[1])
                                     self.rgb_matrix_tab.signal_rgb_matrix_mode.emit(mode)
                                 except Exception as e:
-                                    self.dbg['DEBUG'].tr(f"ws_handler: {e}")
+                                    self.dbg['WS_MSG'].tr(f"ws_handler: {e}")
                             if sub == b"img:":
                                 data = message[len(sub):]
                                 w = self.rgb_matrix_size[0]
                                 h = self.rgb_matrix_size[1]
-                                #self.dbg['DEBUG'].tr(f"ws_handler:{w}x{h} {data}")
 
                                 img = QImage(w, h, QImage.Format_RGB888)
                                 img.fill(QColor('black'))
@@ -281,22 +281,22 @@ class RGBVideoTab(QWidget):
                                             red, green, blue = data[index], data[index + 1], data[index + 2]
                                             img.setPixelColor(x, y, QColor(red, green, blue))
                                         except Exception as e:
-                                            #self.dbg['DEBUG'].tr(f"ws_handler: {e}")
+                                            #self.dbg['WS_MSG'].tr(f"ws_handler: {e}")
                                             pass
 
                                 self.rgb_frame_signal.emit(img, self.RGB_multiplier)
-                                self.dbg['DEBUG'].tr(f"ws_handler:emit(img) done")
-                self.dbg['DEBUG'].tr(f"ws_handler: message handled")
+                                self.dbg['WS_MSG'].tr(f"ws_handler:emit(img) done")
+                self.dbg['WS_MSG'].tr(f"ws_handler: message handled")
                 await asyncio.sleep(0)  # Ensures control is yielded back to the event loop
 
         except Exception as e:
-            self.dbg['DEBUG'].tr(f"ws_handler: {e}")
-        self.dbg['DEBUG'].tr(f"ws_handler: done")
+            self.dbg['WS_MSG'].tr(f"ws_handler: {e}")
+        self.dbg['WS_MSG'].tr(f"ws_handler: done")
+        self.rgb_frame_signal.emit(None, self.RGB_multiplier)
 
     def wsServerStartStop(self, state):
         #self.dbg['DEBUG'].tr(f"{state}")
         if Qt.CheckState(state) == Qt.CheckState.Checked:
-            self.dbg['DEBUG'].tr("ws server start")
             self.wsServer = WSServer(self.ws_handler, int(self.wsServerPort.text()))
             self.wsServer.start()
         else:
@@ -1161,7 +1161,6 @@ class LayerAutoSwitchTab(QWidget):
     def wsServerStartStop(self, state):
         #self.dbg['DEBUG'].tr(f"{state}")
         if Qt.CheckState(state) == Qt.CheckState.Checked:
-            self.dbg['DEBUG'].tr("ws server start")
             self.wsServer = WSServer(self.ws_handler, int(self.layerSwitchServerPort.text()))
             self.wsServer.start()
         else:
@@ -1181,20 +1180,6 @@ class LayerAutoSwitchTab(QWidget):
                     self.keyb_layer_set_signal.emit(layer)
                 except Exception as e:
                     self.dbg['DEBUG'].tr(f"ws_handler: {e}")
-
-    def wsServerStartStop(self, state):
-        #self.dbg['DEBUG'].tr(f"{state}")
-        if Qt.CheckState(state) == Qt.CheckState.Checked:
-            self.dbg['DEBUG'].tr("ws server start")
-            self.wsServer = WSServer(self.ws_handler, int(self.wsServerPort.text()))
-            self.wsServer.start()
-        else:
-            try:
-                self.wsServer.stop()
-                self.wsServer.wait()
-                self.wsServer = None
-            except Exception as e:
-                self.dbg['DEBUG'].tr(f"{e}")
 
     def initUI(self):
         layout = QVBoxLayout()
