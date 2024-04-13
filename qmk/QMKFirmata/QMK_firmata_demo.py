@@ -235,7 +235,7 @@ class RGBVideoTab(QWidget):
 
     def __init__(self, rgb_matrix_tab, rgb_matrix_size):
         self.dbg = {}
-        self.dbg['DEBUG'] = DebugTracer(print=1, trace=1, obj=self)
+        self.dbg['DEBUG'] = DebugTracer(print=0, trace=1, obj=self)
         super().__init__()
 
         self.rgb_matrix_tab = rgb_matrix_tab
