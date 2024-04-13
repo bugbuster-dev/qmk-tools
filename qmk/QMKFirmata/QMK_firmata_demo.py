@@ -83,7 +83,7 @@ class ConsoleTab(QWidget):
 
     def update_keyb_dynld_test_fun(self):
         DYNLD_TEST_FUNC = 1
-        bin_file = 'V:\\shared\\nuphy\\custom_testfunc.bin'
+        bin_file = 'V:\shared\qmk\dynld_testfunc.bin'
         # Open the file in binary read mode and read its contents into a bytearray
         with open(bin_file, 'rb') as file:
             buf = bytearray(file.read())

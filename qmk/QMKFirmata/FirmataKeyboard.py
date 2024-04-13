@@ -601,7 +601,6 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
                 data = bytearray()
                 data.append(FirmataKeybCmd.ID_DYNLD_FUNCTION)
-                id = [fun_id & 0xff, (fun_id >> 8) & 0xff]
                 offset = [i & 0xff, (i >> 8) & 0xff]
                 data.extend(id)
                 data.extend(offset)
@@ -611,7 +610,13 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
         if len(data) > 0:
             self.send_sysex(FirmataKeybCmd.SET, data)
-            num_sends += 1
+
+        data = bytearray()
+        data.append(FirmataKeybCmd.ID_DYNLD_FUNCTION)
+        offset = [0xff, 0xff]
+        data.extend(id)
+        data.extend(offset)
+        self.send_sysex(FirmataKeybCmd.SET, data)
 
         # todo define DYNLD_... function ids
         DYNLD_TEST_FUNCTION = 1
