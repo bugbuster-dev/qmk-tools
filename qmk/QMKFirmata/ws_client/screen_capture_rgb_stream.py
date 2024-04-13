@@ -48,8 +48,16 @@ if __name__ == "__main__":
                         #print(frame_bytes)
                         data = "rgb.img:".encode('utf-8')
                         data = data + frame_bytes
-                        await websocket.send(data)
-                        await asyncio.sleep(0)
+
+                        try:
+                            await websocket.send(data)
+                            await asyncio.sleep(0)
+                        except websockets.exceptions.ConnectionClosed as e:
+                            print("websocket connection closed: ", e)
+                            break
+                        except Exception as e:
+                            print("websocket send error:", e)
+                            break
                     except Exception as e:
                         print(e)
                     time.sleep(1/fps)
