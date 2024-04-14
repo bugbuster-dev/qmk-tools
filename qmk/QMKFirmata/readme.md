@@ -15,8 +15,8 @@ proof of concept demo of arduino firmata support in qmk firmware
 supported keyboards
 -------------------
 
-* keychron q3 max
-* nuphy air96 v2
+* keychron q3 max (https://github.com/bugbuster-dev/keychron_qmk_firmware)
+* nuphy air96 v2 (https://github.com/bugbuster-dev/qmk_firmware/tree/air96v2_virtser)
 
 install
 -------
