@@ -26,17 +26,29 @@ python 3.8 + packages in requirements.txt
 run
 ---
 
+~~~
 python QMK_firmata_demo.py
+~~~
 
 websocket client examples
 -------------------------
 
+in ws_client/
+
 set default layer:
 ~~~
-ws_client/layer_switch.py
+layer_switch.py
 ~~~
 
 screen capture and send rgb image:
 ~~~
 screen_capture_rgb_stream.py
 ~~~
+
+demo videos
+-----------
+
+https://drive.google.com/file/d/1v-YTx9ZsSe5XqfsBNemll0-R-acI87sh/view?usp=sharing
+https://drive.google.com/file/d/1F28Q8gsV9EzsmYWpxNxw247_gnC2F9l2/view?usp=drive_link
+https://drive.google.com/file/d/1ihq2j6Uv4oSw9eXC1Qen8Zr3MP52b8at/view?usp=sharing
+
