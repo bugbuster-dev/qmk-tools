@@ -1,14 +1,14 @@
 QMK Firmata demo
 ================
 
-proof of concept demo of arduino firmata support in qmk firmware
+proof of concept demo (windows) of arduino firmata support in qmk firmware
 
-- show console output
-- set debug mask (enable/matrix/keyboard/...)
-- set mac/win mode
 - set rgb matrix from video/gif playback, matplotlib animation, audio peak level
-- set dynamically loaded user animation binary
 - set default layer depending on application in focus
+- set mac/win mode
+- set dynamically loaded user animation binary
+- show console output
+- set debug config mask (enable/matrix/keyboard/...)
 - websocket server to set default layer from other apps
 - websocket server to set rgb matrix from other apps
 
@@ -48,7 +48,7 @@ screen_capture_rgb_stream.py
 demo videos
 -----------
 
-https://drive.google.com/file/d/1v-YTx9ZsSe5XqfsBNemll0-R-acI87sh/view?usp=sharing
-https://drive.google.com/file/d/1F28Q8gsV9EzsmYWpxNxw247_gnC2F9l2/view?usp=drive_link
-https://drive.google.com/file/d/1ihq2j6Uv4oSw9eXC1Qen8Zr3MP52b8at/view?usp=sharing
+* https://drive.google.com/file/d/12ySYJkP7ocTn34E90FT40A-Zuc35bw2c/view?usp=drive_link
+* https://drive.google.com/file/d/1v-YTx9ZsSe5XqfsBNemll0-R-acI87sh/view?usp=sharing
+* https://drive.google.com/file/d/1F28Q8gsV9EzsmYWpxNxw247_gnC2F9l2/view?usp=drive_link
 

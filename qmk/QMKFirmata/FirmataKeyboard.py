@@ -1,4 +1,3 @@
-
 import pyfirmata2
 
 from PySide6 import QtCore
@@ -14,10 +13,7 @@ from serial.tools import list_ports
 
 from DebugTracer import DebugTracer
 
-import glob
-import importlib.util
-import inspect
-import os
+import glob, inspect, os, importlib.util, struct
 from pathlib import Path
 
 #-------------------------------------------------------------------------------
@@ -136,7 +132,7 @@ class SerialRawHID(SerialBase):
                     break
 
             if not device:
-                raise Exception("no hid device found")
+                raise Exception("no raw hid device found")
 
             self.hid_device = hid.device()
             self.hid_device.open_path(device['path'])
@@ -231,7 +227,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
     """
     #-------------------------------------------------------------------------------
     signal_console_output = Signal(str)  # signal new console output
-    signal_debug_mask = Signal(int)
+    signal_debug_mask = Signal(int, int)
     signal_macwin_mode = Signal(str)
     signal_default_layer = Signal(int)
     signal_rgb_matrix_mode = Signal(int)
@@ -357,7 +353,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
 
     def __str__(self):
-        return "Keyboard {0.name} on {0.sp.port}".format(self)
+        return "{0.name} ({0.sp.port})".format(self)
 
     def rgb_matrix_size(self):
         if self.keyboardModel:
@@ -411,7 +407,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         time.sleep(0.5)
         print("-"*80)
         print(f"{self}")
-        print(f"firmware:{self.firmware} {self.firmware_version}, firmata={self.get_firmata_version()}")
+        print(f"qmk firmata version:{self.firmware} {self.firmware_version}, firmata={self.get_firmata_version()}")
         print("-"*80)
 
     def stop(self):
@@ -444,9 +440,15 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             self.signal_macwin_mode.emit(macwin_mode)
             self.signal_default_layer.emit(self.default_layer(macwin_mode))
         elif buf[0] == FirmataKeybCmd.ID_DEBUG_MASK:
-            dbg_mask = buf[1]
-            dbg.tr(f"debug mask: {dbg_mask}")
-            self.signal_debug_mask.emit(dbg_mask)
+            dbg_mask = 0
+            dbg_user_mask = 0
+            try:
+                dbg_mask = struct.unpack_from('>I', buf, 1)[0]
+                dbg_user_mask = struct.unpack_from('>I', buf, 5)[0]
+            except Exception as e:
+                self.dbg['ERROR'].tr(f"sysex_response_handler:ID_DEBUG_MASK:{e}")
+            dbg.tr(f"debug mask: {hex(dbg_mask)} {hex(dbg_user_mask)}")
+            self.signal_debug_mask.emit(dbg_mask, dbg_user_mask)
         elif buf[0] == FirmataKeybCmd.ID_BATTERY_STATUS:
             battery_charging = buf[1]
             battery_level = buf[2]
@@ -551,13 +553,14 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         data.append(min(layer, self.num_layers()-1))
         self.send_sysex(FirmataKeybCmd.SET, data)
 
-    def keyb_dbg_mask_set(self, dbg_mask):
+    def keyb_dbg_mask_set(self, dbg_mask, dbg_user_mask):
         dbg = self.dbg['SYSEX_COMMAND']
         dbg.tr(f"keyb_dbg_mask_set: {dbg_mask}")
 
         data = bytearray()
         data.append(FirmataKeybCmd.ID_DEBUG_MASK)
-        data.append(min(dbg_mask, 255))
+        data.extend(bytearray(struct.pack('>I', dbg_mask)))
+        data.extend(bytearray(struct.pack('>I', dbg_user_mask)))
         self.send_sysex(FirmataKeybCmd.SET, data)
 
     def keyb_macwin_mode_set(self, macwin_mode):
@@ -595,7 +598,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             if len(data) >= self.MAX_LEN_SYSEX_DATA:
                 self.send_sysex(FirmataKeybCmd.SET, data)
                 num_sends += 1
-                # todo: sync with keyboard to avoid buffer overflow
+                # todo: sync with keyboard to avoid firmata buffer overflow
                 if num_sends % 2 == 0:
                     time.sleep(0.002)
 

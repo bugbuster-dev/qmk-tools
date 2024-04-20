@@ -1,5 +1,7 @@
 import sys, time, hid, argparse
-import cv2, pyaudio, numpy as np
+import pyaudiowpatch as pyaudio
+import cv2, numpy as np
+import json
 
 from PySide6 import QtCore
 from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QFrame
@@ -65,9 +67,8 @@ class WSServer(QThread):
 
 
 class ConsoleTab(QWidget):
-    signal_dbg_mask = Signal(int)
+    signal_dbg_mask = Signal(int, int)
     signal_macwin_mode = Signal(str)
-    signal_dynld_function = Signal(int, bytearray)
 
     def __init__(self):
         super().__init__()
@@ -75,23 +76,17 @@ class ConsoleTab(QWidget):
 
     def update_keyb_dbg_mask(self):
         dbg_mask = int(self.dbgMaskInput.text(),16)
-        self.signal_dbg_mask.emit(dbg_mask)
+        dbg_user_mask = int(self.dbgUserMaskInput.text(),16)
+        self.signal_dbg_mask.emit(dbg_mask, dbg_user_mask)
 
     def update_keyb_macwin_mode(self):
         macwin_mode = self.macWinModeSelector.currentText()
         self.signal_macwin_mode.emit(macwin_mode)
 
-    def update_keyb_dynld_test_fun(self):
-        DYNLD_TEST_FUNC = 1
-        bin_file = 'V:\shared\qmk\dynld_testfunc.bin'
-        # Open the file in binary read mode and read its contents into a bytearray
-        with open(bin_file, 'rb') as file:
-            buf = bytearray(file.read())
-            self.signal_dynld_function.emit(DYNLD_TEST_FUNC, buf)
-
     def initUI(self):
         hLayout = QHBoxLayout()
-        dbgMaskLabel = QLabel("debug mask")
+        dbgMaskLabel = QLabel("debug (user) mask")
+        #dbgUserMaskLabel = QLabel("debug user mask")
         metrics = QFontMetrics(dbgMaskLabel.font())
         dbgMaskLabel.setFixedHeight(metrics.height())
 
@@ -102,8 +97,16 @@ class ConsoleTab(QWidget):
         regExp = QRegularExpression("[0-9A-Fa-f]{1,2}")
         self.dbgMaskInput.setValidator(QRegularExpressionValidator(regExp))
         metrics = QFontMetrics(self.dbgMaskInput.font())
-        width = metrics.horizontalAdvance('W') * 3  # 'W' is used as it's typically the widest character
+        width = metrics.horizontalAdvance('W') * 2  # 'W' is used as it's typically the widest character
         self.dbgMaskInput.setFixedWidth(width)
+
+        self.dbgUserMaskInput = QLineEdit()
+        # Set a validator to allow only hex characters (0-9, A-F, a-f) and limit to 8 characters
+        regExp = QRegularExpression("[0-9A-Fa-f]{1,8}")
+        self.dbgUserMaskInput.setValidator(QRegularExpressionValidator(regExp))
+        width = QFontMetrics(self.dbgUserMaskInput.font()).horizontalAdvance('W') * 8
+        self.dbgUserMaskInput.setFixedWidth(width)
+
 
         self.dbgMaskUpdateButton = QPushButton("set")
         self.dbgMaskUpdateButton.clicked.connect(self.update_keyb_dbg_mask)
@@ -111,17 +114,10 @@ class ConsoleTab(QWidget):
 
         hLayout.addWidget(dbgMaskLabel)
         hLayout.addWidget(self.dbgMaskInput)
+        #hLayout.addWidget(dbgUserMaskLabel)
+        hLayout.addWidget(self.dbgUserMaskInput)
         hLayout.addWidget(self.dbgMaskUpdateButton)
-        separator = QFrame()
-        separator.setFrameShape(QFrame.VLine)  # Set the frame shape to a vertical line
-        hLayout.addWidget(separator)
-
-        #---------------------------------------
-        # dynld test function
-        self.dynldTestFunButton = QPushButton("dynld test")
-        self.dynldTestFunButton.clicked.connect(self.update_keyb_dynld_test_fun)
-
-        hLayout.addWidget(self.dynldTestFunButton)
+        hLayout.addStretch(1)
         separator = QFrame()
         separator.setFrameShape(QFrame.VLine)  # Set the frame shape to a vertical line
         hLayout.addWidget(separator)
@@ -161,8 +157,9 @@ class ConsoleTab(QWidget):
         self.console_output.insertPlainText(text)
         self.console_output.ensureCursorVisible()
 
-    def update_debug_mask(self, dbg_mask):
+    def update_debug_mask(self, dbg_mask, dbg_user_mask):
         self.dbgMaskInput.setText(f"{dbg_mask:02x}")
+        self.dbgUserMaskInput.setText(f"{dbg_user_mask:08x}")
 
     def update_macwin_mode(self, macwin_mode):
         self.macWinModeSelector.setCurrentIndex(0 if macwin_mode == 'm' else 1)
@@ -454,10 +451,10 @@ class RGBVideoTab(QWidget):
 
 class AudioCaptureThread(QThread):
 
-    def __init__(self, freq_ranges, interval):
+    def __init__(self, freq_bands, interval):
         super().__init__()
         self.running = False
-        self.freq_ranges = freq_ranges
+        self.freq_bands = freq_bands
         self.interval = interval
 
         self.dbg = {}
@@ -466,24 +463,44 @@ class AudioCaptureThread(QThread):
     def connect_callback(self, callback):
         self.callback = callback
 
-    def set_freq_ranges(self, freq_ranges):
-        self.freq_ranges = freq_ranges
+    def set_freq_bands(self, freq_bands):
+        self.freq_bands = freq_bands
 
     def run(self):
         dbg = self.dbg['DEBUG']
 
+        default_speakers = None
+        p = pyaudio.PyAudio()
+        try:
+            # see https://github.com/s0d3s/PyAudioWPatch/blob/master/examples/pawp_record_wasapi_loopback.py
+            wasapi_info = p.get_host_api_info_by_type(pyaudio.paWASAPI)
+            dbg.tr(f"wasapi: {wasapi_info}")
+
+            default_speakers = p.get_device_info_by_index(wasapi_info["defaultOutputDevice"])
+            if not default_speakers["isLoopbackDevice"]:
+                for loopback in p.get_loopback_device_info_generator():
+                    if default_speakers["name"] in loopback["name"]:
+                        default_speakers = loopback
+                        break
+
+            dbg.tr(f"loopback device: {default_speakers}")
+        except Exception as e:
+            dbg.tr(f"wasapi not supported: {e}")
+            return
+
         FORMAT = pyaudio.paFloat32
-        CHANNELS = 1
-        RATE = 44100  # Sample rate
-        CHUNK = 1024  # Number of audio samples per frame
+        CHANNELS = default_speakers["maxInputChannels"]
+        RATE = int(default_speakers["defaultSampleRate"])
+        INPUT_INDEX = input_device_index=default_speakers["index"]
+        CHUNK = 512 #1024
 
         self.running = True
-        p = pyaudio.PyAudio()
         stream = p.open(format=FORMAT,
                         channels=CHANNELS,
                         rate=RATE,
                         input=True,
-                        frames_per_buffer=CHUNK)
+                        frames_per_buffer=CHUNK,
+                        input_device_index=INPUT_INDEX)
         dbg.tr(f"audio stream {stream} opened")
 
         while self.running:
@@ -501,7 +518,7 @@ class AudioCaptureThread(QThread):
             freq_bins = np.fft.rfftfreq(len(audio_data), d=1./RATE)
             peak_levels = []
 
-            for f_min, f_max in self.freq_ranges:
+            for f_min, f_max in self.freq_bands:
                 # Find the bin indices corresponding to the frequency range
                 idx = np.where((freq_bins >= f_min) & (freq_bins <= f_max))
                 if len(freq_magnitude[idx]) > 0:
@@ -520,28 +537,73 @@ class AudioCaptureThread(QThread):
         self.running = False
 
 
+#-------------------------------------------------------------------------------
 class RGBAudioTab(QWidget):
     rgb_frame_signal = Signal(QImage, object)  # Signal to send rgb frame
+    freq_bands = []
 
-    freq_ranges = []
+    '''
+    piano frequency ranges:
+    Sub-bass (A0 to A1): 27.5 Hz to 55 Hz
+    Bass (A1 to A2): 55 Hz to 110 Hz
+    Low Midrange (A2 to A3): 110 Hz to 220 Hz
+    Midrange (A3 to A4): 220 Hz to 440 Hz
+    Upper Midrange (A4 to A5): 440 Hz to 880 Hz
+    High Frequency (A5 to A6): 880 Hz to 1760 Hz
+    Very High Frequency (A6 to A7): 1760 Hz to 3520 Hz
+    Ultrasonic (A7 to C8): 3520 Hz to 4186 Hz
+
+    violin frequency ranges:
+    Low Range (G3 to B3): 196 Hz to 247 Hz
+    Low Mid Range (C4 to E4): 262 Hz to 330 Hz
+    Mid Range (F4 to A4): 349 Hz to 440 Hz
+    High Mid Range (A#4 to C6): 466 Hz to 1047 Hz
+    High Range (C#6 to G7): 1109 Hz to 3136 Hz
+    Very High Range (G#7 to C8 and beyond): 3322 Hz to 4186+ Hz
+
+    contrabass frequency ranges:
+    Sub-Bass (E1 to B1): 41.2 Hz to 61.7 Hz
+    Bass (C2 to E2): 65.4 Hz to 82.4 Hz
+    Low Midrange (F2 to A2): 87.3 Hz to 110 Hz
+    Midrange (A#2 to D3): 116.5 Hz to 146.8 Hz
+    Upper Midrange (D#3 to G3): 155.6 Hz to 196 Hz
+    High Frequency (G#3 to C4): 207.7 Hz to 261.6 Hz
+    Very High Frequency (C#4 and above): 277.2 Hz
+
+    vocal range:
+    f3-f6: 175-1400 Hz
+    '''
+    @staticmethod
+    def freq_bands_linear(f_min, f_max, k):
+        bands = []
+        step = (f_max - f_min)/k
+        for i in range(k):
+            bands.append((f_min + i*step, f_min + (i+1)*step))
+        return bands
 
     @staticmethod
-    def freq_subranges(freq_low, freq_high, num_ranges):
-        freq_range = []
-        step = (freq_high - freq_low)/num_ranges
-        for i in range(num_ranges):
-            freq_range.append((freq_low + i*step, freq_low + (i+1)*step))
+    def freq_bands_log(f_min, f_max, k):
+        #f_min = 27.5  # Hz (frequency of A0)
+        #f_max = 4186  # Hz (frequency of C8)
+        #k = 16        # number of bands
+        # Calculate the frequency boundaries for each of the 16 bands
+        i = np.arange(k + 1)  # index array from 0 to k (inclusive)
+        bounds = f_min * (f_max / f_min) ** (i / k)
+        # Prepare the bands in a readable format
+        bands = [(bounds[n], bounds[n + 1]) for n in range(k)]
+        return bands
 
-        return freq_range
-
+    @staticmethod
+    def freq_bands_for(f_min, f_max, k):
+        return RGBAudioTab.freq_bands_log(f_min, f_max, k)
 
     def __init__(self, rgb_matrix_size):
         #-----------------------------------------------------------
         self.dbg = {}
-        self.dbg['DEBUG']       = DebugTracer(print=1, trace=1)
-        self.dbg['FREQ_RANGE']  = DebugTracer(print=1, trace=1)
-        self.dbg['PEAK_LEVEL']  = DebugTracer(print=0, trace=1)
-        self.dbg['MAX_PEAK']    = DebugTracer(print=1, trace=1)
+        self.dbg['DEBUG']       = DebugTracer(print=1, trace=1, obj=self)
+        self.dbg['FREQ_BAND']  = DebugTracer(print=1, trace=1, obj=self)
+        self.dbg['PEAK_LEVEL']  = DebugTracer(print=0, trace=1, obj=self)
+        self.dbg['MAX_PEAK']    = DebugTracer(print=1, trace=1, obj=self)
         #-----------------------------------------------------------
 
         super().__init__()
@@ -558,133 +620,176 @@ class RGBAudioTab(QWidget):
         self.max_level = 10  # max level used for rgb intensity
         self.max_level_running = 0  # max level updated every sample
         self.sample_count = 0
-        self.audioThread = AudioCaptureThread(self.freq_ranges, 0.08)
+        self.audioThread = AudioCaptureThread(self.freq_bands, 0.05)
+
+    def loadFreqBandsJsonFile(self):
+        fileName, _ = QFileDialog.getOpenFileName(self, "open file", "", "json (*.json)")
+        self.load_freq_bands_colors(fileName)
+        # update freq bands rgb ui
+        for i, (band, color) in enumerate(zip(self.freq_bands, self.freq_rgb)):
+            self.dbg['FREQ_BAND'].tr(f"{band} {color}")
+            self.freqBandsInput[i][0].setText(format(band[0], '.2f'))
+            self.freqBandsInput[i][1].setText(format(band[1], '.2f'))
+            for j in range(3):
+                self.freqBandsRGBInput[i][j].setText(format(color[j], '.2f'))
+                self.freqBandsRGBInput[i][j].setText(format(color[j], '.2f'))
+                self.freqBandsRGBInput[i][j].setText(format(color[j], '.2f'))
 
     def initUI(self):
         layout = QVBoxLayout()
-        layout.addStretch(1)
+        # todo load/save button for freq_bands_colors
+        #-----------------------------------------------------------
+        hlayout = QHBoxLayout()
+        label = QLabel("frequency band | rgb")
+        self.loadButton = QPushButton("load")
+        self.loadButton.clicked.connect(self.loadFreqBandsJsonFile)
 
-        freqRangeLayout = QHBoxLayout()
-        # frequency range input
-        self.freqRangeLabel = QLabel("frequency range")
-        self.freqRangeLowInput = QLineEdit()
-        self.frequencyHighInput = QLineEdit()
-        self.freqRangeLowInput.setValidator(QIntValidator(0,20000))
-        self.frequencyHighInput.setValidator(QIntValidator(0,20000))
-        self.freqRangeLabel.setFixedWidth(100)
-        self.freqRangeLowInput.setFixedWidth(50)
-        self.frequencyHighInput.setFixedWidth(50)
-        self.freqRangeLowInput.setText("0")
-        self.frequencyHighInput.setText("1600")
-        self.freqRangeLowInput.textChanged.connect(self.update_freq_ranges)
-        self.frequencyHighInput.textChanged.connect(self.update_freq_ranges)
+        hlayout.addWidget(label)
+        hlayout.addWidget(self.loadButton)
+        hlayout.addStretch(1)
+        layout.addLayout(hlayout)
 
-        self.nSubRangesLabel = QLabel("#subranges")
-        self.nSubRangesInput = QLineEdit()
-        self.nSubRangesInput.setValidator(QIntValidator(1,16))
-        self.nSubRangesLabel.setFixedWidth(80)
-        self.nSubRangesInput.setFixedWidth(50)
-        self.nSubRangesInput.setText("16")
-        self.nSubRangesInput.textChanged.connect(self.update_freq_ranges)
+        self.load_freq_bands_colors()
+        self.freqBandsInput = []
+        self.freqBandsRGBInput = []
+        for band, color in zip(self.freq_bands, self.freq_rgb):
+            self.dbg['FREQ_BAND'].tr(f"{band} {color}")
+            low = QLineEdit()
+            high = QLineEdit()
+            low.setFixedWidth(60)
+            high.setFixedWidth(60)
+            low.setValidator(QIntValidator(10,20000))
+            high.setValidator(QIntValidator(10,20000))
+            low.setText(format(band[0], '.2f'))
+            high.setText(format(band[1], '.2f'))
+            low.textChanged.connect(self.update_freq_bands)
+            high.textChanged.connect(self.update_freq_bands)
+            self.freqBandsInput.append((low,high))
+            self.freqBandsRGBInput.append((QLineEdit(),QLineEdit(),QLineEdit()))
+            hlayout = QHBoxLayout()
+            hlayout.addWidget(low)
+            hlayout.addWidget(high)
+            separator = QFrame()
+            separator.setFrameShape(QFrame.VLine)  # Set the frame shape to a vertical line
+            hlayout.addWidget(separator)
+            for i, rgb in enumerate(self.freqBandsRGBInput[-1]):
+                rgb.setValidator(QDoubleValidator(0.0,5.0,2))
+                rgb.setFixedWidth(30)
+                rgb.setText(format(color[i], '.2f'))
+                rgb.textChanged.connect(self.update_freq_rgb)
+                hlayout.addWidget(rgb)
+            hlayout.addStretch(1)
+            layout.addLayout(hlayout)
 
-        self.maxLevelLabel = QLabel("max level (0 for auto)")
+        #-----------------------------------------------------------
+        hlayout = QHBoxLayout()
+        # todo add min level
+        self.maxLevelLabel = QLabel("min/max level (0 for auto)")
+        self.maxLevelLabel.setFixedWidth(160)
+        self.minLevelInput = QLineEdit()
+        self.minLevelInput.setValidator(QIntValidator(0,1000))
+        self.minLevelInput.setFixedWidth(50)
+        self.minLevelInput.setText("0")
         self.maxLevelInput = QLineEdit()
-        self.maxLevelInput.setValidator(QIntValidator(0,100))
-        self.maxLevelLabel.setFixedWidth(120)
+        self.maxLevelInput.setValidator(QIntValidator(0,1000))
         self.maxLevelInput.setFixedWidth(50)
         self.maxLevelInput.setText("0")
+        self.db_min = -27
 
-        freqRangeLayout.addWidget(self.freqRangeLabel)
-        freqRangeLayout.addWidget(self.freqRangeLowInput)
-        freqRangeLayout.addWidget(self.frequencyHighInput)
-        freqRangeLayout.addWidget(self.nSubRangesLabel)
-        freqRangeLayout.addWidget(self.nSubRangesInput)
-
-        freqRangeLayout.addWidget(self.maxLevelLabel)
-        freqRangeLayout.addWidget(self.maxLevelInput)
-
-        freqRangeLayout.addStretch(1)
-        layout.addLayout(freqRangeLayout)
+        hlayout.addWidget(self.maxLevelLabel)
+        hlayout.addWidget(self.minLevelInput)
+        hlayout.addWidget(self.maxLevelInput)
+        hlayout.addStretch(1)
+        layout.addLayout(hlayout)
+        layout.addStretch(1)
 
         #-------------------------------------------------------------------------------
-        num_subranges = 16
-        range_red_values =      [ 3.0, 2.0, 1.4, 1.0, 0.4, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0 ]
-        range_green_values =    [ 0.0, 0.2, 0.6, 0.8, 0.8, 1.2, 1.6, 2.0, 2.0, 1.6, 1.2, 0.8, 0.4, 0.0, 0.0, 0.0 ]
-        range_blue_values =     [ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.4, 0.6, 1.0, 1.2, 1.8, 2.0, 3.0 ]
-
-        redRangeLayout = QHBoxLayout()
-        self.redRangeLabel = QLabel("r")
-        self.redRangeInput = []
-        redRangeLayout.addWidget(self.redRangeLabel)
-        for i in range(num_subranges):
-            self.redRangeInput.append(QLineEdit())
-            self.redRangeInput[i].setValidator(QDoubleValidator(0.0,5.0,1))
-            self.redRangeInput[i].setText(str(range_red_values[i]))
-            self.redRangeInput[i].textChanged.connect(self.update_freq_rgb)
-            redRangeLayout.addWidget(self.redRangeInput[i])
-
-        greenRangeLayout = QHBoxLayout()
-        self.greenRangeLabel = QLabel("g")
-        self.greenRangeInput = []
-        greenRangeLayout.addWidget(self.greenRangeLabel)
-        for i in range(num_subranges):
-            self.greenRangeInput.append(QLineEdit())
-            self.greenRangeInput[i].setValidator(QDoubleValidator(0.0,5.0,1))
-            self.greenRangeInput[i].setText(str(range_green_values[i]))
-            self.greenRangeInput[i].textChanged.connect(self.update_freq_rgb)
-            greenRangeLayout.addWidget(self.greenRangeInput[i])
-
-        blueRangeLayout = QHBoxLayout()
-        self.blueRangeLabel = QLabel("b")
-        self.blueRangeInput = []
-        blueRangeLayout.addWidget(self.blueRangeLabel)
-        for i in range(num_subranges):
-            self.blueRangeInput.append(QLineEdit())
-            self.blueRangeInput[i].setValidator(QDoubleValidator(0.0,5.0,1))
-            self.blueRangeInput[i].setText(str(range_blue_values[i]))
-            self.blueRangeInput[i].textChanged.connect(self.update_freq_rgb)
-            blueRangeLayout.addWidget(self.blueRangeInput[i])
-
-        layout.addLayout(redRangeLayout)
-        layout.addLayout(greenRangeLayout)
-        layout.addLayout(blueRangeLayout)
-
-        #-------------------------------------------------------------------------------
+        #rgb_values = generate_freq_rgb_values(num_bands)
         self.startButton = QPushButton("start")
         self.startButton.clicked.connect(self.start)
         layout.addWidget(self.startButton)
 
         self.setLayout(layout)
 
+    def load_freq_bands_colors(self, file_name='freq_bands_colors.json'):
+        try:
+            with open(file_name, 'r') as file:
+                freq_bands_colors = json.load(file)
+                self.freq_bands = freq_bands_colors['freq_bands']
+                self.freq_rgb = freq_bands_colors['colors']
+                if len(self.freq_bands) > 31:
+                    raise Exception("too many freq bands")
+                if len(self.freq_bands) != len(self.freq_rgb):
+                    raise Exception("freq_bands and colors have different lengths")
+                #self.dbg['DEBUG'].tr(f"freq_bands:{self.freq_bands}")
+                #self.dbg['DEBUG'].tr(f"freq_rgb:{self.freq_rgb}")
+        except Exception as e:
+            self.dbg['DEBUG'].tr(f"error loading freq_bands_colors.json: {e}")
+            self.freq_bands = []
+            self.freq_rgb = []
+
+    def save_freq_bands_colors(self):
+        freq_bands_colors = {
+            "freq_bands": self.freq_bands,
+            "colors": self.freq_rgb
+        }
+        with open('freq_bands_colors.json', 'w') as file:
+            json.dump(freq_bands_colors, file, indent=4)
 
     def update_freq_rgb(self):
-        n_ranges = int(self.nSubRangesInput.text())
-        self.freq_rgb_r = [float(self.redRangeInput[i].text()) for i in range(n_ranges)]
-        self.freq_rgb_g = [float(self.greenRangeInput[i].text()) for i in range(n_ranges)]
-        self.freq_rgb_b = [float(self.blueRangeInput[i].text()) for i in range(n_ranges)]
+        n_ranges = len(self.freq_bands)
+        self.freq_rgb = []
+        for i in range(n_ranges):
+            self.freq_rgb.append([float(self.freqBandsRGBInput[i][0].text()), float(self.freqBandsRGBInput[i][1].text()), float(self.freqBandsRGBInput[i][2].text())])
 
-    def update_freq_ranges(self):
-        self.freq_ranges = self.freq_subranges(int(self.freqRangeLowInput.text()), int(self.frequencyHighInput.text()), int(self.nSubRangesInput.text()))
-        self.dbg['FREQ_RANGE'].tr(f"audio peak freq range {self.freq_ranges}")
-        self.audioThread.set_freq_ranges(self.freq_ranges)
+        self.dbg['FREQ_BAND'].tr(f"freq band colors {self.freq_rgb}")
+
+    def update_freq_bands(self):
+        n_ranges = len(self.freq_bands)
+        for i in range(n_ranges):
+            self.freq_bands[i] = (float(self.freqBandsInput[i][0].text()), float(self.freqBandsInput[i][1].text()))
+
+        self.dbg['FREQ_BAND'].tr(f"freq bands {self.freq_bands}")
+        self.audioThread.set_freq_bands(self.freq_bands)
 
     #-------------------------------------------------------------------------------
-    def peak_level_to_rgb(self, peak_levels, max_level):
+    def db_to_255(self, dB_value, dB_min=-60, dB_max=0):
+        # Normalize dB value from [dB_min, dB_max] to [0, 1]
+        normalized = (dB_value - dB_min) / (dB_max - dB_min)
+        # Clip the normalized value to be within the range [0, 1]
+        normalized = max(0, min(1, normalized))
+        # Convert normalized value to an integer in the range [0, 255]
+        mapped_value = int(round(255 * normalized))
+        return mapped_value
+
+    def peak_level_to_rgb(self, peak_levels, db_min, max_level):
         r = g = b = 0
-
+        max_rgb = 255
         for i in range(len(peak_levels)):
-            r += peak_levels[i] * self.freq_rgb_r[i]
-            g += peak_levels[i] * self.freq_rgb_g[i]
-            b += peak_levels[i] * self.freq_rgb_b[i]
+            try:
+                peak_db = 20 * np.log10(peak_levels[i]/max_level)
+                peak_db_rgb = self.db_to_255(peak_db, db_min, 0)
+                #print(f"peak {i}: {peak_levels[i]} {peak_db} {peak_db_rgb}")
+                log_scale = True
+                if log_scale:
+                    r += peak_db_rgb * self.freq_rgb[i][0]
+                    g += peak_db_rgb * self.freq_rgb[i][1]
+                    b += peak_db_rgb * self.freq_rgb[i][2]
+                else:
+                    r += peak_levels[i]/max_level * self.freq_rgb[i][0] * max_rgb
+                    g += peak_levels[i]/max_level * self.freq_rgb[i][1] * max_rgb
+                    b += peak_levels[i]/max_level * self.freq_rgb[i][2] * max_rgb
+            except Exception as e:
+                self.dbg['DEBUG'].tr(f"ppeak_level_to_rgb:{e}")
+                pass # #bands updated in ui
 
+        # rgb values are added for all bands, normalize with a factor
         r /= 3
         g /= 3
         b /= 3
-
-        # red for low, green for mid, blue for high tones
-        r = min(r/max_level * 255, 255)
-        g = min(g/max_level * 255, 255)
-        b = min(b/max_level * 255, 255)
+        r = min(r, max_rgb)
+        g = min(g, max_rgb)
+        b = min(b, max_rgb)
 
         return r,g,b
 
@@ -695,7 +800,8 @@ class RGBAudioTab(QWidget):
             return
 
         self.sample_count += 1
-        self.dbg['PEAK_LEVEL'].tr(f"peak {self.sample_count}: {peak_levels}")
+        if self.dbg['PEAK_LEVEL'].print:
+            self.dbg['PEAK_LEVEL'].tr(f"peak {self.sample_count}: {peak_levels}")
 
         # update "running max level", after N samples "max level" is adjusted with this
         peak_level = 0 # current sample peak level
@@ -708,6 +814,7 @@ class RGBAudioTab(QWidget):
         # update "max level" every N samples, brightness is based on current peak levels and "max level"
         if self.sample_count == 30:
             self.sample_count = 0
+
             max_level_input = 0
             try:
                 max_level_input = int(self.maxLevelInput.text())
@@ -719,14 +826,25 @@ class RGBAudioTab(QWidget):
             else:
                 self.max_level += (self.max_level_running - self.max_level)/2
 
-            self.dbg['MAX_PEAK'].tr(f"max level: {self.max_level_running} ({self.max_level})")
+            min_level_input = 0
+            try:
+                min_level_input = int(self.minLevelInput.text())
+            except:
+                pass
+            if min_level_input == 0:
+                self.db_min = -27
+            else:
+                self.db_min = 20 * np.log10(min_level_input/self.max_level)
+
+            if self.dbg['MAX_PEAK'].print:
+                self.dbg['MAX_PEAK'].tr(f"{time.monotonic()}:max level:{self.max_level_running} ({self.max_level}), db_min: {self.db_min}")
             self.max_level_running = 0
 
         if all(level < 0.05 for (level) in peak_levels):
             # no audio
             return
 
-        r,g,b = self.peak_level_to_rgb(peak_levels, self.max_level)
+        r,g,b = self.peak_level_to_rgb(peak_levels, self.db_min, self.max_level)
         self.keyb_rgb.fill(QColor(r,g,b))
 
         #-----------------------------------------------------------
@@ -745,9 +863,9 @@ class RGBAudioTab(QWidget):
 
             if self.keyb_rgb_mask_mode == 1:
                 for x in range(x_range[0], x_range[1]):
-                    # lines 2,3
+                    # lines 1,2
+                    mask_bits[1 * bytes_per_line + x] = 255
                     mask_bits[2 * bytes_per_line + x] = 255
-                    mask_bits[3 * bytes_per_line + x] = 255
 
             if self.keyb_rgb_mask_mode == 2:
                 for x in range(x_range[0], x_range[1]):
@@ -770,7 +888,7 @@ class RGBAudioTab(QWidget):
         if not self.audioThread.isRunning():
             self.running = True
             self.update_freq_rgb()
-            self.update_freq_ranges()
+            self.update_freq_bands()
             self.audioThread.connect_callback(self.processAudioPeakLevels)
             self.audioThread.start()
             self.startButton.setText("stop")
@@ -1063,8 +1181,8 @@ class LayerAutoSwitchTab(QWidget):
         self.winfocusTextEdit.mousePressEvent = self.selectLine
 
 
-    def on_default_layer_changed(self, layer):
-        self.dbg['DEBUG'].tr(f"default layer changed to {layer}")
+    def update_default_layer(self, layer):
+        self.dbg['DEBUG'].tr(f"default layer update: {layer}")
         self.defLayerSelector.setCurrentIndex(layer)
 
 
@@ -1190,7 +1308,7 @@ class RGBAnimationTab(QWidget):
 
     def __init__(self, rgb_matrix_size):
         self.dbg = {}
-        self.dbg['DEBUG']   = DebugTracer(print=1, trace=1)
+        self.dbg['DEBUG']   = DebugTracer(print=1, trace=1, obj=self)
 
         self.rgb_matrix_size = rgb_matrix_size
         super().__init__()
@@ -1328,12 +1446,11 @@ class MainWindow(QMainWindow):
         self.keyboard.signal_console_output.connect(self.console_tab.update_text)
         self.keyboard.signal_debug_mask.connect(self.console_tab.update_debug_mask)
         self.keyboard.signal_macwin_mode.connect(self.console_tab.update_macwin_mode)
-        self.keyboard.signal_default_layer.connect(self.layer_switch_tab.on_default_layer_changed)
+        self.keyboard.signal_default_layer.connect(self.layer_switch_tab.update_default_layer)
         self.keyboard.signal_rgb_matrix_mode.connect(self.rgb_matrix_tab.update_rgb_matrix_mode)
 
         self.console_tab.signal_dbg_mask.connect(self.keyboard.keyb_dbg_mask_set)
         self.console_tab.signal_macwin_mode.connect(self.keyboard.keyb_macwin_mode_set)
-        self.console_tab.signal_dynld_function.connect(self.keyboard.keyb_dynld_function_set)
 
         self.rgb_matrix_tab.signal_rgb_matrix_mode.connect(self.keyboard.keyb_rgb_matrix_mode_set)
         self.rgb_matrix_tab.rgb_video_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
@@ -1409,6 +1526,7 @@ def main(keyboard_vid_pid):
     from PySide6.QtCore import QLocale
     locale = QLocale("C")
     QLocale.setDefault(locale)
+
     app = QApplication(sys.argv)
 
     selected_keyboard = ""
