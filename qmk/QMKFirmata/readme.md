@@ -37,12 +37,12 @@ in ws_client/
 
 set default layer:
 ~~~
-layer_switch.py
+python layer_switch.py <layer>
 ~~~
 
 screen capture and send rgb image:
 ~~~
-screen_capture_rgb_stream.py
+python screen_capture_rgb_stream.py --display 0 --fps 25 --width 17 --height 6 --port 8787
 ~~~
 
 demo videos
