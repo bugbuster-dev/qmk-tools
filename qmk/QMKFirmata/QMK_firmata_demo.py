@@ -107,7 +107,6 @@ class ConsoleTab(QWidget):
         width = QFontMetrics(self.dbgUserMaskInput.font()).horizontalAdvance('W') * 8
         self.dbgUserMaskInput.setFixedWidth(width)
 
-
         self.dbgMaskUpdateButton = QPushButton("set")
         self.dbgMaskUpdateButton.clicked.connect(self.update_keyb_dbg_mask)
         self.dbgMaskUpdateButton.setFixedWidth(width)
@@ -168,6 +167,7 @@ class ConsoleTab(QWidget):
 
 class RGBMatrixTab(QWidget):
     signal_rgb_matrix_mode = Signal(int)
+    signal_rgb_matrix_hsv = Signal(tuple)
 
     def __init__(self, rgb_matrix_size):
         self.rgb_matrix_size = rgb_matrix_size
@@ -178,9 +178,17 @@ class RGBMatrixTab(QWidget):
     def update_keyb_rgb_matrix_mode(self):
         matrix_mode = int(self.rgbMatrixModeInput.text())
         self.signal_rgb_matrix_mode.emit(matrix_mode)
+        self.update_keyb_rgb_matrix_hsv()
+
+    def update_keyb_rgb_matrix_hsv(self):
+        hsv = (int(self.rgbMatrixHSVInput.text()[0:2], 16), int(self.rgbMatrixHSVInput.text()[2:4], 16), int(self.rgbMatrixHSVInput.text()[4:6], 16))
+        self.signal_rgb_matrix_hsv.emit(hsv)
 
     def update_rgb_matrix_mode(self, matrix_mode):
         self.rgbMatrixModeInput.setText(f"{matrix_mode}")
+
+    def update_rgb_matrix_hsv(self, hsv):
+        self.rgbMatrixHSVInput.setText(f"{hsv[0]:02x}{hsv[1]:02x}{hsv[2]:02x}")
 
     def initUI(self):
         self.layout = QVBoxLayout()
@@ -189,7 +197,7 @@ class RGBMatrixTab(QWidget):
 
         #---------------------------------------
         # rgb matrix mode
-        rgbMaxtrixModeLabel = QLabel("rgb matrix mode")
+        rgbMaxtrixModeLabel = QLabel("rgb matrix mode, hsv")
         self.rgbMatrixModeInput = QLineEdit()
         regExp = QRegularExpression("[0-9]{1,2}")
         self.rgbMatrixModeInput.setValidator(QRegularExpressionValidator(regExp))
@@ -197,12 +205,18 @@ class RGBMatrixTab(QWidget):
         width = metrics.horizontalAdvance('W') * 3  # 'W' is used as it's typically the widest character
         self.rgbMatrixModeInput.setFixedWidth(width)
 
+        self.rgbMatrixHSVInput = QLineEdit()
+        regExp = QRegularExpression("[0-9A-Fa-f]{6,6}")
+        self.rgbMatrixHSVInput.setValidator(QRegularExpressionValidator(regExp))
+        self.rgbMatrixHSVInput.setFixedWidth(width*2)
+
         self.rgbModeUpdateButton = QPushButton("set")
         self.rgbModeUpdateButton.clicked.connect(self.update_keyb_rgb_matrix_mode)
         self.rgbModeUpdateButton.setFixedWidth(width)
 
         hLayout.addWidget(rgbMaxtrixModeLabel)
         hLayout.addWidget(self.rgbMatrixModeInput)
+        hLayout.addWidget(self.rgbMatrixHSVInput)
         hLayout.addWidget(self.rgbModeUpdateButton)
         hLayout.addStretch(1)
 
@@ -608,7 +622,7 @@ class RGBAudioTab(QWidget):
         #-----------------------------------------------------------
         self.dbg = {}
         self.dbg['DEBUG']       = DebugTracer(print=1, trace=1, obj=self)
-        self.dbg['FREQ_BAND']   = DebugTracer(print=1, trace=1, obj=self)
+        self.dbg['FREQ_BAND']   = DebugTracer(print=0, trace=1, obj=self)
         self.dbg['PEAK_LEVEL']  = DebugTracer(print=0, trace=1, obj=self)
         self.dbg['MAX_PEAK']    = DebugTracer(print=1, trace=1, obj=self)
         #-----------------------------------------------------------
@@ -742,9 +756,9 @@ class RGBAudioTab(QWidget):
                     raise Exception("too many freq bands")
                 if len(self.freq_bands) != len(self.freq_rgb):
                     raise Exception("freq_bands and colors have different lengths")
-                self.dbg['DEBUG'].tr(f"freq_bands:{self.freq_bands}")
-                self.dbg['DEBUG'].tr(f"freq_rgb:{self.freq_rgb}")
-                self.dbg['DEBUG'].tr(f"min_max_level:{self.min_max_level}")
+                self.dbg['FREQ_BAND'].tr(f"freq_bands:{self.freq_bands}")
+                self.dbg['FREQ_BAND'].tr(f"freq_rgb:{self.freq_rgb}")
+                self.dbg['FREQ_BAND'].tr(f"min_max_level:{self.min_max_level}")
                 if self.min_max_level is None or len(self.min_max_level) != len(self.freq_bands):
                     self.min_max_level = [(0,0) for _ in range(len(self.freq_bands))]
         except Exception as e:
@@ -883,7 +897,10 @@ class RGBAudioTab(QWidget):
             self.rgb_frame_signal.emit(self.keyb_rgb, self.RGB_multiplier)
 
     # todo: add effects
-    def apply_effect(self, img):
+    # - mask leds per freq band/peak level
+    # - trigger wave animation on freq band/peak level
+    # - ...
+    def apply_effect(self, img, peak_level):
         # mask image to disable leds depending on peak level
         if self.keyb_rgb_mask_mode != 0:
             img = self.keyb_rgb.convertToFormat(QImage.Format_ARGB32)
@@ -915,13 +932,13 @@ class RGBAudioTab(QWidget):
 
     def start(self):
         if not self.audioThread.isRunning():
-            self.running = True
             self.update_freq_rgb()
             self.update_freq_bands()
             self.update_min_max_level()
             self.audioThread.connect_callback(self.processAudioPeakLevels)
             self.audioThread.start()
             self.startButton.setText("stop")
+            self.running = True
         else:
             self.running = False
             self.audioThread.stop()
@@ -1478,11 +1495,13 @@ class MainWindow(QMainWindow):
         self.keyboard.signal_macwin_mode.connect(self.console_tab.update_macwin_mode)
         self.keyboard.signal_default_layer.connect(self.layer_switch_tab.update_default_layer)
         self.keyboard.signal_rgb_matrix_mode.connect(self.rgb_matrix_tab.update_rgb_matrix_mode)
+        self.keyboard.signal_rgb_matrix_hsv.connect(self.rgb_matrix_tab.update_rgb_matrix_hsv)
 
         self.console_tab.signal_dbg_mask.connect(self.keyboard.keyb_dbg_mask_set)
         self.console_tab.signal_macwin_mode.connect(self.keyboard.keyb_macwin_mode_set)
 
         self.rgb_matrix_tab.signal_rgb_matrix_mode.connect(self.keyboard.keyb_rgb_matrix_mode_set)
+        self.rgb_matrix_tab.signal_rgb_matrix_hsv.connect(self.keyboard.keyb_rgb_matrix_hsv_set)
         self.rgb_matrix_tab.rgb_video_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
         self.rgb_matrix_tab.rgb_animation_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
         self.rgb_matrix_tab.rgb_audio_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)

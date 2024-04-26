@@ -218,8 +218,10 @@ class FirmataKeybCmd:
     ID_BATTERY_STATUS   = 4
     ID_MACWIN_MODE      = 5
     ID_RGB_MATRIX_MODE  = 6
-    ID_DYNLD_FUNCTION   = 7 # dynamic loaded function
-    ID_DYNLD_FUNEXEC    = 8 # execute dynamic loaded function
+    ID_RGB_MATRIX_HSV   = 7
+
+    ID_DYNLD_FUNCTION   = 250 # dynamic loaded function
+    ID_DYNLD_FUNEXEC    = 251 # execute dynamic loaded function
 
 class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
     """
@@ -231,6 +233,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
     signal_macwin_mode = Signal(str)
     signal_default_layer = Signal(int)
     signal_rgb_matrix_mode = Signal(int)
+    signal_rgb_matrix_hsv = Signal(tuple)
 
     #-------------------------------------------------------------------------------
     RAW_EPSIZE_FIRMATA = 64 # 32
@@ -289,7 +292,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         QtCore.QObject.__init__(self)
         #----------------------------------------------------
         #region debug tracers
-        self.debug = 0
+        self.dbg_rgb_buf = 0
         self.dbg = {}
         self.dbg['ERROR']           = DebugTracer(print=1, trace=1, obj=self)
         self.dbg['DEBUG']           = DebugTracer(print=0, trace=1, obj=self)
@@ -403,6 +406,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_DEBUG_MASK])
         self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_BATTERY_STATUS])
         self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_RGB_MATRIX_MODE])
+        self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_RGB_MATRIX_HSV])
 
         time.sleep(0.5)
         print("-"*80)
@@ -455,9 +459,12 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             dbg.tr(f"battery charging: {battery_charging}, battery level: {battery_level}")
         elif buf[0] == FirmataKeybCmd.ID_RGB_MATRIX_MODE:
             matrix_mode = buf[1]
-            dbg.tr(f"matrix mode: {matrix_mode}")
+            dbg.tr(f"rgb matrix mode: {matrix_mode}")
             self.signal_rgb_matrix_mode.emit(matrix_mode)
-
+        elif buf[0] == FirmataKeybCmd.ID_RGB_MATRIX_HSV:
+            h = buf[1]; s = buf[2]; v = buf[3]
+            dbg.tr(f"rgb matrix hsv: {h}, {s}, {v}")
+            self.signal_rgb_matrix_hsv.emit((h,s,v))
 
     def console_line_handler(self, *data):
         line = pyfirmata2.util.two_byte_iter_to_str(data)
@@ -466,7 +473,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
 
     def keyb_rgb_buf_set(self, img, rgb_multiplier):
-        if self.debug:
+        if self.dbg_rgb_buf:
             self.dbg['RGB_BUF'].tr("-"*120)
             self.dbg['RGB_BUF'].tr(f"rgb mult {rgb_multiplier}")
 
@@ -517,7 +524,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 if rgb_pixel:
                     data.extend(rgb_pixel)
 
-                if self.debug:
+                if self.dbg_rgb_buf:
                     self.dbg['RGB_BUF'].tr(f"{x:2},{y:2}=({pixel[0]:3},{pixel[1]:3},{pixel[2]:3})", end=" ")
                     self.dbg['RGB_BUF'].tr(rgb_pixel.hex(' '))
 
@@ -566,7 +573,6 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
     def keyb_macwin_mode_set(self, macwin_mode):
         dbg = self.dbg['SYSEX_COMMAND']
         dbg.tr(f"keyb_macwin_mode_set: {macwin_mode}")
-
         data = bytearray()
         data.append(FirmataKeybCmd.ID_MACWIN_MODE)
         data.append(ord(macwin_mode))
@@ -575,16 +581,24 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
     def keyb_rgb_matrix_mode_set(self, mode):
         dbg = self.dbg['SYSEX_COMMAND']
         dbg.tr(f"keyb_rgb_matrix_mode_set: {mode}")
-
         data = bytearray()
         data.append(FirmataKeybCmd.ID_RGB_MATRIX_MODE)
         data.append(mode)
         self.send_sysex(FirmataKeybCmd.SET, data)
 
+    def keyb_rgb_matrix_hsv_set(self, hsv):
+        dbg = self.dbg['SYSEX_COMMAND']
+        dbg.tr(f"keyb_rgb_matrix_hsv_set: {hsv}")
+        data = bytearray()
+        data.append(FirmataKeybCmd.ID_RGB_MATRIX_HSV)
+        data.append(hsv[0])
+        data.append(hsv[1])
+        data.append(hsv[2])
+        self.send_sysex(FirmataKeybCmd.SET, data)
+
     def keyb_dynld_function_set(self, fun_id, buf):
         dbg = self.dbg['SYSEX_COMMAND']
         dbg.tr(f"keyb_dynld_function_set: {fun_id} {buf.hex(' ')}")
-
         data = bytearray()
         data.append(FirmataKeybCmd.ID_DYNLD_FUNCTION)
         id = [fun_id & 0xff, (fun_id >> 8) & 0xff]
