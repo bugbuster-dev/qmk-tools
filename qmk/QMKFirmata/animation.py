@@ -1,3 +1,5 @@
+from matplotlib.patches import Rectangle
+import numpy as np
 
 #-------------------------------------------------------------------------------
 # the "init", "animate" methods to be used with "matplotlib animation"

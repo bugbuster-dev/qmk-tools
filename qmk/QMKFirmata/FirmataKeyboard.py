@@ -152,7 +152,7 @@ class SerialRawHID(serial.SerialBase):
 
     def read(self, size=1):
         if not self.hid_device:
-            raise SerialException("device not open")
+            raise serial.SerialException("device not open")
 
         if len(self.data) == 0:
             self._read_msg()
