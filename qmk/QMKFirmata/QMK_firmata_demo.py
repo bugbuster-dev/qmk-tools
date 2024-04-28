@@ -1,34 +1,23 @@
-import sys, time, hid, argparse
-import pyaudiowpatch as pyaudio
-import cv2, numpy as np
-import json
+import sys, time, hid, argparse, json
+import cv2, numpy as np, pyaudiowpatch as pyaudio
+import asyncio, websockets
 
 from PySide6 import QtCore
+from PySide6.QtCore import Qt, QThread, Signal, QTimer, QRegularExpression
 from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QFrame
 from PySide6.QtWidgets import QTextEdit, QPushButton, QFileDialog, QLabel, QSlider, QLineEdit
 from PySide6.QtWidgets import QCheckBox, QComboBox, QSpacerItem, QSizePolicy, QMessageBox
-from PySide6.QtCore import Qt, QThread, Signal, QTimer #, QSize, QUrl
-from PySide6.QtCore import QRegularExpression
 from PySide6.QtGui import QImage, QPixmap, QColor, QFont, QTextCursor, QFontMetrics, QMouseEvent, QKeyEvent, QKeySequence
 from PySide6.QtGui import QRegularExpressionValidator, QIntValidator, QDoubleValidator
-#from PySide6.QtMultimedia import QMediaPlayer
-#from PySide6.QtMultimediaWidgets import QVideoWidget
 
 from WinFocusListener import WinFocusListener
 from FirmataKeyboard import FirmataKeyboard
 from DebugTracer import DebugTracer
 
-import asyncio
-import websockets
+if __name__ != "__main__":
+    exit()
 
 #-------------------------------------------------------------------------------
-
-app_width       = 800
-app_height      = 1000
-
-#-------------------------------------------------------------------------------
-
-
 class WSServer(QThread):
 
     def __init__(self, msg_handler, port = 8765):
@@ -65,74 +54,73 @@ class WSServer(QThread):
             self.stop_ev.set_result(None)
             asyncio.run(self.ws_close())
 
-
+#-------------------------------------------------------------------------------
 class ConsoleTab(QWidget):
     signal_dbg_mask = Signal(int, int)
     signal_macwin_mode = Signal(str)
 
     def __init__(self):
         super().__init__()
-        self.initUI()
+        self.init_gui()
 
     def update_keyb_dbg_mask(self):
-        dbg_mask = int(self.dbgMaskInput.text(),16)
-        dbg_user_mask = int(self.dbgUserMaskInput.text(),16)
+        dbg_mask = int(self.dbg_mask_input.text(),16)
+        dbg_user_mask = int(self.dbg_user_mask_input.text(),16)
         self.signal_dbg_mask.emit(dbg_mask, dbg_user_mask)
 
     def update_keyb_macwin_mode(self):
-        macwin_mode = self.macWinModeSelector.currentText()
+        macwin_mode = self.mac_win_mode_selector.currentText()
         self.signal_macwin_mode.emit(macwin_mode)
 
-    def initUI(self):
-        hLayout = QHBoxLayout()
-        dbgMaskLabel = QLabel("debug (user) mask")
+    def init_gui(self):
+        hlayout = QHBoxLayout()
+        dbg_mask_label = QLabel("debug (user) mask")
         #dbgUserMaskLabel = QLabel("debug user mask")
-        metrics = QFontMetrics(dbgMaskLabel.font())
-        dbgMaskLabel.setFixedHeight(metrics.height())
+        metrics = QFontMetrics(dbg_mask_label.font())
+        dbg_mask_label.setFixedHeight(metrics.height())
 
         #---------------------------------------
         # debug mask hex byte input
-        self.dbgMaskInput = QLineEdit()
+        self.dbg_mask_input = QLineEdit()
         # Set a validator to allow only hex characters (0-9, A-F, a-f) and limit to 2 characters
-        regExp = QRegularExpression("[0-9A-Fa-f]{1,2}")
-        self.dbgMaskInput.setValidator(QRegularExpressionValidator(regExp))
-        metrics = QFontMetrics(self.dbgMaskInput.font())
+        reg_exp = QRegularExpression("[0-9A-Fa-f]{1,2}")
+        self.dbg_mask_input.setValidator(QRegularExpressionValidator(reg_exp))
+        metrics = QFontMetrics(self.dbg_mask_input.font())
         width = metrics.horizontalAdvance('W') * 2  # 'W' is used as it's typically the widest character
-        self.dbgMaskInput.setFixedWidth(width)
+        self.dbg_mask_input.setFixedWidth(width)
 
-        self.dbgUserMaskInput = QLineEdit()
+        self.dbg_user_mask_input = QLineEdit()
         # Set a validator to allow only hex characters (0-9, A-F, a-f) and limit to 8 characters
-        regExp = QRegularExpression("[0-9A-Fa-f]{1,8}")
-        self.dbgUserMaskInput.setValidator(QRegularExpressionValidator(regExp))
-        width = QFontMetrics(self.dbgUserMaskInput.font()).horizontalAdvance('W') * 8
-        self.dbgUserMaskInput.setFixedWidth(width)
+        reg_exp = QRegularExpression("[0-9A-Fa-f]{1,8}")
+        self.dbg_user_mask_input.setValidator(QRegularExpressionValidator(reg_exp))
+        width = QFontMetrics(self.dbg_user_mask_input.font()).horizontalAdvance('W') * 8
+        self.dbg_user_mask_input.setFixedWidth(width)
 
-        self.dbgMaskUpdateButton = QPushButton("set")
-        self.dbgMaskUpdateButton.clicked.connect(self.update_keyb_dbg_mask)
-        self.dbgMaskUpdateButton.setFixedWidth(width)
+        self.dbg_mask_update_button = QPushButton("set")
+        self.dbg_mask_update_button.clicked.connect(self.update_keyb_dbg_mask)
+        self.dbg_mask_update_button.setFixedWidth(width)
 
-        hLayout.addWidget(dbgMaskLabel)
-        hLayout.addWidget(self.dbgMaskInput)
-        #hLayout.addWidget(dbgUserMaskLabel)
-        hLayout.addWidget(self.dbgUserMaskInput)
-        hLayout.addWidget(self.dbgMaskUpdateButton)
-        hLayout.addStretch(1)
+        hlayout.addWidget(dbg_mask_label)
+        hlayout.addWidget(self.dbg_mask_input)
+        hlayout.addWidget(self.dbg_user_mask_input)
+        hlayout.addWidget(self.dbg_mask_update_button)
+        hlayout.addStretch(1)
         separator = QFrame()
-        separator.setFrameShape(QFrame.VLine)  # Set the frame shape to a vertical line
-        hLayout.addWidget(separator)
+        separator.setFrameShape(QFrame.VLine)
+        hlayout.addWidget(separator)
 
         #---------------------------------------
         # mac/win mode
-        macWinLabel = QLabel("mac/win mode")
-        self.macWinModeSelector = QComboBox()
-        self.macWinModeSelector.addItem('m')
-        self.macWinModeSelector.addItem('w')
-        self.macWinModeSelector.addItem('-')
-        hLayout.addWidget(macWinLabel)
-        hLayout.addWidget(self.macWinModeSelector)
-        self.macWinModeSelector.setCurrentIndex(1)
-        self.macWinModeSelector.currentIndexChanged.connect(self.update_keyb_macwin_mode)
-        self.macWinModeSelector.setFixedWidth(width)
+        macwin_label = QLabel("mac/win mode")
+        self.mac_win_mode_selector = QComboBox()
+        self.mac_win_mode_selector.addItem('m')
+        self.mac_win_mode_selector.addItem('w')
+        self.mac_win_mode_selector.addItem('-')
+        hlayout.addWidget(macwin_label)
+        hlayout.addWidget(self.mac_win_mode_selector)
+        self.mac_win_mode_selector.setCurrentIndex(1)
+        self.mac_win_mode_selector.currentIndexChanged.connect(self.update_keyb_macwin_mode)
+        self.mac_win_mode_selector.setFixedWidth(width)
 
         #---------------------------------------
         # console output
@@ -144,10 +132,9 @@ class ConsoleTab(QWidget):
         font.setFamily("Courier New");
         self.console_output.setFont(font);
 
-        layout.addLayout(hLayout)
+        layout.addLayout(hlayout)
         layout.addWidget(self.console_output)
         self.setLayout(layout)
-
 
     def update_text(self, text):
         cursor = self.console_output.textCursor()
@@ -157,68 +144,66 @@ class ConsoleTab(QWidget):
         self.console_output.ensureCursorVisible()
 
     def update_debug_mask(self, dbg_mask, dbg_user_mask):
-        self.dbgMaskInput.setText(f"{dbg_mask:02x}")
-        self.dbgUserMaskInput.setText(f"{dbg_user_mask:08x}")
+        self.dbg_mask_input.setText(f"{dbg_mask:02x}")
+        self.dbg_user_mask_input.setText(f"{dbg_user_mask:08x}")
 
     def update_macwin_mode(self, macwin_mode):
-        self.macWinModeSelector.setCurrentIndex(0 if macwin_mode == 'm' else 1)
+        self.mac_win_mode_selector.setCurrentIndex(0 if macwin_mode == 'm' else 1)
 
 #-------------------------------------------------------------------------------
-
 class RGBMatrixTab(QWidget):
     signal_rgb_matrix_mode = Signal(int)
     signal_rgb_matrix_hsv = Signal(tuple)
 
     def __init__(self, rgb_matrix_size):
         self.rgb_matrix_size = rgb_matrix_size
-
         super().__init__()
-        self.initUI()
+        self.init_gui()
 
     def update_keyb_rgb_matrix_mode(self):
-        matrix_mode = int(self.rgbMatrixModeInput.text())
+        matrix_mode = int(self.rgb_matrix_mode_input.text())
         self.signal_rgb_matrix_mode.emit(matrix_mode)
         self.update_keyb_rgb_matrix_hsv()
 
     def update_keyb_rgb_matrix_hsv(self):
-        hsv = (int(self.rgbMatrixHSVInput.text()[0:2], 16), int(self.rgbMatrixHSVInput.text()[2:4], 16), int(self.rgbMatrixHSVInput.text()[4:6], 16))
+        hsv = (int(self.rgb_matrix_hsv_input.text()[0:2], 16), int(self.rgb_matrix_hsv_input.text()[2:4], 16), int(self.rgb_matrix_hsv_input.text()[4:6], 16))
         self.signal_rgb_matrix_hsv.emit(hsv)
 
     def update_rgb_matrix_mode(self, matrix_mode):
-        self.rgbMatrixModeInput.setText(f"{matrix_mode}")
+        self.rgb_matrix_mode_input.setText(f"{matrix_mode}")
 
     def update_rgb_matrix_hsv(self, hsv):
-        self.rgbMatrixHSVInput.setText(f"{hsv[0]:02x}{hsv[1]:02x}{hsv[2]:02x}")
+        self.rgb_matrix_hsv_input.setText(f"{hsv[0]:02x}{hsv[1]:02x}{hsv[2]:02x}")
 
-    def initUI(self):
-        self.layout = QVBoxLayout()
-        hLayout = QHBoxLayout()
+    def init_gui(self):
+        layout = QVBoxLayout()
+        hlayout = QHBoxLayout()
         self.tab_widget = QTabWidget()
 
         #---------------------------------------
         # rgb matrix mode
-        rgbMaxtrixModeLabel = QLabel("rgb matrix mode, hsv")
-        self.rgbMatrixModeInput = QLineEdit()
-        regExp = QRegularExpression("[0-9]{1,2}")
-        self.rgbMatrixModeInput.setValidator(QRegularExpressionValidator(regExp))
-        metrics = QFontMetrics(self.rgbMatrixModeInput.font())
+        rgb_maxtrix_mode_label = QLabel("rgb matrix mode, hsv")
+        self.rgb_matrix_mode_input = QLineEdit()
+        reg_exp = QRegularExpression("[0-9]{1,2}")
+        self.rgb_matrix_mode_input.setValidator(QRegularExpressionValidator(reg_exp))
+        metrics = QFontMetrics(self.rgb_matrix_mode_input.font())
         width = metrics.horizontalAdvance('W') * 3  # 'W' is used as it's typically the widest character
-        self.rgbMatrixModeInput.setFixedWidth(width)
+        self.rgb_matrix_mode_input.setFixedWidth(width)
 
-        self.rgbMatrixHSVInput = QLineEdit()
-        regExp = QRegularExpression("[0-9A-Fa-f]{6,6}")
-        self.rgbMatrixHSVInput.setValidator(QRegularExpressionValidator(regExp))
-        self.rgbMatrixHSVInput.setFixedWidth(width*2)
+        self.rgb_matrix_hsv_input = QLineEdit()
+        reg_exp = QRegularExpression("[0-9A-Fa-f]{6,6}")
+        self.rgb_matrix_hsv_input.setValidator(QRegularExpressionValidator(reg_exp))
+        self.rgb_matrix_hsv_input.setFixedWidth(width*2)
 
-        self.rgbModeUpdateButton = QPushButton("set")
-        self.rgbModeUpdateButton.clicked.connect(self.update_keyb_rgb_matrix_mode)
-        self.rgbModeUpdateButton.setFixedWidth(width)
+        self.rgb_mode_update_button = QPushButton("set")
+        self.rgb_mode_update_button.clicked.connect(self.update_keyb_rgb_matrix_mode)
+        self.rgb_mode_update_button.setFixedWidth(width)
 
-        hLayout.addWidget(rgbMaxtrixModeLabel)
-        hLayout.addWidget(self.rgbMatrixModeInput)
-        hLayout.addWidget(self.rgbMatrixHSVInput)
-        hLayout.addWidget(self.rgbModeUpdateButton)
-        hLayout.addStretch(1)
+        hlayout.addWidget(rgb_maxtrix_mode_label)
+        hlayout.addWidget(self.rgb_matrix_mode_input)
+        hlayout.addWidget(self.rgb_matrix_hsv_input)
+        hlayout.addWidget(self.rgb_mode_update_button)
+        hlayout.addStretch(1)
 
         #---------------------------------------
         self.rgb_video_tab = RGBVideoTab(self, self.rgb_matrix_size)
@@ -231,14 +216,13 @@ class RGBMatrixTab(QWidget):
         self.tab_widget.addTab(self.rgb_audio_tab, 'audio')
         self.tab_widget.addTab(self.rgb_dynld_animation_tab, 'dynld animation')
 
-        self.layout.addLayout(hLayout)
-        self.layout.addWidget(self.tab_widget)
-        self.setLayout(self.layout)
+        layout.addLayout(hlayout)
+        layout.addWidget(self.tab_widget)
+        self.setLayout(layout)
 
 #-------------------------------------------------------------------------------
-
 class RGBVideoTab(QWidget):
-    rgb_frame_signal = Signal(QImage, object)  # Signal to send rgb frame
+    signal_rgb_frame = Signal(QImage, object)
 
     def __init__(self, rgb_matrix_tab, rgb_matrix_size):
         self.dbg = {}
@@ -248,10 +232,10 @@ class RGBVideoTab(QWidget):
 
         self.rgb_matrix_tab = rgb_matrix_tab
         self.cap = None
-        self.frameRate = 25
+        self.framerate = 25
         self.rgb_matrix_size = rgb_matrix_size
-        self.RGB_multiplier = (1.0,1.0,1.0)
-        self.initUI()
+        self.rgb_multiplier = (1.0,1.0,1.0)
+        self.init_gui()
 
     async def ws_handler(self, websocket, path):
         try:
@@ -260,7 +244,6 @@ class RGBVideoTab(QWidget):
                     message = bytearray(message, 'utf-8')
                 except:
                     pass # already bytearray
-
                 self.dbg['WS_MSG'].tr(f"ws_handler: {message}")
                 sub = b"rgb."
                 if message.startswith(sub):
@@ -278,20 +261,19 @@ class RGBVideoTab(QWidget):
                                 data = message[len(sub):]
                                 w = self.rgb_matrix_size[0]
                                 h = self.rgb_matrix_size[1]
-
                                 img = QImage(w, h, QImage.Format_RGB888)
                                 img.fill(QColor('black'))
                                 for y in range(h):
                                     for x in range(w):
                                         index = (y * w + x) * 3
                                         try:
-                                            red, green, blue = data[index], data[index + 1], data[index + 2]
-                                            img.setPixelColor(x, y, QColor(red, green, blue))
+                                            r, g, b = data[index], data[index + 1], data[index + 2]
+                                            img.setPixelColor(x, y, QColor(r, g, b))
                                         except Exception as e:
                                             #self.dbg['WS_MSG'].tr(f"ws_handler: {e}")
                                             pass
 
-                                self.rgb_frame_signal.emit(img, self.RGB_multiplier)
+                                self.signal_rgb_frame.emit(img, self.rgb_multiplier)
                                 self.dbg['WS_MSG'].tr(f"ws_handler:emit(img) done")
                 self.dbg['WS_MSG'].tr(f"ws_handler: message handled")
                 await asyncio.sleep(0)  # Ensures control is yielded back to the event loop
@@ -299,170 +281,166 @@ class RGBVideoTab(QWidget):
         except Exception as e:
             self.dbg['WS_MSG'].tr(f"ws_handler: {e}")
         self.dbg['WS_MSG'].tr(f"ws_handler: done")
-        self.rgb_frame_signal.emit(None, self.RGB_multiplier)
+        self.signal_rgb_frame.emit(None, self.rgb_multiplier)
 
-    def wsServerStartStop(self, state):
+    def ws_server_startstop(self, state):
         #self.dbg['DEBUG'].tr(f"{state}")
         if Qt.CheckState(state) == Qt.CheckState.Checked:
-            self.wsServer = WSServer(self.ws_handler, int(self.wsServerPort.text()))
-            self.wsServer.start()
+            self.ws_server = WSServer(self.ws_handler, int(self.ws_server_port.text()))
+            self.ws_server.start()
         else:
             try:
-                self.wsServer.stop()
-                self.wsServer.wait()
-                self.wsServer = None
+                self.ws_server.stop()
+                self.ws_server.wait()
+                self.ws_server = None
             except Exception as e:
                 self.dbg['DEBUG'].tr(f"{e}")
 
-    def initUI(self):
-        self.layout = QVBoxLayout()
-        self.videoLabel = QLabel("")
-        self.videoLabel.setFixedSize(app_width, app_height)
-        self.videoLabel.setAlignment(Qt.AlignTop)
+    def init_gui(self):
+        layout = QVBoxLayout()
+        self.video_label = QLabel("")
+        self.video_label.setFixedSize(app_width, app_height)
+        self.video_label.setAlignment(Qt.AlignTop)
 
         hlayout = QHBoxLayout()
-        self.openButton = QPushButton("open file")
-        self.openButton.setFixedWidth(100)
-        self.openButton.clicked.connect(self.openFile)
+        self.open_button = QPushButton("open file")
+        self.open_button.setFixedWidth(100)
+        self.open_button.clicked.connect(self.open_file)
         #---------------------------------------
         #region "rgb video ws server" enable checkbox plus port input
-        self.wsServerCheckbox = QCheckBox("enable ws server", self)
-        self.wsServerPort = QLineEdit("8787")
+        self.ws_server_checkbox = QCheckBox("enable ws server", self)
+        self.ws_server_port = QLineEdit("8787")
         port_validator = QIntValidator(0, 65535, self)
-        self.wsServerPort.setValidator(port_validator)
-        self.wsServerPort.setFixedWidth(50)
-        self.wsServerCheckbox.stateChanged.connect(self.wsServerStartStop)
+        self.ws_server_port.setValidator(port_validator)
+        self.ws_server_port.setFixedWidth(50)
+        self.ws_server_checkbox.stateChanged.connect(self.ws_server_startstop)
         hlayout = QHBoxLayout()
         hlayout.addStretch(1)
-        hlayout.addWidget(self.wsServerCheckbox)
-        hlayout.addWidget(self.wsServerPort)
+        hlayout.addWidget(self.ws_server_checkbox)
+        hlayout.addWidget(self.ws_server_port)
         #endregion
 
-        controlsLayout = QHBoxLayout()
-        self.frameRateLabel = QLabel("frame rate")
-        self.framerateSlider = QSlider(Qt.Horizontal)
-        self.framerateSlider.setMinimum(1)  # Minimum framerate
-        self.framerateSlider.setMaximum(120)  # Maximum framerate
-        self.framerateSlider.setValue(self.frameRate)  # Set the default value
-        self.framerateSlider.setTickInterval(1)  # Set tick interval
-        self.framerateSlider.setTickPosition(QSlider.TicksBelow)
-        self.framerateSlider.setToolTip("frame rate")
-        self.framerateSlider.valueChanged.connect(self.adjustFramerate)
+        controls_layout = QHBoxLayout()
+        self.framerate_label = QLabel("frame rate")
+        self.framerate_slider = QSlider(Qt.Horizontal)
+        self.framerate_slider.setMinimum(1)  # Minimum framerate
+        self.framerate_slider.setMaximum(120)  # Maximum framerate
+        self.framerate_slider.setValue(self.framerate)  # Set the default value
+        self.framerate_slider.setTickInterval(1)  # Set tick interval
+        self.framerate_slider.setTickPosition(QSlider.TicksBelow)
+        self.framerate_slider.setToolTip("frame rate")
+        self.framerate_slider.valueChanged.connect(self.adjust_framerate)
 
         #region framerate/RGB multiplier sliders
-        rgbMultiplyLayout = QHBoxLayout()
-        self.RGB_R_Label = QLabel("r")
-        self.RGB_R_Slider = QSlider(QtCore.Qt.Horizontal)
-        self.RGB_R_Slider.setMinimum(0)
-        self.RGB_R_Slider.setMaximum(300)
-        self.RGB_R_Slider.setValue(int(self.RGB_multiplier[0]*100))
-        self.RGB_R_Slider.setTickInterval(10)
-        self.RGB_R_Slider.setTickPosition(QSlider.TicksBelow)
-        self.RGB_R_Slider.setToolTip("red multiplier")
-        self.RGB_R_Slider.valueChanged.connect(self.adjustRGBMultiplier)
-        self.RGB_G_Label = QLabel("g")
-        self.RGB_G_Slider = QSlider(Qt.Horizontal)
-        self.RGB_G_Slider.setMinimum(0)
-        self.RGB_G_Slider.setMaximum(300)
-        self.RGB_G_Slider.setValue(int(self.RGB_multiplier[1]*100))
-        self.RGB_G_Slider.setTickInterval(10)
-        self.RGB_G_Slider.setTickPosition(QSlider.TicksBelow)
-        self.RGB_G_Slider.setToolTip("green multiplier")
-        self.RGB_G_Slider.valueChanged.connect(self.adjustRGBMultiplier)
-        self.RGB_B_Label = QLabel("b")
-        self.RGB_B_Slider = QSlider(Qt.Horizontal)
-        self.RGB_B_Slider.setMinimum(0)
-        self.RGB_B_Slider.setMaximum(300)
-        self.RGB_B_Slider.setValue(int(self.RGB_multiplier[2]*100))
-        self.RGB_B_Slider.setTickInterval(10)
-        self.RGB_B_Slider.setTickPosition(QSlider.TicksBelow)
-        self.RGB_B_Slider.setToolTip("blue multiplier")
-        self.RGB_B_Slider.valueChanged.connect(self.adjustRGBMultiplier)
+        rgb_multiply_layout = QHBoxLayout()
+        self.rgb_r_label = QLabel("r")
+        self.rgb_r_slider = QSlider(QtCore.Qt.Horizontal)
+        self.rgb_r_slider.setMinimum(0)
+        self.rgb_r_slider.setMaximum(300)
+        self.rgb_r_slider.setValue(int(self.rgb_multiplier[0]*100))
+        self.rgb_r_slider.setTickInterval(10)
+        self.rgb_r_slider.setTickPosition(QSlider.TicksBelow)
+        self.rgb_r_slider.setToolTip("red multiplier")
+        self.rgb_r_slider.valueChanged.connect(self.adjust_rgb_multiplier)
+        self.rgb_g_label = QLabel("g")
+        self.rgb_g_slider = QSlider(Qt.Horizontal)
+        self.rgb_g_slider.setMinimum(0)
+        self.rgb_g_slider.setMaximum(300)
+        self.rgb_g_slider.setValue(int(self.rgb_multiplier[1]*100))
+        self.rgb_g_slider.setTickInterval(10)
+        self.rgb_g_slider.setTickPosition(QSlider.TicksBelow)
+        self.rgb_g_slider.setToolTip("green multiplier")
+        self.rgb_g_slider.valueChanged.connect(self.adjust_rgb_multiplier)
+        self.rgb_b_label = QLabel("b")
+        self.rgb_b_slider = QSlider(Qt.Horizontal)
+        self.rgb_b_slider.setMinimum(0)
+        self.rgb_b_slider.setMaximum(300)
+        self.rgb_b_slider.setValue(int(self.rgb_multiplier[2]*100))
+        self.rgb_b_slider.setTickInterval(10)
+        self.rgb_b_slider.setTickPosition(QSlider.TicksBelow)
+        self.rgb_b_slider.setToolTip("blue multiplier")
+        self.rgb_b_slider.valueChanged.connect(self.adjust_rgb_multiplier)
 
-        controlsLayout.addWidget(self.frameRateLabel)
-        controlsLayout.addWidget(self.framerateSlider)
-        rgbMultiplyLayout.addWidget(self.RGB_R_Label)
-        rgbMultiplyLayout.addWidget(self.RGB_R_Slider)
-        rgbMultiplyLayout.addWidget(self.RGB_G_Label)
-        rgbMultiplyLayout.addWidget(self.RGB_G_Slider)
-        rgbMultiplyLayout.addWidget(self.RGB_B_Label)
-        rgbMultiplyLayout.addWidget(self.RGB_B_Slider)
+        controls_layout.addWidget(self.framerate_label)
+        controls_layout.addWidget(self.framerate_slider)
+        rgb_multiply_layout.addWidget(self.rgb_r_label)
+        rgb_multiply_layout.addWidget(self.rgb_r_slider)
+        rgb_multiply_layout.addWidget(self.rgb_g_label)
+        rgb_multiply_layout.addWidget(self.rgb_g_slider)
+        rgb_multiply_layout.addWidget(self.rgb_b_label)
+        rgb_multiply_layout.addWidget(self.rgb_b_slider)
         #endregion
 
-        self.layout.addLayout(hlayout)
-        self.layout.addWidget(self.videoLabel)
-        self.layout.addWidget(self.openButton)
-        self.layout.addLayout(controlsLayout)
-        self.layout.addLayout(rgbMultiplyLayout)
-
-        self.setLayout(self.layout)
+        layout.addLayout(hlayout)
+        layout.addWidget(self.video_label)
+        layout.addWidget(self.open_button)
+        layout.addLayout(controls_layout)
+        layout.addLayout(rgb_multiply_layout)
+        self.setLayout(layout)
 
         self.timer = QTimer()
-        self.timer.timeout.connect(self.displayVideoFrame)
+        self.timer.timeout.connect(self.display_video_frame)
 
-    def adjustFramerate(self, value):
-        self.frameRate = value
+    def adjust_framerate(self, value):
+        self.framerate = value
         if self.cap is not None and self.cap.isOpened():
-            self.timer.start(1000 / self.frameRate)
+            self.timer.start(1000 / self.framerate)
 
-    def adjustRGBMultiplier(self, value):
-        if self.sender() == self.RGB_R_Slider:
-            self.RGB_multiplier = (value/100, self.RGB_multiplier[1], self.RGB_multiplier[2])
-        if self.sender() == self.RGB_G_Slider:
-            self.RGB_multiplier = (self.RGB_multiplier[0], value/100, self.RGB_multiplier[2])
-        if self.sender() == self.RGB_B_Slider:
-            self.RGB_multiplier = (self.RGB_multiplier[0], self.RGB_multiplier[1], value/100)
+    def adjust_rgb_multiplier(self, value):
+        if self.sender() == self.rgb_r_slider:
+            self.rgb_multiplier = (value/100, self.rgb_multiplier[1], self.rgb_multiplier[2])
+        if self.sender() == self.rgb_g_slider:
+            self.rgb_multiplier = (self.rgb_multiplier[0], value/100, self.rgb_multiplier[2])
+        if self.sender() == self.rgb_b_slider:
+            self.rgb_multiplier = (self.rgb_multiplier[0], self.rgb_multiplier[1], value/100)
         #print(self.RGB_multiplier)
 
-    def openFile(self):
+    def open_file(self):
         if self.cap is not None and self.cap.isOpened():
             self.cap.release()
             self.timer.stop()
-            self.rgb_frame_signal.emit(None, self.RGB_multiplier)
-            self.openButton.setText("open file")
+            self.signal_rgb_frame.emit(None, self.rgb_multiplier)
+            self.open_button.setText("open file")
             return
 
-        fileName, _ = QFileDialog.getOpenFileName(self, "open file", "", "Video Files (*.mp4 *.avi *.mov *.webm *.gif)")
-        if fileName:
-            self.cap = cv2.VideoCapture(fileName)
+        filename, _ = QFileDialog.getOpenFileName(self, "open file", "", "Video Files (*.mp4 *.avi *.mov *.webm *.gif)")
+        if filename:
+            self.cap = cv2.VideoCapture(filename)
             fps = self.cap.get(cv2.CAP_PROP_FPS)  # Get the video's frame rate
-            self.frameRate = fps if fps > 0 else 25
-            self.framerateSlider.setValue(int(self.frameRate))
-            self.timer.start(1000 / self.frameRate)
-            self.openButton.setText("stop")
+            self.framerate = fps if fps > 0 else 25
+            self.framerate_slider.setValue(int(self.framerate))
+            self.timer.start(1000 / self.framerate)
+            self.open_button.setText("stop")
 
-    def displayVideoFrame(self):
+    def display_video_frame(self):
         ret, frame = self.cap.read()
         if ret:
-            rgbFrame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             #self.printRGBData(rgbFrame)  # Print RGB data of the frame
-            h, w, ch = rgbFrame.shape
-            bytesPerLine = ch * w
-            convertToQtFormat = QImage(rgbFrame.data, w, h, bytesPerLine, QImage.Format_RGB888)
-            p = convertToQtFormat.scaled(app_width, app_height, aspectMode=QtCore.Qt.AspectRatioMode.KeepAspectRatio)
-            self.videoLabel.setPixmap(QPixmap.fromImage(p))
+            h, w, ch = rgb_frame.shape
+            bytes_per_line = ch * w
+            rgb_img = QImage(rgb_frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
+            scaled_img = rgb_img.scaled(app_width, app_height, aspectMode=QtCore.Qt.AspectRatioMode.KeepAspectRatio)
+            self.video_label.setPixmap(QPixmap.fromImage(scaled_img))
 
-            keyb_rgb = p.scaled(self.rgb_matrix_size[0], self.rgb_matrix_size[1])
+            keyb_rgb = scaled_img.scaled(self.rgb_matrix_size[0], self.rgb_matrix_size[1])
             #self.videoLabel.setPixmap(QPixmap.fromImage(keyb_rgb))
-            self.rgb_frame_signal.emit(keyb_rgb, self.RGB_multiplier)
+            self.signal_rgb_frame.emit(keyb_rgb, self.rgb_multiplier)
         else:
             #print("Reached the end of the video, restarting...")
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Rewind the video
 
-    def printRGBData(self, frame):
+    def print_rgb_data(self, frame):
         # Example function to print RGB data of a frame
         # You might want to process or analyze this data instead of printing
         print(frame[0,0])  # Print RGB values of the top-left pixel as an example
-
 
     def closeEvent(self, event):
         if self.cap is not None and self.cap.isOpened():
             self.cap.release()
         self.timer.stop()
 
-
 #-------------------------------------------------------------------------------
-
 class AudioCaptureThread(QThread):
 
     def __init__(self, freq_bands, interval):
@@ -505,7 +483,7 @@ class AudioCaptureThread(QThread):
         FORMAT = pyaudio.paFloat32
         CHANNELS = default_speakers["maxInputChannels"]
         RATE = int(default_speakers["defaultSampleRate"])
-        INPUT_INDEX = input_device_index=default_speakers["index"]
+        INPUT_INDEX = default_speakers["index"]
         CHUNK = int(RATE * self.interval)
 
         self.running = True
@@ -534,7 +512,6 @@ class AudioCaptureThread(QThread):
             # Calculate frequency bins
             freq_bins = np.fft.rfftfreq(len(audio_data), d=1./RATE)
             peak_levels = []
-
             for f_min, f_max in self.freq_bands:
                 # Find the bin indices corresponding to the frequency range
                 idx = np.where((freq_bins >= f_min) & (freq_bins <= f_max))
@@ -557,43 +534,10 @@ class AudioCaptureThread(QThread):
             pass
         self.running = False
 
-
 #-------------------------------------------------------------------------------
 class RGBAudioTab(QWidget):
-    rgb_frame_signal = Signal(QImage, object)  # Signal to send rgb frame
-    freq_bands = []
+    signal_rgb_frame = Signal(QImage, object)
 
-    '''
-    piano frequency ranges:
-    Sub-bass (A0 to A1): 27.5 Hz to 55 Hz
-    Bass (A1 to A2): 55 Hz to 110 Hz
-    Low Midrange (A2 to A3): 110 Hz to 220 Hz
-    Midrange (A3 to A4): 220 Hz to 440 Hz
-    Upper Midrange (A4 to A5): 440 Hz to 880 Hz
-    High Frequency (A5 to A6): 880 Hz to 1760 Hz
-    Very High Frequency (A6 to A7): 1760 Hz to 3520 Hz
-    Ultrasonic (A7 to C8): 3520 Hz to 4186 Hz
-
-    violin frequency ranges:
-    Low Range (G3 to B3): 196 Hz to 247 Hz
-    Low Mid Range (C4 to E4): 262 Hz to 330 Hz
-    Mid Range (F4 to A4): 349 Hz to 440 Hz
-    High Mid Range (A#4 to C6): 466 Hz to 1047 Hz
-    High Range (C#6 to G7): 1109 Hz to 3136 Hz
-    Very High Range (G#7 to C8 and beyond): 3322 Hz to 4186+ Hz
-
-    contrabass frequency ranges:
-    Sub-Bass (E1 to B1): 41.2 Hz to 61.7 Hz
-    Bass (C2 to E2): 65.4 Hz to 82.4 Hz
-    Low Midrange (F2 to A2): 87.3 Hz to 110 Hz
-    Midrange (A#2 to D3): 116.5 Hz to 146.8 Hz
-    Upper Midrange (D#3 to G3): 155.6 Hz to 196 Hz
-    High Frequency (G#3 to C4): 207.7 Hz to 261.6 Hz
-    Very High Frequency (C#4 and above): 277.2 Hz
-
-    vocal range:
-    f3-f6: 175-1400 Hz
-    '''
     @staticmethod
     def freq_bands_linear(f_min, f_max, k):
         bands = []
@@ -626,63 +570,63 @@ class RGBAudioTab(QWidget):
         self.dbg['PEAK_LEVEL']  = DebugTracer(print=0, trace=1, obj=self)
         self.dbg['MAX_PEAK']    = DebugTracer(print=1, trace=1, obj=self)
         #-----------------------------------------------------------
-
+        self.freq_bands = []
         super().__init__()
-        self.initUI()
+        self.init_gui()
 
         #-----------------------------------------------------------
         self.rgb_matrix_size = rgb_matrix_size
         self.keyb_rgb = QImage(self.rgb_matrix_size[0], self.rgb_matrix_size[1], QImage.Format_RGB888)
         self.keyb_rgb_mask = QImage(self.keyb_rgb.size(), QImage.Format_Grayscale8)
         self.keyb_rgb_mask_mode = 0
-        self.RGB_multiplier = (1.0,1.0,1.0)
+        self.rgb_multiplier = (1.0,1.0,1.0)
 
         self.sample_count = 0
-        self.audioThread = AudioCaptureThread(self.freq_bands, 0.05)
+        self.audio_thread = AudioCaptureThread(self.freq_bands, 0.05)
 
     def loadFreqBandsJsonFile(self):
-        fileName, _ = QFileDialog.getOpenFileName(self, "open file", "", "json (*.json)")
-        self.load_freq_bands_colors(fileName)
+        filename, _ = QFileDialog.getOpenFileName(self, "open file", "", "json (*.json)")
+        self.load_freq_bands_colors(filename)
         # update freq bands rgb ui
         for i, (band, color) in enumerate(zip(self.freq_bands, self.freq_rgb)):
             self.dbg['FREQ_BAND'].tr(f"settext:[{i}]{band} {color}")
-            self.freqBandsInput[i][0].blockSignals(True)
-            self.freqBandsInput[i][1].blockSignals(True)
-            self.freqBandsInput[i][0].setText(format(band[0], '.2f'))
-            self.freqBandsInput[i][1].setText(format(band[1], '.2f'))
-            self.freqBandsInput[i][0].blockSignals(False)
-            self.freqBandsInput[i][1].blockSignals(False)
+            self.freqbands_input[i][0].blockSignals(True)
+            self.freqbands_input[i][1].blockSignals(True)
+            self.freqbands_input[i][0].setText(format(band[0], '.2f'))
+            self.freqbands_input[i][1].setText(format(band[1], '.2f'))
+            self.freqbands_input[i][0].blockSignals(False)
+            self.freqbands_input[i][1].blockSignals(False)
 
             for j in range(3):
-                self.freqBandsRGBInput[i][j].blockSignals(True)
-                self.freqBandsRGBInput[i][j].setText(format(color[j], '.2f'))
-                self.freqBandsRGBInput[i][j].blockSignals(False)
+                self.freqbands_rgb_input[i][j].blockSignals(True)
+                self.freqbands_rgb_input[i][j].setText(format(color[j], '.2f'))
+                self.freqbands_rgb_input[i][j].blockSignals(False)
 
-            self.minMaxLevelInput[i][0].blockSignals(True)
-            self.minMaxLevelInput[i][1].blockSignals(True)
-            self.minMaxLevelInput[i][0].setText(str(self.min_max_level[i][0]))
-            self.minMaxLevelInput[i][1].setText(str(self.min_max_level[i][1]))
-            self.minMaxLevelInput[i][0].blockSignals(False)
-            self.minMaxLevelInput[i][1].blockSignals(False)
+            self.minmax_level_input[i][0].blockSignals(True)
+            self.minmax_level_input[i][1].blockSignals(True)
+            self.minmax_level_input[i][0].setText(str(self.min_max_level[i][0]))
+            self.minmax_level_input[i][1].setText(str(self.min_max_level[i][1]))
+            self.minmax_level_input[i][0].blockSignals(False)
+            self.minmax_level_input[i][1].blockSignals(False)
 
-    def initUI(self):
+    def init_gui(self):
         layout = QVBoxLayout()
         #-----------------------------------------------------------
         hlayout = QHBoxLayout()
         label = QLabel("frequency band | rgb | min/max level (0 for auto)")
-        self.loadButton = QPushButton("load")
-        self.loadButton.clicked.connect(self.loadFreqBandsJsonFile)
+        self.loadbutton = QPushButton("load")
+        self.loadbutton.clicked.connect(self.loadFreqBandsJsonFile)
 
         hlayout.addWidget(label)
-        hlayout.addWidget(self.loadButton)
+        hlayout.addWidget(self.loadbutton)
         hlayout.addStretch(1)
         layout.addLayout(hlayout)
 
         # load freq bands colors and add widgets
         self.load_freq_bands_colors()
-        self.freqBandsInput = []
-        self.freqBandsRGBInput = []
-        self.minMaxLevelInput = []
+        self.freqbands_input = []
+        self.freqbands_rgb_input = []
+        self.minmax_level_input = []
         self.db_min = []
         self.max_level = [] # max level used for rgb intensity
         self.max_level_running = []  # max level updated every sample
@@ -700,8 +644,8 @@ class RGBAudioTab(QWidget):
             high.setText(format(band[1], '.2f'))
             low.textChanged.connect(self.update_freq_bands)
             high.textChanged.connect(self.update_freq_bands)
-            self.freqBandsInput.append((low,high))
-            self.freqBandsRGBInput.append((QLineEdit(),QLineEdit(),QLineEdit()))
+            self.freqbands_input.append((low,high))
+            self.freqbands_rgb_input.append((QLineEdit(),QLineEdit(),QLineEdit()))
             hlayout = QHBoxLayout()
             hlayout.addWidget(low)
             hlayout.addWidget(high)
@@ -709,7 +653,7 @@ class RGBAudioTab(QWidget):
             separator.setFrameShape(QFrame.VLine)
             hlayout.addWidget(separator)
             #-----------------------
-            for j, rgb in enumerate(self.freqBandsRGBInput[-1]):
+            for j, rgb in enumerate(self.freqbands_rgb_input[-1]):
                 rgb.setValidator(QDoubleValidator(0.0,5.0,2))
                 rgb.setFixedWidth(30)
                 rgb.setText(format(color[j], '.2f'))
@@ -719,19 +663,19 @@ class RGBAudioTab(QWidget):
             separator.setFrameShape(QFrame.VLine)
             hlayout.addWidget(separator)
             #-----------------------
-            minLevel = QLineEdit()
-            minLevel.setValidator(QIntValidator(0,1000))
-            minLevel.setFixedWidth(50)
-            minLevel.setText(str(self.min_max_level[i][0]))
-            minLevel.textChanged.connect(self.update_min_max_level)
-            maxLevel = QLineEdit()
-            maxLevel.setValidator(QIntValidator(0,1000))
-            maxLevel.setFixedWidth(50)
-            maxLevel.setText(str(self.min_max_level[i][1]))
-            maxLevel.textChanged.connect(self.update_min_max_level)
-            hlayout.addWidget(minLevel)
-            hlayout.addWidget(maxLevel)
-            self.minMaxLevelInput.append((minLevel, maxLevel))
+            min_level = QLineEdit()
+            min_level.setValidator(QIntValidator(0,1000))
+            min_level.setFixedWidth(50)
+            min_level.setText(str(self.min_max_level[i][0]))
+            min_level.textChanged.connect(self.update_min_max_level)
+            max_level = QLineEdit()
+            max_level.setValidator(QIntValidator(0,1000))
+            max_level.setFixedWidth(50)
+            max_level.setText(str(self.min_max_level[i][1]))
+            max_level.textChanged.connect(self.update_min_max_level)
+            hlayout.addWidget(min_level)
+            hlayout.addWidget(max_level)
+            self.minmax_level_input.append((min_level, max_level))
             self.db_min.append(-27)
 
             hlayout.addStretch(1)
@@ -739,10 +683,9 @@ class RGBAudioTab(QWidget):
         layout.addStretch(1)
 
         #-------------------------------------------------------------------------------
-        self.startButton = QPushButton("start")
-        self.startButton.clicked.connect(self.start)
-        layout.addWidget(self.startButton)
-
+        self.start_button = QPushButton("start")
+        self.start_button.clicked.connect(self.start)
+        layout.addWidget(self.start_button)
         self.setLayout(layout)
 
     def load_freq_bands_colors(self, file_name='freq_bands_colors.json'):
@@ -779,23 +722,23 @@ class RGBAudioTab(QWidget):
         n_ranges = len(self.freq_bands)
         self.freq_rgb = []
         for i in range(n_ranges):
-            self.freq_rgb.append([float(self.freqBandsRGBInput[i][0].text()), float(self.freqBandsRGBInput[i][1].text()), float(self.freqBandsRGBInput[i][2].text())])
+            self.freq_rgb.append([float(self.freqbands_rgb_input[i][0].text()), float(self.freqbands_rgb_input[i][1].text()), float(self.freqbands_rgb_input[i][2].text())])
 
         self.dbg['FREQ_BAND'].tr(f"freq band colors {self.freq_rgb}")
 
     def update_freq_bands(self):
         n_ranges = len(self.freq_bands)
         for i in range(n_ranges):
-            self.freq_bands[i] = (float(self.freqBandsInput[i][0].text()), float(self.freqBandsInput[i][1].text()))
+            self.freq_bands[i] = (float(self.freqbands_input[i][0].text()), float(self.freqbands_input[i][1].text()))
 
         self.dbg['FREQ_BAND'].tr(f"freq bands {self.freq_bands}")
-        self.audioThread.set_freq_bands(self.freq_bands)
+        self.audio_thread.set_freq_bands(self.freq_bands)
 
     def update_min_max_level(self):
         n_ranges = len(self.freq_bands)
         min_max_level = []
         for i in range(n_ranges):
-            min_max_level.append((int(self.minMaxLevelInput[i][0].text()), int(self.minMaxLevelInput[i][1].text())))
+            min_max_level.append((int(self.minmax_level_input[i][0].text()), int(self.minmax_level_input[i][1].text())))
         self.min_max_level = min_max_level
 
     #-------------------------------------------------------------------------------
@@ -808,23 +751,22 @@ class RGBAudioTab(QWidget):
         mapped_value = int(round(255 * normalized))
         return mapped_value
 
-    def peak_level_to_rgb(self, peak_levels, db_min, max_level):
+    def peak_level_to_rgb(self, peak_levels, db_min, max_level, log_scale = True):
         r = g = b = 0
-        max_rgb = 255
+        MAX_RGB = 255
         for i in range(len(peak_levels)):
             try:
                 peak_db = 20 * np.log10(peak_levels[i]/max_level[i])
                 peak_db_rgb = self.db_to_255(peak_db, db_min[i], 0)
                 #print(f"peak {i}: {peak_levels[i]} {peak_db} {peak_db_rgb}")
-                log_scale = True
                 if log_scale:
                     r += peak_db_rgb * self.freq_rgb[i][0]
                     g += peak_db_rgb * self.freq_rgb[i][1]
                     b += peak_db_rgb * self.freq_rgb[i][2]
                 else:
-                    r += peak_levels[i]/max_level[i] * self.freq_rgb[i][0] * max_rgb
-                    g += peak_levels[i]/max_level[i] * self.freq_rgb[i][1] * max_rgb
-                    b += peak_levels[i]/max_level[i] * self.freq_rgb[i][2] * max_rgb
+                    r += peak_levels[i]/max_level[i] * self.freq_rgb[i][0] * MAX_RGB
+                    g += peak_levels[i]/max_level[i] * self.freq_rgb[i][1] * MAX_RGB
+                    b += peak_levels[i]/max_level[i] * self.freq_rgb[i][2] * MAX_RGB
             except Exception as e:
                 self.dbg['DEBUG'].tr(f"ppeak_level_to_rgb:{e}")
                 pass # #bands updated in ui
@@ -833,15 +775,15 @@ class RGBAudioTab(QWidget):
         r /= 6
         g /= 6
         b /= 6
-        r = min(r, max_rgb)
-        g = min(g, max_rgb)
-        b = min(b, max_rgb)
+        r = min(r, MAX_RGB)
+        g = min(g, MAX_RGB)
+        b = min(b, MAX_RGB)
         return r,g,b
 
     #-------------------------------------------------------------------------------
-    def processAudioPeakLevels(self, peak_levels):
+    def process_audiopeak_levels(self, peak_levels):
         if peak_levels is None:
-            self.rgb_frame_signal.emit(None, self.RGB_multiplier)
+            self.signal_rgb_frame.emit(None, self.rgb_multiplier)
             return
 
         self.sample_count += 1
@@ -894,7 +836,7 @@ class RGBAudioTab(QWidget):
         #-----------------------------------------------------------
         if self.running:
             #self.dbg['DEBUG'].tr(f"send rgb {self.keyb_rgb}")
-            self.rgb_frame_signal.emit(self.keyb_rgb, self.RGB_multiplier)
+            self.signal_rgb_frame.emit(self.keyb_rgb, self.rgb_multiplier)
 
     # todo: add effects
     # - mask leds per freq band/peak level
@@ -931,24 +873,24 @@ class RGBAudioTab(QWidget):
             self.keyb_rgb = img
 
     def start(self):
-        if not self.audioThread.isRunning():
+        if not self.audio_thread.isRunning():
             self.update_freq_rgb()
             self.update_freq_bands()
             self.update_min_max_level()
-            self.audioThread.connect_callback(self.processAudioPeakLevels)
-            self.audioThread.start()
-            self.startButton.setText("stop")
+            self.audio_thread.connect_callback(self.process_audiopeak_levels)
+            self.audio_thread.start()
+            self.start_button.setText("stop")
             self.running = True
         else:
+            self.audio_thread.stop()
+            self.audio_thread.wait()
+            self.start_button.setText("start")
             self.running = False
-            self.audioThread.stop()
-            self.audioThread.wait()
-            self.startButton.setText("start")
 
     def closeEvent(self, event):
-        if self.audioThread.isRunning():
-            self.audioThread.stop()
-            self.audioThread.wait()
+        if self.audio_thread.isRunning():
+            self.audio_thread.stop()
+            self.audio_thread.wait()
 
 #-------------------------------------------------------------------------------
 
@@ -1000,7 +942,6 @@ class HexEditor(QTextEdit):
             else:
                 QMessageBox.warning(self, "Invalid Paste Content", "Pasted text contains non-hexadecimal characters.")
 
-
     def formatText(self):
         cursor_pos = self.textCursor().position()
         # Remove spaces and newlines for clean formatting
@@ -1036,63 +977,55 @@ class RGBDynLDAnimationTab(QWidget):
     signal_dynld_function = Signal(int, bytearray)
 
     def __init__(self):
-        #-----------------------------------------------------------
         self.dbg = {}
         self.dbg['DEBUG']       = DebugTracer(print=1, trace=1)
-        #-----------------------------------------------------------
-
+        #---------------------------------------
         super().__init__()
-        self.initUI()
+        self.init_gui()
 
-    def initUI(self):
+    def init_gui(self):
         layout = QVBoxLayout()
         layout.addStretch(1)
-
         #---------------------------------------
         # dynld animation bin file
-        hLayout = QHBoxLayout()
-        dynldBinLabel = QLabel("animation bin")
-        self.dynldBinInput = QLineEdit("v:\shared\qmk\dynld_animation.bin")
-        hLayout.addWidget(dynldBinLabel)
-        hLayout.addWidget(self.dynldBinInput)
-        self.loadButton = QPushButton("load")
-        self.loadButton.clicked.connect(self.loadDynLDAnimationFunc)
-        hLayout.addWidget(self.loadButton)
-        layout.addLayout(hLayout)
+        hlayout = QHBoxLayout()
+        dynld_bin_label = QLabel("animation bin")
+        self.dynld_bin_input = QLineEdit("v:\shared\qmk\dynld_animation.bin")
+        hlayout.addWidget(dynld_bin_label)
+        hlayout.addWidget(self.dynld_bin_input)
+        self.load_button = QPushButton("load")
+        self.load_button.clicked.connect(self.load_dynld_animation_func)
+        hlayout.addWidget(self.load_button)
+        layout.addLayout(hlayout)
 
         #---------------------------------------
-        self.dynldFunTextEdit = HexEditor()
-        self.loadDynLDAnimationFunc()
-
-        layout.addWidget(self.dynldFunTextEdit)
+        self.dynld_funtext_edit = HexEditor()
+        self.load_dynld_animation_func()
+        layout.addWidget(self.dynld_funtext_edit)
 
         #---------------------------------------
-        self.sendButton = QPushButton("send to keyboard")
-        self.sendButton.clicked.connect(self.sendDynLDAnimationFunc)
-        layout.addWidget(self.sendButton)
-
+        self.send_button = QPushButton("send to keyboard")
+        self.send_button.clicked.connect(self.send_dynld_animation_func)
+        layout.addWidget(self.send_button)
         self.setLayout(layout)
 
-    def loadDynLDAnimationFunc(self):
+    def load_dynld_animation_func(self):
         try:
-            with open(self.dynldBinInput.text(), 'rb') as file:
+            with open(self.dynld_bin_input.text(), 'rb') as file:
                 buf = bytearray(file.read())
                 hexbuf = buf.hex(' ')
-                self.dynldFunTextEdit.setText(hexbuf)
-                self.dynldFunTextEdit.formatText()
+                self.dynld_funtext_edit.setText(hexbuf)
+                self.dynld_funtext_edit.formatText()
         except Exception as e:
             self.dbg['DEBUG'].tr(f"error: {e}")
 
-    def sendDynLDAnimationFunc(self):
-        fundata = self.dynldFunTextEdit.getBinaryContent()
+    def send_dynld_animation_func(self):
+        fundata = self.dynld_funtext_edit.getBinaryContent()
         if fundata:
             DYNLD_ANIMATION_FUNC = 0
             self.signal_dynld_function.emit(DYNLD_ANIMATION_FUNC, fundata)
 
-
-
 #-------------------------------------------------------------------------------
-
 class ProgramSelectorComboBox(QComboBox):
     def __init__(self, winfocusText=None):
         self.winfocusText = winfocusText
@@ -1110,21 +1043,20 @@ class ProgramSelectorComboBox(QComboBox):
         # Call the base class implementation to ensure default behavior
         super().mousePressEvent(event)
 
-
 class LayerAutoSwitchTab(QWidget):
-    keyb_layer_set_signal = Signal(int)
-    num_program_selectors = 3
+    signal_keyb_set_layer = Signal(int)
+    num_program_selectors = 4
 
     def __init__(self, num_keyb_layers=8):
         self.dbg = {}
         self.dbg['DEBUG'] = DebugTracer(print=1, trace=1, obj=self)
 
-        self.currentLayer = 0
+        self.current_layer = 0
         self.num_keyb_layers = num_keyb_layers
-        self.wsServer = None
+        self.ws_server = None
 
         super().__init__()
-        self.initUI()
+        self.init_gui()
 
     async def ws_handler(self, websocket, path):
         async for message in websocket:
@@ -1132,20 +1064,20 @@ class LayerAutoSwitchTab(QWidget):
             if message.startswith("layer:"):
                 try:
                     layer = int(message.split(":")[1])
-                    self.keyb_layer_set_signal.emit(layer)
+                    self.signal_keyb_set_layer.emit(layer)
                 except Exception as e:
                     self.dbg['DEBUG'].tr(f"ws_handler: {e}")
 
-    def wsServerStartStop(self, state):
+    def ws_server_startstop(self, state):
         #self.dbg['DEBUG'].tr(f"{state}")
         if Qt.CheckState(state) == Qt.CheckState.Checked:
-            self.wsServer = WSServer(self.ws_handler, int(self.layerSwitchServerPort.text()))
-            self.wsServer.start()
+            self.ws_server = WSServer(self.ws_handler, int(self.layer_switch_server_port.text()))
+            self.ws_server.start()
         else:
             try:
-                self.wsServer.stop()
-                self.wsServer.wait()
-                self.wsServer = None
+                self.ws_server.stop()
+                self.ws_server.wait()
+                self.ws_server = None
             except Exception as e:
                 self.dbg['DEBUG'].tr(f"{e}")
 
@@ -1155,26 +1087,26 @@ class LayerAutoSwitchTab(QWidget):
             if message.startswith("layer:"):
                 try:
                     layer = int(message.split(":")[1])
-                    self.keyb_layer_set_signal.emit(layer)
+                    self.signal_keyb_set_layer.emit(layer)
                 except Exception as e:
                     self.dbg['DEBUG'].tr(f"ws_handler: {e}")
 
-    def initUI(self):
+    def init_gui(self):
         layout = QVBoxLayout()
         layout.setAlignment(Qt.AlignTop)
 
         #---------------------------------------
         # default layer
-        self.defaultLayerLabel = QLabel("default layer")
-        metrics = QFontMetrics(self.defaultLayerLabel.font())
-        self.defaultLayerLabel.setFixedHeight(metrics.height())
+        self.deflayer_label = QLabel("default layer")
+        metrics = QFontMetrics(self.deflayer_label.font())
+        self.deflayer_label.setFixedHeight(metrics.height())
 
-        layout.addWidget(self.defaultLayerLabel)
+        layout.addWidget(self.deflayer_label)
         # QComboBox for selecting layer
-        self.defLayerSelector = QComboBox()
-        self.defLayerSelector.addItems([str(i) for i in range(self.num_keyb_layers)])
-        layout.addWidget(self.defLayerSelector)
-        self.defLayerSelector.setCurrentIndex(0)
+        self.deflayer_selector = QComboBox()
+        self.deflayer_selector.addItems([str(i) for i in range(self.num_keyb_layers)])
+        layout.addWidget(self.deflayer_selector)
+        self.deflayer_selector.setCurrentIndex(0)
         #---------------------------------------
         # instruction summary
         self.label = QLabel("select default layer above, the foreground application is traced here below.\n"
@@ -1187,137 +1119,106 @@ class LayerAutoSwitchTab(QWidget):
         layout.addWidget(self.label)
         #---------------------------------------
         # "layer switch ws server" enable checkbox plus port input
-        self.layerSwitchServerCheckbox = QCheckBox("enable ws server", self)
-        self.layerSwitchServerPort = QLineEdit("8765")
+        self.layer_switch_server_checkbox = QCheckBox("enable ws server", self)
+        self.layer_switch_server_port = QLineEdit("8765")
         port_validator = QIntValidator(0, 65535, self)
-        self.layerSwitchServerPort.setValidator(port_validator)
-        self.layerSwitchServerPort.setFixedWidth(50)
-        self.layerSwitchServerCheckbox.stateChanged.connect(self.wsServerStartStop)
+        self.layer_switch_server_port.setValidator(port_validator)
+        self.layer_switch_server_port.setFixedWidth(50)
+        self.layer_switch_server_checkbox.stateChanged.connect(self.ws_server_startstop)
         hlayout = QHBoxLayout()
         hlayout.addStretch(1)
-        hlayout.addWidget(self.layerSwitchServerCheckbox)
-        hlayout.addWidget(self.layerSwitchServerPort)
+        hlayout.addWidget(self.layer_switch_server_checkbox)
+        hlayout.addWidget(self.layer_switch_server_port)
         layout.addLayout(hlayout)
 
         #---------------------------------------
         # for displaying processes which got foreground focus
-        self.winfocusTextEdit = QTextEdit()
-        self.winfocusTextEdit.setReadOnly(True)
-        self.winfocusTextEdit.setMaximumHeight(180)  # Adjust the height
-        self.winfocusTextEdit.textChanged.connect(self.limitLines)
-        layout.addWidget(self.winfocusTextEdit)
+        self.winfocus_textedit = QTextEdit()
+        self.winfocus_textedit.setReadOnly(True)
+        self.winfocus_textedit.setMaximumHeight(180)  # Adjust the height
+        self.winfocus_textedit.textChanged.connect(self.limit_lines)
+        layout.addWidget(self.winfocus_textedit)
 
         #---------------------------------------
-        self.programSelector = []
-        self.layerSelector = []
+        self.program_selector = []
+        self.layer_selector = []
         for i in range(self.num_program_selectors):
-            self.programSelector.append(ProgramSelectorComboBox(self.winfocusTextEdit))
-            self.programSelector[i].addItems(["" for i in range(5)])
-            self.programSelector[i].setCurrentIndex(0)
-            layout.addWidget(self.programSelector[i])
+            self.program_selector.append(ProgramSelectorComboBox(self.winfocus_textedit))
+            self.program_selector[i].addItems(["" for i in range(5)])
+            self.program_selector[i].setCurrentIndex(0)
+            layout.addWidget(self.program_selector[i])
 
-            self.layerSelector.append(QComboBox())
-            self.layerSelector[i].addItems([str(i) for i in range(self.num_keyb_layers)])
-            self.layerSelector[i].setCurrentIndex(0)
-            layout.addWidget(self.layerSelector[i])
-
+            self.layer_selector.append(QComboBox())
+            self.layer_selector[i].addItems([str(i) for i in range(self.num_keyb_layers)])
+            self.layer_selector[i].setCurrentIndex(0)
+            layout.addWidget(self.layer_selector[i])
         #---------------------------------------
         self.setLayout(layout)
 
-        # Connect winfocusTextEdit mouse press event
-        self.winfocusTextEdit.mousePressEvent = self.selectLine
-
-
     def update_default_layer(self, layer):
         self.dbg['DEBUG'].tr(f"default layer update: {layer}")
-        self.defLayerSelector.setCurrentIndex(layer)
-
+        self.deflayer_selector.setCurrentIndex(layer)
 
     def on_winfocus(self, line):
-        self.updateWinfocusText(line)
-        self.currentFocus = line
-
-        layerSet = False
-
+        self.update_winfocus_text(line)
+        self.current_focus = line
         # foreground focus window info
         focus_win = line.split("\t")
-        #print(f"on_winfocus {focus_win}")
-        for i, ps in enumerate(self.programSelector):
-            compare_win = self.programSelector[i].currentText().split("\t")
-            #print(f"on_winfocus compare: {compare_win}")
+        #self.dbg['DEBUG'].tr(f"on_winfocus {focus_win}")
+        for i, ps in enumerate(self.program_selector):
+            compare_win = self.program_selector[i].currentText().split("\t")
+            #self.dbg['DEBUG'].tr(f"on_winfocus compare: {compare_win}")
             if focus_win[0].strip() == compare_win[0].strip() and \
                focus_win[1].strip() == compare_win[1].strip():
-                layer = int(self.layerSelector[i].currentText())
-                self.keyb_layer_set_signal.emit(layer)
-                self.currentLayer = layer
-                layerSet = True
+                layer = int(self.layer_selector[i].currentText())
+                self.signal_keyb_set_layer.emit(layer)
+                self.current_layer = layer
+                self.dbg['DEBUG'].tr(f"layer set: {layer}")
+                return
 
-        if layerSet:
-            return
+        defaultLayer = self.deflayer_selector.currentIndex()
+        if self.current_layer != defaultLayer:
+            self.signal_keyb_set_layer.emit(defaultLayer)
+            self.current_layer = defaultLayer
 
-        defaultLayer = self.defLayerSelector.currentIndex()
-        if self.currentLayer != defaultLayer:
-            self.keyb_layer_set_signal.emit(defaultLayer)
-            self.currentLayer = defaultLayer
+    def update_winfocus_text(self, line):
+        self.winfocus_textedit.append(line)
 
-    def updateWinfocusText(self, line):
-        self.winfocusTextEdit.append(line)
-
-
-    def limitLines(self):
-        lines = self.winfocusTextEdit.toPlainText().split('\n')
+    def limit_lines(self):
+        lines = self.winfocus_textedit.toPlainText().split('\n')
         if len(lines) > 10:
-            self.winfocusTextEdit.setPlainText('\n'.join(lines[-10:]))
-
-
-    def selectLine(self, event):
-        pass
-        #cursor = self.winfocusTextEdit.textCursor()
-        #cursor = self.winfocusTextEdit.cursorForPosition(event.pos())
-        #cursor.select(QTextCursor.LineUnderCursor)
-        #selectedText = cursor.selectedText()
-        #print(selectedText)
-
+            self.winfocus_textedit.setPlainText('\n'.join(lines[-10:]))
 
     def closeEvent(self, event):
-        if self.wsServer:
-            self.wsServer.stop()
-            self.wsServer.wait()
+        if self.ws_server:
+            self.ws_server.stop()
+            self.ws_server.wait()
 
 #-------------------------------------------------------------------------------
-
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
-import matplotlib.animation as animation
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
 def rgba2rgb( rgba, background=(255,255,255) ):
     # rgba iteration: lines, pixels, rgba value
     row, col, ch = rgba.shape
-
     if ch == 3:
         return rgba
-
     assert ch == 4, 'RGBA image has 4 channels.'
-
     rgb = np.zeros( (row, col, 3), dtype='float32' )
     r, g, b, a = rgba[:,:,0], rgba[:,:,1], rgba[:,:,2], rgba[:,:,3]
-
     a = np.asarray( a, dtype='float32' ) / 255.0
-
     R, G, B = background
-
     rgb[:,:,0] = r * a + (1.0 - a) * R
     rgb[:,:,1] = g * a + (1.0 - a) * G
     rgb[:,:,2] = b * a + (1.0 - a) * B
-
     return np.asarray( rgb, dtype='uint8' )
-
 
 def add_method_to_class(class_def, method):
     method_definition = method
-
     # Execute the method definition and retrieve the method from the local scope
     local_scope = {}
     exec(method_definition, globals(), local_scope)
@@ -1326,11 +1227,9 @@ def add_method_to_class(class_def, method):
         # Add the method to the class
         setattr(class_def, method.__name__, method)
 
-
 class CodeTextEdit(QTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
-
         self.setFont(QFont("Courier New", 9))
         self.load_text_file("animation.py")
 
@@ -1349,9 +1248,8 @@ class CodeTextEdit(QTextEdit):
         else:
             super().keyPressEvent(event)
 
-
 class RGBAnimationTab(QWidget):
-    rgb_frame_signal = Signal(QImage, object)  # Signal to send rgb frame
+    signal_rgb_frame = Signal(QImage, object)
 
     def __init__(self, rgb_matrix_size):
         self.dbg = {}
@@ -1359,9 +1257,9 @@ class RGBAnimationTab(QWidget):
 
         self.rgb_matrix_size = rgb_matrix_size
         super().__init__()
-        self.initUI()
+        self.init_gui()
 
-    def initUI(self):
+    def init_gui(self):
         dbg = self.dbg['DEBUG']
         # Create a figure for plotting
         self.figure = Figure(facecolor='black')
@@ -1372,17 +1270,15 @@ class RGBAnimationTab(QWidget):
         self.ax.axis('off')
 
         # start animation button
-        self.startButton = QPushButton("start")
-        self.startButton.clicked.connect(self.startAnimation)
+        self.start_button = QPushButton("start")
+        self.start_button.clicked.connect(self.start_animation)
 
         # Layout to hold the canvas and buttons
         layout = QVBoxLayout()
-        spacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
         self.code_editor = CodeTextEdit()
-        #layout.addSpacerItem(spacer)
         layout.addWidget(self.code_editor)
         layout.addWidget(self.canvas)
-        layout.addWidget(self.startButton)
+        layout.addWidget(self.start_button)
         self.setLayout(layout)
 
         w_inch = 4
@@ -1397,12 +1293,10 @@ class RGBAnimationTab(QWidget):
         self.x_size = 20
         self.frames = 500
         self.interval = 20
-
         # Animation placeholder
         self.ani = None
 
-
-    def startAnimation(self):
+    def start_animation(self):
         if self.ani is None:  # Prevent multiple instances if already running
             add_method_to_class(RGBAnimationTab, self.code_editor.toPlainText())
             try:
@@ -1417,40 +1311,36 @@ class RGBAnimationTab(QWidget):
             except Exception as e:
                 print(e)
 
-
             if self.ani:
-                self.startButton.setText("stop")
+                self.start_button.setText("stop")
         else:
             self.ani.event_source.stop()
             self.ani = None
-            self.rgb_frame_signal.emit(None, (0,0,0))
-            self.startButton.setText("start")
+            self.signal_rgb_frame.emit(None, (0,0,0))
+            self.start_button.setText("start")
 
-
-    def captureAnimationFrame(self):
+    def capture_animation_frame(self):
         if self.ani == None:
             return
 
         self.ani.pause()
 
-        self.canvas.draw()
         buffer = np.frombuffer(self.canvas.buffer_rgba(), dtype=np.uint8)
         width, height = self.figure.get_size_inches() * self.figure.get_dpi()
         img = buffer.reshape(int(height), int(width), 4)
         img = rgba2rgb(img)
         qimage = QImage(img.data, width, height, QImage.Format_RGB888)
         keyb_rgb = qimage.scaled(self.rgb_matrix_size[0], self.rgb_matrix_size[1])
-        self.rgb_frame_signal.emit(keyb_rgb, (1.0,1.0,1.0))
+        self.signal_rgb_frame.emit(keyb_rgb, (1.0,1.0,1.0))
 
         self.ani.resume()
-
 
     def _animate(self, i):
         ret = self.animate(i)
         if i == self.frames:
             self.figure.clear()
 
-        QTimer.singleShot(0, self.captureAnimationFrame)
+        QTimer.singleShot(0, self.capture_animation_frame)
         return ret
 
     def closeEvent(self, event):
@@ -1459,14 +1349,16 @@ class RGBAnimationTab(QWidget):
             self.ani = None
 
 #-------------------------------------------------------------------------------
+app_width       = 800
+app_height      = 1000
 
 class MainWindow(QMainWindow):
     def __init__(self, keyboard_vid_pid):
         self.keyboard_vid_pid = keyboard_vid_pid
         super().__init__()
-        self.initUI()
+        self.init_gui()
 
-    def initUI(self):
+    def init_gui(self):
         self.setWindowTitle('QMK Firmata')
         self.setGeometry(100, 100, app_width, app_height)
         self.setFixedSize(app_width, app_height)
@@ -1497,22 +1389,22 @@ class MainWindow(QMainWindow):
         self.keyboard.signal_rgb_matrix_mode.connect(self.rgb_matrix_tab.update_rgb_matrix_mode)
         self.keyboard.signal_rgb_matrix_hsv.connect(self.rgb_matrix_tab.update_rgb_matrix_hsv)
 
-        self.console_tab.signal_dbg_mask.connect(self.keyboard.keyb_dbg_mask_set)
-        self.console_tab.signal_macwin_mode.connect(self.keyboard.keyb_macwin_mode_set)
+        self.console_tab.signal_dbg_mask.connect(self.keyboard.keyb_set_dbg_mask)
+        self.console_tab.signal_macwin_mode.connect(self.keyboard.keyb_set_macwin_mode)
 
-        self.rgb_matrix_tab.signal_rgb_matrix_mode.connect(self.keyboard.keyb_rgb_matrix_mode_set)
-        self.rgb_matrix_tab.signal_rgb_matrix_hsv.connect(self.keyboard.keyb_rgb_matrix_hsv_set)
-        self.rgb_matrix_tab.rgb_video_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
-        self.rgb_matrix_tab.rgb_animation_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
-        self.rgb_matrix_tab.rgb_audio_tab.rgb_frame_signal.connect(self.keyboard.keyb_rgb_buf_set)
-        self.rgb_matrix_tab.rgb_dynld_animation_tab.signal_dynld_function.connect(self.keyboard.keyb_dynld_function_set)
+        self.rgb_matrix_tab.signal_rgb_matrix_mode.connect(self.keyboard.keyb_set_rgb_matrix_mode)
+        self.rgb_matrix_tab.signal_rgb_matrix_hsv.connect(self.keyboard.keyb_set_rgb_matrix_hsv)
+        self.rgb_matrix_tab.rgb_video_tab.signal_rgb_frame.connect(self.keyboard.keyb_set_rgb_buf)
+        self.rgb_matrix_tab.rgb_animation_tab.signal_rgb_frame.connect(self.keyboard.keyb_set_rgb_buf)
+        self.rgb_matrix_tab.rgb_audio_tab.signal_rgb_frame.connect(self.keyboard.keyb_set_rgb_buf)
+        self.rgb_matrix_tab.rgb_dynld_animation_tab.signal_dynld_function.connect(self.keyboard.keyb_set_dynld_function)
 
-        self.layer_switch_tab.keyb_layer_set_signal.connect(self.keyboard.keyb_default_layer_set)
+        self.layer_switch_tab.signal_keyb_set_layer.connect(self.keyboard.keyb_set_default_layer)
 
         #-----------------------------------------------------------
         # window focus listener
         self.winfocus_listener = WinFocusListener()
-        self.winfocus_listener.winfocus_signal.connect(self.layer_switch_tab.on_winfocus)
+        self.winfocus_listener.signal_winfocus.connect(self.layer_switch_tab.on_winfocus)
         self.winfocus_listener.start()
 
         #-----------------------------------------------------------
@@ -1560,7 +1452,7 @@ def detect_keyboards():
                 return True
         return False
 
-    keyboard_models = FirmataKeyboard.loadKeyboardModels()
+    keyboard_models = FirmataKeyboard.load_keyboard_models()
     keyboards = []
     print (f"keyboards: {keyboard_models[0]}")
     for model in keyboard_models[0].values():
@@ -1571,11 +1463,11 @@ def detect_keyboards():
     return keyboards, keyboard_models[0]
 
 
+#-------------------------------------------------------------------------------
 def main(keyboard_vid_pid):
     from PySide6.QtCore import QLocale
     locale = QLocale("C")
     QLocale.setDefault(locale)
-
     app = QApplication(sys.argv)
 
     selected_keyboard = ""
@@ -1591,14 +1483,11 @@ def main(keyboard_vid_pid):
     main_window.show()
     sys.exit(app.exec())
 
-#-------------------------------------------------------------------------------
+parser = argparse.ArgumentParser(description="keyboard vendor/product id")
+parser.add_argument('--vid', required=False, type=lambda x: int(x, 16),
+                    help='keyboard vid in hex')
+parser.add_argument('--pid', required=False, type=lambda x: int(x, 16),
+                    help='keyboard pid in hex')
+args = parser.parse_args()
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="keyboard vendor/product id")
-    parser.add_argument('--vid', required=False, type=lambda x: int(x, 16),
-                        help='keyboard vid in hex')
-    parser.add_argument('--pid', required=False, type=lambda x: int(x, 16),
-                        help='keyboard pid in hex')
-    args = parser.parse_args()
-
-    main((args.vid, args.pid))
+main((args.vid, args.pid))

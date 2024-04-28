@@ -1,33 +1,23 @@
-import pyfirmata2
-
 from PySide6 import QtCore
+from PySide6.QtCore import Signal
 from PySide6.QtGui import QImage, QColor, QPainter
-from PySide6.QtCore import Signal #, Qt, QThread, QTimer
-import numpy as np
-import time
 
-import hid
-import serial
-from serial import SerialBase, SerialException
-from serial.tools import list_ports
-
-from DebugTracer import DebugTracer
-
+import pyfirmata2, hid, serial, time, numpy as np
 import glob, inspect, os, importlib.util, struct
 from pathlib import Path
 
-#-------------------------------------------------------------------------------
+from DebugTracer import DebugTracer
 
+#-------------------------------------------------------------------------------
 #region list com ports
-def list_com_ports(vid = None, pid = None):
-    device_list = list_ports.comports()
+def list_com_ports():
+    device_list = serial.tools.list_ports.comports()
     for device in device_list:
         print(f"{device}: vid={device.vid:04x}, pid={device.pid:04x}")
 
 def find_com_port(vid, pid):
-    device_list = list_ports.comports()
+    device_list = serial.tools.list_ports.comports()
     for device in device_list:
-        #print(f"{device}: vid={device.vid:04x}, pid={device.pid:04x}")
         if device.vid == vid and (pid == None or device.pid == pid):
             return device.device
     return None
@@ -44,16 +34,13 @@ def combine_qimages(img1, img2):
         for y in range(img1.height()):
             pixel1 = img1.pixel(x, y)
             pixel2 = img2.pixel(x, y)
-
             # Extract RGB values
             r1, g1, b1, _ = QColor(pixel1).getRgb()
             r2, g2, b2, _ = QColor(pixel2).getRgb()
-
             # Add the RGB values
             r = min(r1 + r2, FirmataKeyboard.MAX_RGB_VAL)
             g = min(g1 + g2, FirmataKeyboard.MAX_RGB_VAL)
             b = min(b1 + b2, FirmataKeyboard.MAX_RGB_VAL)
-
             # Set the new pixel value
             img1.setPixel(x, y, QColor(r, g, b).rgb())
 
@@ -73,12 +60,11 @@ def combine_qimages_painter(img1, img2):
 #endregion
 
 #-------------------------------------------------------------------------------
-
 FIRMATA_MSG = 0xFA
 QMK_RAW_USAGE_PAGE = 0xFF60
 QMK_RAW_USAGE_ID = 0x61
 
-class SerialRawHID(SerialBase):
+class SerialRawHID(serial.SerialBase):
 
     def __init__(self, vid, pid, epsize=64, timeout=100):
         self.dbg = DebugTracer(print=1, trace=1, obj=self)
@@ -144,7 +130,7 @@ class SerialRawHID(SerialBase):
                 #self.dbg.tr(f"no response from device")
         except Exception as e:
             self.hid_device = None
-            raise SerialException(f"Could not open HID device: {e}")
+            raise serial.SerialException(f"Could not open HID device: {e}")
 
         self.dbg.tr(f"opened HID device: {self.hid_device}")
 
@@ -158,7 +144,7 @@ class SerialRawHID(SerialBase):
 
     def write(self, data):
         if not self.hid_device:
-            raise SerialException("device not open")
+            raise serial.SerialException("device not open")
 
         data = bytearray([0x00, FIRMATA_MSG]) + data
         #print(f"rawhid write:{data.hex(' ')}")
@@ -184,9 +170,7 @@ class SerialRawHID(SerialBase):
         pass
 
 #-------------------------------------------------------------------------------
-
 class DefaultKeyboardModel:
-    #---------------------------------------
     RGB_MAXTRIX_W = 19
     RGB_MAXTRIX_H = 6
     NUM_RGB_LEDS = 110
@@ -225,10 +209,11 @@ class FirmataKeybCmd:
 
 class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
     """
-    A keyboard which "talks" firmata.
+    A keyboard which "talks" arduino firmata.
     """
     #-------------------------------------------------------------------------------
-    signal_console_output = Signal(str)  # signal new console output
+    # signal received qmk keyboard data
+    signal_console_output = Signal(str)
     signal_debug_mask = Signal(int, int)
     signal_macwin_mode = Signal(str)
     signal_default_layer = Signal(int)
@@ -236,34 +221,26 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
     signal_rgb_matrix_hsv = Signal(tuple)
 
     #-------------------------------------------------------------------------------
-    RAW_EPSIZE_FIRMATA = 64 # 32
-    MAX_LEN_SYSEX_DATA = 60
-
     MAX_RGB_VAL = 255
-
     # format: QImage.Format_RGB888 or QImage.Format_BGR888
     @staticmethod
     def pixel_to_rgb_index_duration(pixel, format, index, duration, brightness=(1.0,1.0,1.0)):
         if index < 0:
             return None
+        ri = 0; gi = 1; bi = 2
+        if format == QImage.Format_BGR888:
+            ri = 2; bi = 0
         #print(brightness)
-
         data = bytearray()
         data.append(index)
         data.append(duration)
-        if format == QImage.Format_RGB888:
-            data.append(min(int(pixel[0]*brightness[0]), FirmataKeyboard.MAX_RGB_VAL))
-        else:
-            data.append(min(int(pixel[0]*brightness[2]), FirmataKeyboard.MAX_RGB_VAL))
-        data.append(min(int(pixel[1]*brightness[1]), FirmataKeyboard.MAX_RGB_VAL))
-        if format == QImage.Format_RGB888:
-            data.append(min(int(pixel[2]*brightness[2]), FirmataKeyboard.MAX_RGB_VAL))
-        else:
-            data.append(min(int(pixel[0]*brightness[0]), FirmataKeyboard.MAX_RGB_VAL))
+        data.append(min(int(pixel[ri]*brightness[ri]), FirmataKeyboard.MAX_RGB_VAL))
+        data.append(min(int(pixel[gi]*brightness[gi]), FirmataKeyboard.MAX_RGB_VAL))
+        data.append(min(int(pixel[bi]*brightness[bi]), FirmataKeyboard.MAX_RGB_VAL))
         return data
 
     @staticmethod
-    def loadKeyboardModels(path="keyboards"):
+    def load_keyboard_models(path="keyboards"):
         keyb_models = {} # class name -> class
         keyb_models_vpid = {} # vid/pid -> class
 
@@ -271,22 +248,21 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         glob_filter = os.path.join(path, '[!_]*.py')
         model_files = glob.glob(glob_filter)
         #print(model_files)
-
         for file_path in model_files:
             module_name = os.path.basename(file_path)[:-3]  # Remove '.py' extension
             spec = importlib.util.spec_from_file_location(module_name, file_path)
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
-
             # Iterate through the attributes of the module
             for name, obj in inspect.getmembers(module):
                 # Check if the attribute is a class defined in this module
                 if inspect.isclass(obj) and obj.__module__ == module.__name__:
                     keyb_models[obj.NAME] = obj
                     keyb_models_vpid[obj.vid_pid()] = obj
-
         return keyb_models, keyb_models_vpid
 
+    RAW_EPSIZE_FIRMATA = 64 # 32
+    MAX_LEN_SYSEX_DATA = 60
 
     def __init__(self, *args, **kwargs):
         QtCore.QObject.__init__(self)
@@ -323,7 +299,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.port_type = "serial"
 
         # load "keyboard models", keyboard model contains name, vid/pid, rgb matrix size, ...
-        self.keyboardModel, self.keyboardModelVidPid = self.loadKeyboardModels()
+        self.keyboardModel, self.keyboardModelVidPid = self.load_keyboard_models()
         if dbg.print:
             for class_name, class_type in self.keyboardModel.items():
                 dbg.tr(f"keyboard model: {class_name} ({hex(class_type.vid_pid()[0])}:{hex(class_type.vid_pid()[1])}), {class_type}")
@@ -354,10 +330,10 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         if not self.name:
             self.name = self.port
 
-
     def __str__(self):
         return "{0.name} ({0.sp.port})".format(self)
 
+    #-------------------------------------------------------------------------------
     def rgb_matrix_size(self):
         if self.keyboardModel:
             return self.keyboardModel.rgb_matrix_size()
@@ -387,7 +363,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             xy_to_rgb_index = self.keyboardModel.xy_to_rgb_index
         return xy_to_rgb_index(x, y)
 
-
+    #-------------------------------------------------------------------------------
     def start(self):
         if self._layout:
             self.setup_layout(self._layout)
@@ -421,6 +397,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             self.dbg['ERROR'].tr(f"{e}")
         self.samplingOff()
 
+    #-------------------------------------------------------------------------------
     def sysex_response_handler(self, *data):
         dbg = self.dbg['SYSEX_RESPONSE']
         #dbg.tr(f"sysex_response_handler: {data}")
@@ -471,8 +448,8 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         if line:
             self.signal_console_output.emit(line)
 
-
-    def keyb_rgb_buf_set(self, img, rgb_multiplier):
+    #-------------------------------------------------------------------------------
+    def keyb_set_rgb_buf(self, img, rgb_multiplier):
         if self.dbg_rgb_buf:
             self.dbg['RGB_BUF'].tr("-"*120)
             self.dbg['RGB_BUF'].tr(f"rgb mult {rgb_multiplier}")
@@ -485,25 +462,22 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             return
 
         # multiple images senders -> combine images
-        combined_img = img.copy()
+        combined_img = img
         #prev_img = self.img[self.sender()]
         if len(self.img) > 1:
+            combined_img = img.copy()
             for key in self.img:
                 if key != self.sender():
                     #self.dbg['DEBUG'].tr(f"combine image from {key}")
                     combined_img = combine_qimages(combined_img, self.img[key])
-
         #if not self.sender() in self.img:
             #self.dbg['DEBUG'].tr(f"new sender {self.sender()} {img}")
-
         self.img[self.sender()] = img
         img = combined_img
-
-        # send max N images per second
+        # limit max fps
         if time.monotonic() - self.img_ts_prev < 1/25:
             #print("skip")
             return
-
         self.img_ts_prev = time.monotonic()
 
         #-------------------------------------------------------------------------------
@@ -531,8 +505,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 if len(data) + RGB_PIXEL_SIZE > self.MAX_LEN_SYSEX_DATA:
                     self.send_sysex(FirmataKeybCmd.SET, data)
                     num_sends += 1
-
-                    # todo check if sync with keyboard is needed to avoid buffer overflow
+                    # todo sync with keyboard to avoid buffer overflow
                     # rawhid may use smaller epsize so sleep after more sends
                     if self.port_type == "rawhid":
                         if num_sends % 10 == 0:
@@ -547,48 +520,44 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         if len(data) > 0:
             self.send_sysex(FirmataKeybCmd.SET, data)
             num_sends += 1
-
         #time.sleep(0.005)
 
-
-    def keyb_default_layer_set(self, layer):
+    def keyb_set_default_layer(self, layer):
         dbg = self.dbg['SYSEX_COMMAND']
-        dbg.tr(f"keyb_default_layer_set: {layer}")
-
+        dbg.tr(f"keyb_set_default_layer: {layer}")
         data = bytearray()
         data.append(FirmataKeybCmd.ID_DEFAULT_LAYER)
         data.append(min(layer, self.num_layers()-1))
         self.send_sysex(FirmataKeybCmd.SET, data)
 
-    def keyb_dbg_mask_set(self, dbg_mask, dbg_user_mask):
+    def keyb_set_dbg_mask(self, dbg_mask, dbg_user_mask):
         dbg = self.dbg['SYSEX_COMMAND']
-        dbg.tr(f"keyb_dbg_mask_set: {dbg_mask}")
-
+        dbg.tr(f"keyb_set_dbg_mask: {dbg_mask}")
         data = bytearray()
         data.append(FirmataKeybCmd.ID_DEBUG_MASK)
         data.extend(bytearray(struct.pack('>I', dbg_mask)))
         data.extend(bytearray(struct.pack('>I', dbg_user_mask)))
         self.send_sysex(FirmataKeybCmd.SET, data)
 
-    def keyb_macwin_mode_set(self, macwin_mode):
+    def keyb_set_macwin_mode(self, macwin_mode):
         dbg = self.dbg['SYSEX_COMMAND']
-        dbg.tr(f"keyb_macwin_mode_set: {macwin_mode}")
+        dbg.tr(f"keyb_set_macwin_mode: {macwin_mode}")
         data = bytearray()
         data.append(FirmataKeybCmd.ID_MACWIN_MODE)
         data.append(ord(macwin_mode))
         self.send_sysex(FirmataKeybCmd.SET, data)
 
-    def keyb_rgb_matrix_mode_set(self, mode):
+    def keyb_set_rgb_matrix_mode(self, mode):
         dbg = self.dbg['SYSEX_COMMAND']
-        dbg.tr(f"keyb_rgb_matrix_mode_set: {mode}")
+        dbg.tr(f"keyb_set_rgb_matrix_mode: {mode}")
         data = bytearray()
         data.append(FirmataKeybCmd.ID_RGB_MATRIX_MODE)
         data.append(mode)
         self.send_sysex(FirmataKeybCmd.SET, data)
 
-    def keyb_rgb_matrix_hsv_set(self, hsv):
+    def keyb_set_rgb_matrix_hsv(self, hsv):
         dbg = self.dbg['SYSEX_COMMAND']
-        dbg.tr(f"keyb_rgb_matrix_hsv_set: {hsv}")
+        dbg.tr(f"keyb_set_rgb_matrix_hsv: {hsv}")
         data = bytearray()
         data.append(FirmataKeybCmd.ID_RGB_MATRIX_HSV)
         data.append(hsv[0])
@@ -596,9 +565,9 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         data.append(hsv[2])
         self.send_sysex(FirmataKeybCmd.SET, data)
 
-    def keyb_dynld_function_set(self, fun_id, buf):
+    def keyb_set_dynld_function(self, fun_id, buf):
         dbg = self.dbg['SYSEX_COMMAND']
-        dbg.tr(f"keyb_dynld_function_set: {fun_id} {buf.hex(' ')}")
+        dbg.tr(f"keyb_set_dynld_function: {fun_id} {buf.hex(' ')}")
         data = bytearray()
         data.append(FirmataKeybCmd.ID_DYNLD_FUNCTION)
         id = [fun_id & 0xff, (fun_id >> 8) & 0xff]
@@ -638,11 +607,11 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         # todo define DYNLD_... function ids
         DYNLD_TEST_FUNCTION = 1
         if fun_id == DYNLD_TEST_FUNCTION:
-            self.keyb_dynld_funexec_set(fun_id)
+            self.keyb_set_dynld_funexec(fun_id)
 
-    def keyb_dynld_funexec_set(self, fun_id, buf=bytearray()):
+    def keyb_set_dynld_funexec(self, fun_id, buf=bytearray()):
         dbg = self.dbg['SYSEX_COMMAND']
-        dbg.tr(f"keyb_dynld_funexec_set: {fun_id} {buf.hex(' ')}")
+        dbg.tr(f"keyb_set_dynld_funexec: {fun_id} {buf.hex(' ')}")
 
         data = bytearray()
         data.append(FirmataKeybCmd.ID_DYNLD_FUNEXEC)
@@ -651,32 +620,3 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         if buf:
             data.extend(buf)
         self.send_sysex(FirmataKeybCmd.SET, data)
-
-
-'''
-    def loop_leds(self, pos):
-        if 0:
-            data = bytearray()
-            data.append(FirmataKeybCmd.ID_RGB_MATRIX_BUF)
-            led = self.xy_to_rgb_index(pos.x, pos.y)
-            print(f"x={pos.x}, y={pos.y}, led={led}")
-            data.extend([led, 0xff, 0, 0xff, 0xff])
-
-            self.send_sysex(FirmataKeybCmd.SET, data)
-
-            pos.x = pos.x + 1
-            if pos.x >= self.rgb_matrix_size()[0]:
-                pos.x = 0
-                pos.y = pos.y + 1
-                if pos.y >= self.rgb_matrix_size()[1]:
-                    pos.y = 0
-
-        if 0: # loop through all rgb leds
-            data = bytearray()
-            data.append(FirmataKeybCmd.ID_RGB_MATRIX_BUF)
-            data.extend([pos.i ,0xff,0,0xff,0xff])
-
-            self.send_sysex(FirmataKeybCmd.SET, data)
-
-            pos.i = (pos.i + 1) % self.num_rgb_leds()
-'''

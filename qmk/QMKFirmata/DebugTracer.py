@@ -21,5 +21,5 @@ class DebugTracer:
             msg = objstr + " ".join(str(arg) for arg in args)
             print(msg)
         if self.trace:
-            # todo: put in trace buffer
+            # todo: put in trace buffer to do post run diagnostics
             pass

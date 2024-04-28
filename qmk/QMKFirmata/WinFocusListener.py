@@ -10,7 +10,7 @@ from PySide6.QtCore import Qt, QThread, Signal
 # https://gist.github.com/keturn/6695625
 #
 class WinFocusListener(QThread):
-    winfocus_signal = Signal(str)
+    signal_winfocus = Signal(str)
 
     def __init__(self):
         super().__init__()
@@ -54,7 +54,7 @@ class WinFocusListener(QThread):
 
     def log(self, msg):
         #print(msg)
-        self.winfocus_signal.emit(msg)
+        self.signal_winfocus.emit(msg)
 
     def logError(self, msg):
         sys.stdout.write(msg + '\n')
