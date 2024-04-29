@@ -12,6 +12,9 @@ proof of concept demo (windows) of arduino firmata support in qmk firmware
 - websocket server to set default layer from other apps
 - websocket server to set rgb matrix from other apps
 
+**WARNING: depending on audio/video content the lights may flash frequently, which can trigger a seizure!**
+**do not use it when you are photosensitive!**
+
 supported keyboards
 -------------------
 

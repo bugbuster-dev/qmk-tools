@@ -7,6 +7,7 @@ class NuphyAir96V2:
     RGB_MAXTRIX_W = 19
     RGB_MAXTRIX_H = 6
     NUM_RGB_LEDS = 110
+    RGB_MAX_REFRESH = 5
 
     DEFAULT_LAYER = { 'm':0, 'w':2 }
     NUM_LAYERS = 8
@@ -26,6 +27,10 @@ class NuphyAir96V2:
     @staticmethod
     def rgb_matrix_size():
         return (NuphyAir96V2.RGB_MAXTRIX_W, NuphyAir96V2.RGB_MAXTRIX_H)
+
+    @staticmethod
+    def rgb_max_refresh():
+        return NuphyAir96V2.RGB_MAX_REFRESH
 
     @staticmethod
     def num_rgb_leds():

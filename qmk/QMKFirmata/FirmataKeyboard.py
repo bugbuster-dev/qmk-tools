@@ -174,6 +174,7 @@ class DefaultKeyboardModel:
     RGB_MAXTRIX_W = 19
     RGB_MAXTRIX_H = 6
     NUM_RGB_LEDS = 110
+    RGB_MAX_REFRESH = 5
 
     DEFAULT_LAYER = 2
     NUM_LAYERS = 8
@@ -282,6 +283,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
         self.img = {}   # sender -> rgb QImage
         self.img_ts_prev = 0 # previous image timestamp
+
         self.name = None
         self.port = None
         self.vid_pid = None
@@ -316,6 +318,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             self.port = find_com_port(self.vid_pid[0], self.vid_pid[1])
             dbg.tr(f"using keyboard: {self.keyboardModel} on port {self.port}")
             self.name = self.keyboardModel.name()
+            self._rgb_max_refresh = self.rgb_max_refresh()
 
         self.samplerThread = pyfirmata2.util.Iterator(self)
 
@@ -338,6 +341,11 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         if self.keyboardModel:
             return self.keyboardModel.rgb_matrix_size()
         return DefaultKeyboardModel.RGB_MAXTRIX_W, DefaultKeyboardModel.RGB_MAXTRIX_H
+
+    def rgb_max_refresh(self):
+        if self.keyboardModel:
+            return self.keyboardModel.rgb_max_refresh()
+        return DefaultKeyboardModel.RGB_MAX_REFRESH
 
     def num_layers(self):
         if self.keyboardModel:
@@ -474,8 +482,8 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             #self.dbg['DEBUG'].tr(f"new sender {self.sender()} {img}")
         self.img[self.sender()] = img
         img = combined_img
-        # limit max fps
-        if time.monotonic() - self.img_ts_prev < 1/25:
+        # max refresh
+        if time.monotonic() - self.img_ts_prev < 1/self._rgb_max_refresh:
             #print("skip")
             return
         self.img_ts_prev = time.monotonic()

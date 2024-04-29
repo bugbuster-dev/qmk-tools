@@ -8,6 +8,7 @@ class KeychronQ3Max:
     RGB_MAXTRIX_W = 17
     RGB_MAXTRIX_H = 6
     NUM_RGB_LEDS = 87
+    RGB_MAX_REFRESH = 25
 
     DEFAULT_LAYER = { 'm':0, 'w':2 }
     NUM_LAYERS = 8
@@ -27,6 +28,10 @@ class KeychronQ3Max:
     @staticmethod
     def rgb_matrix_size():
         return (KeychronQ3Max.RGB_MAXTRIX_W, KeychronQ3Max.RGB_MAXTRIX_H)
+
+    @staticmethod
+    def rgb_max_refresh():
+        return KeychronQ3Max.RGB_MAX_REFRESH
 
     @staticmethod
     def num_rgb_leds():

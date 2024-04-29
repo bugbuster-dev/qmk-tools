@@ -6,7 +6,7 @@ from PySide6 import QtCore
 from PySide6.QtCore import Qt, QThread, Signal, QTimer, QRegularExpression
 from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QFrame
 from PySide6.QtWidgets import QTextEdit, QPushButton, QFileDialog, QLabel, QSlider, QLineEdit
-from PySide6.QtWidgets import QCheckBox, QComboBox, QSpacerItem, QSizePolicy, QMessageBox
+from PySide6.QtWidgets import QCheckBox, QComboBox, QMessageBox, QStyledItemDelegate
 from PySide6.QtGui import QImage, QPixmap, QColor, QFont, QTextCursor, QFontMetrics, QMouseEvent, QKeyEvent, QKeySequence
 from PySide6.QtGui import QRegularExpressionValidator, QIntValidator, QDoubleValidator
 
@@ -584,7 +584,7 @@ class RGBAudioTab(QWidget):
         self.sample_count = 0
         self.audio_thread = AudioCaptureThread(self.freq_bands, 0.05)
 
-    def loadFreqBandsJsonFile(self):
+    def load_freqbands_jsonfile(self):
         filename, _ = QFileDialog.getOpenFileName(self, "open file", "", "json (*.json)")
         self.load_freq_bands_colors(filename)
         # update freq bands rgb ui
@@ -615,7 +615,7 @@ class RGBAudioTab(QWidget):
         hlayout = QHBoxLayout()
         label = QLabel("frequency band | rgb | min/max level (0 for auto)")
         self.loadbutton = QPushButton("load")
-        self.loadbutton.clicked.connect(self.loadFreqBandsJsonFile)
+        self.loadbutton.clicked.connect(self.load_freqbands_jsonfile)
 
         hlayout.addWidget(label)
         hlayout.addWidget(self.loadbutton)
@@ -1027,21 +1027,27 @@ class RGBDynLDAnimationTab(QWidget):
 
 #-------------------------------------------------------------------------------
 class ProgramSelectorComboBox(QComboBox):
+    class TabDelegate(QStyledItemDelegate):
+        def paint(self, painter, option, index):
+            text = index.data().replace("\t", "")
+            painter.drawText(option.rect, text)
+
     def __init__(self, winfocusText=None):
-        self.winfocusText = winfocusText
         super().__init__(None)
+        self.winfocusText = winfocusText
+        self.setItemDelegate(self.TabDelegate())
 
     def mousePressEvent(self, event: QMouseEvent):
+        super().mousePressEvent(event)
+
         if event.button() == Qt.LeftButton:
             if self.winfocusText:
                 self.clear()
                 lines = self.winfocusText.toPlainText().split('\n')
-                self.addItems(lines)
+                for line in lines:
+                    self.addItem(line.strip())
                 self.addItem("-")
                 #print(self.winfocusText.toPlainText())
-
-        # Call the base class implementation to ensure default behavior
-        super().mousePressEvent(event)
 
 class LayerAutoSwitchTab(QWidget):
     signal_keyb_set_layer = Signal(int)
@@ -1202,21 +1208,6 @@ import matplotlib.animation as animation
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
-def rgba2rgb( rgba, background=(255,255,255) ):
-    # rgba iteration: lines, pixels, rgba value
-    row, col, ch = rgba.shape
-    if ch == 3:
-        return rgba
-    assert ch == 4, 'RGBA image has 4 channels.'
-    rgb = np.zeros( (row, col, 3), dtype='float32' )
-    r, g, b, a = rgba[:,:,0], rgba[:,:,1], rgba[:,:,2], rgba[:,:,3]
-    a = np.asarray( a, dtype='float32' ) / 255.0
-    R, G, B = background
-    rgb[:,:,0] = r * a + (1.0 - a) * R
-    rgb[:,:,1] = g * a + (1.0 - a) * G
-    rgb[:,:,2] = b * a + (1.0 - a) * B
-    return np.asarray( rgb, dtype='uint8' )
-
 def add_method_to_class(class_def, method):
     method_definition = method
     # Execute the method definition and retrieve the method from the local scope
@@ -1281,18 +1272,21 @@ class RGBAnimationTab(QWidget):
         layout.addWidget(self.start_button)
         self.setLayout(layout)
 
-        w_inch = 4
-        h_inch = self.rgb_matrix_size[1] / self.rgb_matrix_size[0] * w_inch
+        dpi = 100
+        width = 800
+        height = int((self.rgb_matrix_size[1]/self.rgb_matrix_size[0]) * width)
+        w_inch = width/dpi
+        h_inch = height/dpi
         self.figure.set_size_inches((w_inch, h_inch))
-        self.figure.set_dpi(100)
+        self.figure.set_dpi(dpi)
         if dbg.print:
             width, height = self.figure.get_size_inches() * self.figure.get_dpi()
-            dbg.tr(f"canvas size: {width}x{height}")
+            dbg.tr(f"figure size:{width}x{height} dpi:{self.figure.get_dpi()}")
 
         # Parameters for the animation
         self.x_size = 20
         self.frames = 500
-        self.interval = 20
+        self.interval = 40
         # Animation placeholder
         self.ani = None
 
@@ -1322,15 +1316,17 @@ class RGBAnimationTab(QWidget):
     def capture_animation_frame(self):
         if self.ani == None:
             return
-
         self.ani.pause()
 
-        buffer = np.frombuffer(self.canvas.buffer_rgba(), dtype=np.uint8)
+        # capture the current frame from the canvas
+        rgba_buffer = np.frombuffer(self.figure.canvas.buffer_rgba(), dtype=np.uint8)
         width, height = self.figure.get_size_inches() * self.figure.get_dpi()
-        img = buffer.reshape(int(height), int(width), 4)
-        img = rgba2rgb(img)
-        qimage = QImage(img.data, width, height, QImage.Format_RGB888)
-        keyb_rgb = qimage.scaled(self.rgb_matrix_size[0], self.rgb_matrix_size[1])
+        #if rgba_buffer.nbytes != width * height * 4:
+            #self.dbg['DEBUG'].tr(f"buffer size mismatch: {rgba_buffer.nbytes} != {width}x{height}x4")
+        rgba_array = rgba_buffer.reshape(int(height), int(width), 4, order='C')
+        rgba_qimg = QImage(rgba_array.data, width, height, QImage.Format_RGBA8888)
+        keyb_rgb = rgba_qimg.scaled(self.rgb_matrix_size[0], self.rgb_matrix_size[1], Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.FastTransformation)
+        keyb_rgb = keyb_rgb.convertToFormat(QImage.Format_RGB888)
         self.signal_rgb_frame.emit(keyb_rgb, (1.0,1.0,1.0))
 
         self.ani.resume()
@@ -1469,6 +1465,8 @@ def main(keyboard_vid_pid):
     locale = QLocale("C")
     QLocale.setDefault(locale)
     app = QApplication(sys.argv)
+    #app.setStyle('Windows')
+    app.setStyle('Fusion')
 
     selected_keyboard = ""
     if keyboard_vid_pid[0] == None:

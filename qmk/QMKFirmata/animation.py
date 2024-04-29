@@ -95,7 +95,7 @@ def init_wave(self):
 
     self.figure.set_facecolor('black')
     # Line object for the standing wave
-    self.standing_wave_line = self.ax.plot([], [], color='red', lw=25)
+    self.standing_wave_line = self.ax.plot([], [], color='red', lw=40)
     self.standing_wave_line[0].set_data([], [])
 
     #self.frames = 1000
