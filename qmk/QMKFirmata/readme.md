@@ -55,8 +55,9 @@ python screen_capture_rgb_stream.py --display 0 --fps 25 --width 17 --height 6 -
 demo videos
 -----------
 
-rgb from video playback, screen capture:
+rgb from video/gif playback, screen capture:
 * https://www.dropbox.com/scl/fi/o1hf8g2pgcmz6pnmi4lf0/qmk_firmata_demo_video_playback.mp4?rlkey=109kbajetq0ow28s3isaid5ih&st=hl9uuwiq&dl=0
+* https://www.dropbox.com/scl/fi/7iep6tmbkys5mlwfh9xo6/keychron-q3-max-cat-gif.mp4?rlkey=koq4ncl3ntxfqfz0uvkm0rvap&dl=0
 * https://www.dropbox.com/scl/fi/lmipvwwoth5pdwywp1cyd/qmk_firmata_demo_disco.mp4?rlkey=ogiihll52lg1xm7t6kvqmmls8&st=z7cbqsnn&dl=0
 * https://www.dropbox.com/scl/fi/vo263yf3ihkgcrgsrq34t/qmk_firmata_demo_screen_capture.mp4?rlkey=0i9iiv63berpbxkypu1eti3xd&st=zovba14p&dl=0
 
