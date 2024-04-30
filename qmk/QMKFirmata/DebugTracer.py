@@ -2,12 +2,13 @@
 
 class DebugTracer:
     def __init__(self, *args, **kwargs):
-        self.print = None
+        # set flags to print, trace, ...
         attributes = ["print", "trace", "obj"]
-        # Assigning keyword arguments directly
-        for key, value in kwargs.items():
-            if key in attributes:
-                setattr(self, key, value)
+        for attr in attributes:
+            setattr(self, attr, None)
+        for attr, value in kwargs.items():
+            if attr in attributes:
+                setattr(self, attr, value)
 
     def tr(self, *args, **kwargs):
         if self.print:
