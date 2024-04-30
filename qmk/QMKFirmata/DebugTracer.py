@@ -14,7 +14,7 @@ class DebugTracer:
             objstr = ""
             if hasattr(self, "obj") and self.obj:
                 try:
-                    objstr = f"[{self.obj.__class__.__name__}]:"
+                    objstr = f"[{self.obj.__class__.__name__}] "
                 except Exception as e:
                     pass
 

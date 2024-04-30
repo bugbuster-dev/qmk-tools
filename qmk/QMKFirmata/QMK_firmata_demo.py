@@ -1029,7 +1029,7 @@ class RGBDynLDAnimationTab(QWidget):
 class ProgramSelectorComboBox(QComboBox):
     class TabDelegate(QStyledItemDelegate):
         def paint(self, painter, option, index):
-            text = index.data().replace("\t", "")
+            text = index.data().replace("\t", " ")
             painter.drawText(option.rect, text)
 
     def __init__(self, winfocusText=None):
@@ -1186,6 +1186,7 @@ class LayerAutoSwitchTab(QWidget):
         if self.current_layer != defaultLayer:
             self.signal_keyb_set_layer.emit(defaultLayer)
             self.current_layer = defaultLayer
+            self.dbg['DEBUG'].tr(f"layer set: {defaultLayer}")
 
     def update_winfocus_text(self, line):
         self.winfocus_textedit.append(line)
