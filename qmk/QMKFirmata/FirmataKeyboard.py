@@ -60,6 +60,9 @@ def combine_qimages_painter(img1, img2):
     return img1
 #endregion
 
+def bits_mask(len):
+    return (1 << len) - 1
+
 #-------------------------------------------------------------------------------
 FIRMATA_MSG = 0xFA
 QMK_RAW_USAGE_PAGE = 0xFF60
@@ -287,7 +290,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.dbg = {}
         self.dbg['ERROR']           = DebugTracer(print=1, trace=1, obj=self)
         self.dbg['DEBUG']           = DebugTracer(print=1, trace=1, obj=self)
-        self.dbg['SYSEX_COMMAND']   = DebugTracer(print=0, trace=1, obj=self)
+        self.dbg['SYSEX_COMMAND']   = DebugTracer(print=1, trace=1, obj=self)
         self.dbg['SYSEX_RESPONSE']  = DebugTracer(print=1, trace=1, obj=self)
         self.dbg['RGB_BUF']         = DebugTracer(print=0, trace=1, obj=self)
         dbg = self.dbg['DEBUG']
@@ -487,14 +490,19 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                     config_field = buf[off]
                 except:
                     break
-            # config layout to use for get/set of config field values
+            # config layout used to get/set of config field values in byte buffer
             self.config_layout[config_id] = config_fields
             self.keyboardModel.keyb_config().print_config_layout(config_id, config_fields)
             self.config_model = self.keyboardModel.keyb_config().keyb_config_model(self.config_model, config_id, config_fields)
         elif buf[0] == FirmataKeybCmd.ID_CONFIG:
-            # 0b1111...
-            def bits_mask(len):
-                return (1 << len) - 1
+            TYPE_BIT = self.keyboardModel.keyb_config().TYPES["bit"]
+            TYPE_UINT8 = self.keyboardModel.keyb_config().TYPES["uint8"]
+            TYPE_UINT16 = self.keyboardModel.keyb_config().TYPES["uint16"]
+            TYPE_UINT32 = self.keyboardModel.keyb_config().TYPES["uint32"]
+            TYPE_UINT64 = self.keyboardModel.keyb_config().TYPES["uint64"]
+            TYPE_FLOAT = self.keyboardModel.keyb_config().TYPES["float"]
+            TYPE_ARRAY = self.keyboardModel.keyb_config().TYPES["array"]
+
             config_id = buf[1]
             config_fields = self.config_layout[config_id]
             off = 2
@@ -503,27 +511,28 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 field_type = field[0]
                 field_offset = field[1]
                 field_size = field[2]
-                #todo: update off based on offset
                 off = 2 + field_offset
-                if field_type == 1: # todo: replace 1..7 with constants
-                    # todo: if msb bit order reverse bits
+                if field_type == TYPE_BIT:
+                    # todo: if msb bit order reverse bits, handle big endian, bitfield crossing byte boundary
                     off = 2 + field_offset // 8
+                    field_offset = field_offset % 8
                     if field_size == 1:
                         value = 1 if buf[off] & (1 << field_offset) != 0 else 0
+                        dbg.tr(f"config[{config_id}][{field_id}]:off={off}, offset={field_offset}, value={value}")
                     else:
                         value = (buf[off] >> field_offset) & bits_mask(field_size)
-                elif field_type == 2:
+                elif field_type == TYPE_UINT8:
                     value = struct.unpack_from('<B', buf, off)[0]
-                elif field_type == 3:
+                elif field_type == TYPE_UINT16: # todo: test uint16/32/64/float/array
                     #todo: big endian for uint16/32/64/float
                     value = struct.unpack_from('<H', buf, off)[0]
-                elif field_type == 4:
+                elif field_type == TYPE_UINT32:
                     value = struct.unpack_from('<I', buf, off)[0]
-                elif field_type == 5:
+                elif field_type == TYPE_UINT64:
                     value = struct.unpack_from('<Q', buf, off)[0]
-                elif field_type == 6:
+                elif field_type == TYPE_FLOAT:
                     value = struct.unpack_from('<f', buf, off)[0]
-                elif field_type == 7:
+                elif field_type == TYPE_ARRAY:
                     value = buf[off:off+field_size]
                 else:
                     value = 0
@@ -531,7 +540,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 dbg.tr(f"config[{config_id}][{field_id}]: {value}")
                 if off >= len(buf):
                     break
-            # todo: emit signal
+            # signal to gui the config values
             self.signal_config.emit((config_id, field_values))
 
     def console_line_handler(self, *data):
@@ -656,6 +665,65 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         data.append(hsv[1])
         data.append(hsv[2])
         self.send_sysex(FirmataKeybCmd.SET, data)
+
+    def keyb_set_config(self, config):
+        TYPE_BIT = self.keyboardModel.keyb_config().TYPES["bit"]
+        TYPE_UINT8 = self.keyboardModel.keyb_config().TYPES["uint8"]
+        TYPE_UINT16 = self.keyboardModel.keyb_config().TYPES["uint16"]
+        TYPE_UINT32 = self.keyboardModel.keyb_config().TYPES["uint32"]
+        TYPE_UINT64 = self.keyboardModel.keyb_config().TYPES["uint64"]
+        TYPE_FLOAT = self.keyboardModel.keyb_config().TYPES["float"]
+        TYPE_ARRAY = self.keyboardModel.keyb_config().TYPES["array"]
+
+        dbg = self.dbg['SYSEX_COMMAND']
+        dbg.tr(f"keyb_set_config: {config}")
+        try:
+            config_id = config[0]
+            field_values = config[1]
+            config_layout = self.config_layout[config_id]
+            data = bytearray(self.MAX_LEN_SYSEX_DATA)
+            data[0] = FirmataKeybCmd.ID_CONFIG
+            data[1] = config_id
+            for field_id, field in config_layout.items():
+                field_type = field[0]
+                field_offset = field[1]
+                field_size = field[2]
+                value = int(field_values[field_id])
+                off = 2 + field_offset
+                if field_type == TYPE_BIT:
+                    off = 2 + field_offset // 8
+                    field_offset = field_offset % 8
+                    if field_size == 1:
+                        if value:
+                            data[off] |= (1 << field_offset)
+                        else:
+                            data[off] &= ~(1 << field_offset)
+                    else:
+                        data[off] &= ~(bits_mask(field_size) << field_offset)
+                        data[off] |= (value & bits_mask(field_size)) << field_offset
+                elif field_type == TYPE_UINT8:
+                    struct.pack_into('<B', data, off, value)
+                elif field_type == TYPE_UINT16:
+                    struct.pack_into('<H', data, off, value)
+                elif field_type == TYPE_UINT32:
+                    struct.pack_into('<I', data, off, value)
+                elif field_type == TYPE_UINT64: # todo: remove uint64/float/array
+                    struct.pack_into('<Q', data, off, value)
+                elif field_type == TYPE_FLOAT:
+                    value = float(field_values[field_id])
+                    struct.pack_into('<f', data, off, value)
+                elif field_type == TYPE_ARRAY:
+                    #todo: field_values[field_id] to bytearray
+                    data[off:off+field_size] = value
+                else:
+                    value = 0
+                dbg.tr(f"config[{config_id}][{field_id}]: {value}")
+                if off >= len(data):
+                    break
+            self.send_sysex(FirmataKeybCmd.SET, data)
+        except Exception as e:
+            self.dbg['ERROR'].tr(f"keyb_set_config: {e}")
+            return
 
     def keyb_set_dynld_function(self, fun_id, buf):
         dbg = self.dbg['SYSEX_COMMAND']

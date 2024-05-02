@@ -1214,9 +1214,29 @@ class KeybConfigTab(QWidget):
         super().__init__()
         self.init_gui()
 
-    def update_keyb_config(self): # todo
-        config = ()
-        self.signal_keyb_config.emit(config)
+    def update_keyb_config(self, tl, br, roles):
+        #self.dbg['DEBUG'].tr(f"update_keyb_config: topleft:{tl}, roles:{roles}")
+        update = False
+        if roles:
+            for role in roles:
+                if role == Qt.DisplayRole:
+                    update = True
+
+        if update:
+            if tl.isValid():
+                item = self.treeView.model().itemFromIndex(tl)
+                config = item.parent()
+                config_id = config.row() + 1
+                #print(f"{config.text()}:")
+                field_values = {}
+                for i in range(config.rowCount()):
+                    field = config.child(i, 0)
+                    value = config.child(i, 3)
+                    #print(f"{field.text()} = {value.text()}")
+                    field_values[i+1] = value.text()
+            config = (config_id, field_values)
+            self.dbg['DEBUG'].tr(f"update_keyb_config:signal emit {config}")
+            self.signal_keyb_config.emit(config)
 
     def init_gui(self):
         hlayout = QHBoxLayout()
@@ -1237,6 +1257,7 @@ class KeybConfigTab(QWidget):
     def update_config_model(self, config_model):
         self.dbg['DEBUG'].tr(f"update_config_model: {config_model}")
         self.treeView.setModel(config_model)
+        config_model.dataChanged.connect(self.update_keyb_config)
 
     def update_config(self, config):
         config_id = config[0]
@@ -1245,12 +1266,15 @@ class KeybConfigTab(QWidget):
 
         model = self.treeView.model()
         config_item = model.item(config_id-1, 0)
+        model.blockSignals(True)
         self.dbg['DEBUG'].tr(f"update_config: {config_item.text()}")
         for i in range(config_item.rowCount()): # todo: row number may not match field id
-            value_item = config_item.child(i, 3)
-            value_item.setText(f"{field_values[i+1]}")
-
-        #self.treeView.model().setData(self.treeView.model().index(config_id, 1), field_values)
+            try:
+                value_item = config_item.child(i, 3)
+                value_item.setText(f"{field_values[i+1]}")
+            except Exception as e:
+                self.dbg['DEBUG'].tr(f"update_config: {e}")
+        model.blockSignals(False)
 
 #-------------------------------------------------------------------------------
 from matplotlib.figure import Figure
@@ -1452,7 +1476,7 @@ class MainWindow(QMainWindow):
         self.rgb_matrix_tab.rgb_dynld_animation_tab.signal_dynld_function.connect(self.keyboard.keyb_set_dynld_function)
 
         self.layer_switch_tab.signal_keyb_set_layer.connect(self.keyboard.keyb_set_default_layer)
-        #self.keyb_config_tab.signal_keyb_config.connect(self.keyboard.keyb_set_config) todo
+        self.keyb_config_tab.signal_keyb_config.connect(self.keyboard.keyb_set_config)
 
         #-----------------------------------------------------------
         # window focus listener
@@ -1471,7 +1495,6 @@ class MainWindow(QMainWindow):
         for child in self.findChildren(QWidget):
             child.closeEvent(event)
         event.accept()
-
 
 class KeyboardSelectionPopup(QMessageBox):
     def __init__(self, keyboards):
@@ -1496,7 +1519,6 @@ class KeyboardSelectionPopup(QMessageBox):
     def selected_keyboard(self):
         return self.comboBox.currentText()
 
-
 def detect_keyboards():
     hid_devices = hid.enumerate()
     def device_attached(vendor_id, product_id):
@@ -1514,7 +1536,6 @@ def detect_keyboards():
             keyboards.append(model.NAME)
 
     return keyboards, keyboard_models[0]
-
 
 #-------------------------------------------------------------------------------
 def main(keyboard_vid_pid):

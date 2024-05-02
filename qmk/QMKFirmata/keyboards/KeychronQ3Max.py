@@ -105,7 +105,7 @@ class KeychronQ3Max:
             3: ("rgb", CONFIG_RGB),
             4: ("keymap", CONFIG_KEYMAP),
         }
-        TYPES = { #todo: replace 1..7 with constants
+        TYPES = { #todo move to common
             1: "bit",
             2: "uint8",
             3: "uint16",
@@ -113,6 +113,13 @@ class KeychronQ3Max:
             5: "uint64",
             6: "float",
             7: "array",
+            "bit":      1,
+            "uint8":    2,
+            "uint16":   3,
+            "uint32":   4,
+            "uint64":   5,
+            "float":    6,
+            "array":    7,
         }
 
         @staticmethod
