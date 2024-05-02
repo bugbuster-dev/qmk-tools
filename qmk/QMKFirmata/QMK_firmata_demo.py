@@ -4,11 +4,13 @@ import asyncio, websockets
 
 from PySide6 import QtCore
 from PySide6.QtCore import Qt, QThread, Signal, QTimer, QRegularExpression
+from PySide6.QtCore import QAbstractItemModel, QModelIndex
 from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QFrame
-from PySide6.QtWidgets import QTextEdit, QPushButton, QFileDialog, QLabel, QSlider, QLineEdit
+from PySide6.QtWidgets import QTextEdit, QPushButton, QFileDialog, QLabel, QSlider, QLineEdit, QTreeView
 from PySide6.QtWidgets import QCheckBox, QComboBox, QMessageBox, QStyledItemDelegate
 from PySide6.QtGui import QImage, QPixmap, QColor, QFont, QTextCursor, QFontMetrics, QMouseEvent, QKeyEvent, QKeySequence
 from PySide6.QtGui import QRegularExpressionValidator, QIntValidator, QDoubleValidator
+from PySide6.QtGui import QStandardItemModel, QStandardItem
 
 from WinFocusListener import WinFocusListener
 from FirmataKeyboard import FirmataKeyboard
@@ -1202,6 +1204,55 @@ class LayerAutoSwitchTab(QWidget):
             self.ws_server.wait()
 
 #-------------------------------------------------------------------------------
+class KeybConfigTab(QWidget):
+    signal_keyb_config = Signal(tuple) # todo
+
+    def __init__(self):
+        self.dbg = {}
+        self.dbg['DEBUG'] = DebugTracer(print=1, trace=1, obj=self)
+
+        super().__init__()
+        self.init_gui()
+
+    def update_keyb_config(self): # todo
+        config = ()
+        self.signal_keyb_config.emit(config)
+
+    def init_gui(self):
+        hlayout = QHBoxLayout()
+        config_label = QLabel("keyboard configuration")
+        hlayout.addWidget(config_label)
+        layout = QVBoxLayout()
+        layout.addLayout(hlayout)
+
+        model = QStandardItemModel()
+        self.treeView = QTreeView()
+        self.treeView.setModel(model)
+        self.treeView.setFixedHeight(600)
+        layout.addWidget(self.treeView)
+
+        layout.addStretch(1)
+        self.setLayout(layout)
+
+    def update_config_model(self, config_model):
+        self.dbg['DEBUG'].tr(f"update_config_model: {config_model}")
+        self.treeView.setModel(config_model)
+
+    def update_config(self, config):
+        config_id = config[0]
+        field_values = config[1]
+        self.dbg['DEBUG'].tr(f"update_config: {config}")
+
+        model = self.treeView.model()
+        config_item = model.item(config_id-1, 0)
+        self.dbg['DEBUG'].tr(f"update_config: {config_item.text()}")
+        for i in range(config_item.rowCount()): # todo: row number may not match field id
+            value_item = config_item.child(i, 3)
+            value_item.setText(f"{field_values[i+1]}")
+
+        #self.treeView.model().setData(self.treeView.model().index(config_id, 1), field_values)
+
+#-------------------------------------------------------------------------------
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
 import matplotlib.pyplot as plt
@@ -1368,13 +1419,15 @@ class MainWindow(QMainWindow):
         #-----------------------------------------------------------
         # add tabs
         tab_widget = QTabWidget()
-        self.layer_switch_tab = LayerAutoSwitchTab(num_keyb_layers)
         self.console_tab = ConsoleTab()
         self.rgb_matrix_tab = RGBMatrixTab(rgb_matrix_size)
+        self.layer_switch_tab = LayerAutoSwitchTab(num_keyb_layers)
+        self.keyb_config_tab = KeybConfigTab()
 
         tab_widget.addTab(self.console_tab, 'console')
         tab_widget.addTab(self.rgb_matrix_tab, 'rgb matrix')
         tab_widget.addTab(self.layer_switch_tab, 'layer auto switch')
+        tab_widget.addTab(self.keyb_config_tab, 'keyboard config')
 
         self.setCentralWidget(tab_widget)
         #-----------------------------------------------------------
@@ -1385,6 +1438,8 @@ class MainWindow(QMainWindow):
         self.keyboard.signal_default_layer.connect(self.layer_switch_tab.update_default_layer)
         self.keyboard.signal_rgb_matrix_mode.connect(self.rgb_matrix_tab.update_rgb_matrix_mode)
         self.keyboard.signal_rgb_matrix_hsv.connect(self.rgb_matrix_tab.update_rgb_matrix_hsv)
+        self.keyboard.signal_config_model.connect(self.keyb_config_tab.update_config_model)
+        self.keyboard.signal_config.connect(self.keyb_config_tab.update_config)
 
         self.console_tab.signal_dbg_mask.connect(self.keyboard.keyb_set_dbg_mask)
         self.console_tab.signal_macwin_mode.connect(self.keyboard.keyb_set_macwin_mode)
@@ -1397,6 +1452,7 @@ class MainWindow(QMainWindow):
         self.rgb_matrix_tab.rgb_dynld_animation_tab.signal_dynld_function.connect(self.keyboard.keyb_set_dynld_function)
 
         self.layer_switch_tab.signal_keyb_set_layer.connect(self.keyboard.keyb_set_default_layer)
+        #self.keyb_config_tab.signal_keyb_config.connect(self.keyboard.keyb_set_config) todo
 
         #-----------------------------------------------------------
         # window focus listener

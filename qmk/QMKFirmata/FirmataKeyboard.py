@@ -8,6 +8,7 @@ from pathlib import Path
 
 from DebugTracer import DebugTracer
 
+#todo: add license
 #-------------------------------------------------------------------------------
 #region list com ports
 def list_com_ports():
@@ -187,7 +188,7 @@ class DefaultKeyboardModel:
         return y * DefaultKeyboardModel.RGB_MAXTRIX_W + x
 
 
-class FirmataKeybCmd:
+class FirmataKeybCmd_v0_1:
     EXTENDED   = 0 # extended command
     SET        = 1 # set a value for 'ID_...'
     GET        = 2 # get a value for 'ID_...'
@@ -196,7 +197,7 @@ class FirmataKeybCmd:
     PUB        = 5 # battery status, mcu load, diagnostics, debug traces, ...
     SUB        = 6 # todo subscribe to for example battery status, mcu load, ...
     RESPONSE   = 0xf # response to a command
-
+    #----------------------------------------------------
     ID_RGB_MATRIX_BUF   = 1
     ID_DEFAULT_LAYER    = 2
     ID_DEBUG_MASK       = 3
@@ -204,9 +205,20 @@ class FirmataKeybCmd:
     ID_MACWIN_MODE      = 5
     ID_RGB_MATRIX_MODE  = 6
     ID_RGB_MATRIX_HSV   = 7
-
     ID_DYNLD_FUNCTION   = 250 # dynamic loaded function
     ID_DYNLD_FUNEXEC    = 251 # execute dynamic loaded function
+
+class FirmataKeybCmd_v0_2(FirmataKeybCmd_v0_1):
+    ID_CONFIG_LAYOUT        = 8
+    ID_CONFIG               = 9
+    ID_CONFIG_EXTENDED      = 0
+    ID_CONFIG_DEBUG         = 1
+    ID_CONFIG_DEBUG_USER    = 2
+    ID_CONFIG_RGB           = 3
+    ID_CONFIG_KEYMAP        = 4
+
+# todo: dictionary with version as key
+FirmataKeybCmd = FirmataKeybCmd_v0_2
 
 class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
     """
@@ -220,6 +232,8 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
     signal_default_layer = Signal(int)
     signal_rgb_matrix_mode = Signal(int)
     signal_rgb_matrix_hsv = Signal(tuple)
+    signal_config_model = Signal(object)
+    signal_config = Signal(object)
 
     #-------------------------------------------------------------------------------
     MAX_RGB_VAL = 255
@@ -272,9 +286,9 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.dbg_rgb_buf = 0
         self.dbg = {}
         self.dbg['ERROR']           = DebugTracer(print=1, trace=1, obj=self)
-        self.dbg['DEBUG']           = DebugTracer(print=0, trace=1, obj=self)
+        self.dbg['DEBUG']           = DebugTracer(print=1, trace=1, obj=self)
         self.dbg['SYSEX_COMMAND']   = DebugTracer(print=0, trace=1, obj=self)
-        self.dbg['SYSEX_RESPONSE']  = DebugTracer(print=0, trace=1, obj=self)
+        self.dbg['SYSEX_RESPONSE']  = DebugTracer(print=1, trace=1, obj=self)
         self.dbg['RGB_BUF']         = DebugTracer(print=0, trace=1, obj=self)
         dbg = self.dbg['DEBUG']
         #endregion
@@ -378,25 +392,32 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         else:
             self.auto_setup()
 
+        self.config_layout = {}
+        self.config_model = None
         self.add_cmd_handler(pyfirmata2.STRING_DATA, self.console_line_handler)
         self.add_cmd_handler(FirmataKeybCmd.RESPONSE, self.sysex_response_handler)
 
         self.samplingOn()
-
         self.send_sysex(pyfirmata2.REPORT_FIRMWARE, [])
         self.send_sysex(pyfirmata2.REPORT_VERSION, [])
-
+        self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_CONFIG_LAYOUT])
         self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_MACWIN_MODE])
         self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_DEBUG_MASK])
         self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_BATTERY_STATUS])
         self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_RGB_MATRIX_MODE])
         self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_RGB_MATRIX_HSV])
+        self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_CONFIG, FirmataKeybCmd.ID_CONFIG_DEBUG])
+        self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_CONFIG, FirmataKeybCmd.ID_CONFIG_DEBUG_USER])
+        self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_CONFIG, FirmataKeybCmd.ID_CONFIG_RGB])
+        self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_CONFIG, FirmataKeybCmd.ID_CONFIG_KEYMAP])
 
-        time.sleep(0.5)
+        time.sleep(1)
         print("-"*80)
         print(f"{self}")
         print(f"qmk firmata version:{self.firmware} {self.firmware_version}, firmata={self.get_firmata_version()}")
         print("-"*80)
+
+        self.signal_config_model.emit(self.config_model)
 
     def stop(self):
         try:
@@ -409,15 +430,14 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
     def sysex_response_handler(self, *data):
         dbg = self.dbg['SYSEX_RESPONSE']
         #dbg.tr(f"sysex_response_handler: {data}")
-
         buf = bytearray()
         if len(data) % 2 != 0:
             self.dbg['ERROR'].tr(f"sysex_response_handler: invalid data length {len(data)}")
             return
 
-        for i in range(0, len(data), 2):
+        for off in range(0, len(data), 2):
             # Combine two bytes
-            buf.append(data[i+1] << 7 | data[i])
+            buf.append(data[off+1] << 7 | data[off])
 
         if dbg.print:
             dbg.tr("-"*40)
@@ -432,8 +452,8 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             dbg_mask = 0
             dbg_user_mask = 0
             try:
-                dbg_mask = struct.unpack_from('>I', buf, 1)[0]
-                dbg_user_mask = struct.unpack_from('>I', buf, 5)[0]
+                dbg_mask = struct.unpack_from('<I', buf, 1)[0]
+                dbg_user_mask = struct.unpack_from('<I', buf, 5)[0]
             except Exception as e:
                 self.dbg['ERROR'].tr(f"sysex_response_handler:ID_DEBUG_MASK:{e}")
             dbg.tr(f"debug mask: {hex(dbg_mask)} {hex(dbg_user_mask)}")
@@ -450,9 +470,73 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             h = buf[1]; s = buf[2]; v = buf[3]
             dbg.tr(f"rgb matrix hsv: {h}, {s}, {v}")
             self.signal_rgb_matrix_hsv.emit((h,s,v))
+        elif buf[0] == FirmataKeybCmd.ID_CONFIG_LAYOUT:
+            off = 1
+            config_id = buf[off]; off += 1
+            config_size = buf[off]; off += 1
+            dbg.tr(f"config id: {config_id}, size: {config_size}")
+            config_fields = {}
+            config_field = buf[off]
+            while config_field != 0:
+                field_type = buf[off+1]
+                field_offset = buf[off+2]
+                field_size = buf[off+3]
+                config_fields[config_field] = (field_type, field_offset, field_size)
+                off += 4
+                try:
+                    config_field = buf[off]
+                except:
+                    break
+            # config layout to use for get/set of config field values
+            self.config_layout[config_id] = config_fields
+            self.keyboardModel.keyb_config().print_config_layout(config_id, config_fields)
+            self.config_model = self.keyboardModel.keyb_config().keyb_config_model(self.config_model, config_id, config_fields)
+        elif buf[0] == FirmataKeybCmd.ID_CONFIG:
+            # 0b1111...
+            def bits_mask(len):
+                return (1 << len) - 1
+            config_id = buf[1]
+            config_fields = self.config_layout[config_id]
+            off = 2
+            field_values = {}
+            for field_id, field in config_fields.items():
+                field_type = field[0]
+                field_offset = field[1]
+                field_size = field[2]
+                #todo: update off based on offset
+                off = 2 + field_offset
+                if field_type == 1: # todo: replace 1..7 with constants
+                    # todo: if msb bit order reverse bits
+                    off = 2 + field_offset // 8
+                    if field_size == 1:
+                        value = 1 if buf[off] & (1 << field_offset) != 0 else 0
+                    else:
+                        value = (buf[off] >> field_offset) & bits_mask(field_size)
+                elif field_type == 2:
+                    value = struct.unpack_from('<B', buf, off)[0]
+                elif field_type == 3:
+                    #todo: big endian for uint16/32/64/float
+                    value = struct.unpack_from('<H', buf, off)[0]
+                elif field_type == 4:
+                    value = struct.unpack_from('<I', buf, off)[0]
+                elif field_type == 5:
+                    value = struct.unpack_from('<Q', buf, off)[0]
+                elif field_type == 6:
+                    value = struct.unpack_from('<f', buf, off)[0]
+                elif field_type == 7:
+                    value = buf[off:off+field_size]
+                else:
+                    value = 0
+                field_values[field_id] = value
+                dbg.tr(f"config[{config_id}][{field_id}]: {value}")
+                if off >= len(buf):
+                    break
+            # todo: emit signal
+            self.signal_config.emit((config_id, field_values))
 
     def console_line_handler(self, *data):
         line = pyfirmata2.util.two_byte_iter_to_str(data)
+        #self.dbg['DEBUG'].tr(f"console: {line}")
         if line:
             self.signal_console_output.emit(line)
 
@@ -543,8 +627,8 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         dbg.tr(f"keyb_set_dbg_mask: {dbg_mask}")
         data = bytearray()
         data.append(FirmataKeybCmd.ID_DEBUG_MASK)
-        data.extend(bytearray(struct.pack('>I', dbg_mask)))
-        data.extend(bytearray(struct.pack('>I', dbg_user_mask)))
+        data.extend(bytearray(struct.pack('<I', dbg_mask)))
+        data.extend(bytearray(struct.pack('<I', dbg_user_mask)))
         self.send_sysex(FirmataKeybCmd.SET, data)
 
     def keyb_set_macwin_mode(self, macwin_mode):

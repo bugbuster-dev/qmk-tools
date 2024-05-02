@@ -1,8 +1,9 @@
 
 class NuphyAir96V2:
-    NAME = "nuphy air96 v2"
-    VID = 0x19f5
-    PID = 0x3265
+    NAME    = "nuphy air96 v2"
+    VID     = 0x19f5
+    PID     = 0x3265
+    MCU     = "STM32F072","cortex-m0","le32"
 
     RGB_MAXTRIX_W = 19
     RGB_MAXTRIX_H = 6
