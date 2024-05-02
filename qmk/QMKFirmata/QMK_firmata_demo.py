@@ -170,10 +170,16 @@ class RGBMatrixTab(QWidget):
         self.signal_rgb_matrix_hsv.emit(hsv)
 
     def update_rgb_matrix_mode(self, matrix_mode):
-        self.rgb_matrix_mode_input.setText(f"{matrix_mode}")
+        try:
+            self.rgb_matrix_mode_input.setText(f"{matrix_mode}")
+        except:
+            pass
 
     def update_rgb_matrix_hsv(self, hsv):
-        self.rgb_matrix_hsv_input.setText(f"{hsv[0]:02x}{hsv[1]:02x}{hsv[2]:02x}")
+        try:
+            self.rgb_matrix_hsv_input.setText(f"{hsv[0]:02x}{hsv[1]:02x}{hsv[2]:02x}")
+        except:
+            pass
 
     def init_gui(self):
         layout = QVBoxLayout()
