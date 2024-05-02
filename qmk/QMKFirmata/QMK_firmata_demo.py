@@ -59,70 +59,63 @@ class WSServer(QThread):
 #-------------------------------------------------------------------------------
 class ConsoleTab(QWidget):
     signal_dbg_mask = Signal(int, int)
-    signal_macwin_mode = Signal(str)
 
-    def __init__(self):
+    def __init__(self, keyboard_model):
+        self.dbg = {}
+        self.dbg['DEBUG'] = DebugTracer(print=1, trace=1, obj=self)
+
+        self.keyboard_model = keyboard_model
+        try:
+            self.keyboard_config = self.keyboard_model.keyb_config()
+        except:
+            self.keyboard_config = None
         super().__init__()
         self.init_gui()
+        self.dbg['DEBUG'].tr(f"keyboard_model: {self.keyboard_model} {self.keyboard_config}")
 
     def update_keyb_dbg_mask(self):
         dbg_mask = int(self.dbg_mask_input.text(),16)
         dbg_user_mask = int(self.dbg_user_mask_input.text(),16)
         self.signal_dbg_mask.emit(dbg_mask, dbg_user_mask)
 
-    def update_keyb_macwin_mode(self):
-        macwin_mode = self.mac_win_mode_selector.currentText()
-        self.signal_macwin_mode.emit(macwin_mode)
-
     def init_gui(self):
         hlayout = QHBoxLayout()
-        dbg_mask_label = QLabel("debug (user) mask")
-        #dbgUserMaskLabel = QLabel("debug user mask")
-        metrics = QFontMetrics(dbg_mask_label.font())
-        dbg_mask_label.setFixedHeight(metrics.height())
+        # if keyboard config is present for keyboard model, "debug config" is available in "keyboard config" tab
+        if self.keyboard_config == None:
+            dbg_mask_label = QLabel("debug (user) mask")
+            #dbgUserMaskLabel = QLabel("debug user mask")
+            metrics = QFontMetrics(dbg_mask_label.font())
+            dbg_mask_label.setFixedHeight(metrics.height())
 
-        #---------------------------------------
-        # debug mask hex byte input
-        self.dbg_mask_input = QLineEdit()
-        # Set a validator to allow only hex characters (0-9, A-F, a-f) and limit to 2 characters
-        reg_exp = QRegularExpression("[0-9A-Fa-f]{1,2}")
-        self.dbg_mask_input.setValidator(QRegularExpressionValidator(reg_exp))
-        metrics = QFontMetrics(self.dbg_mask_input.font())
-        width = metrics.horizontalAdvance('W') * 2  # 'W' is used as it's typically the widest character
-        self.dbg_mask_input.setFixedWidth(width)
+            #---------------------------------------
+            # debug mask hex byte input
+            self.dbg_mask_input = QLineEdit()
+            # Set a validator to allow only hex characters (0-9, A-F, a-f) and limit to 2 characters
+            reg_exp = QRegularExpression("[0-9A-Fa-f]{1,2}")
+            self.dbg_mask_input.setValidator(QRegularExpressionValidator(reg_exp))
+            metrics = QFontMetrics(self.dbg_mask_input.font())
+            width = metrics.horizontalAdvance('W') * 2  # 'W' is used as it's typically the widest character
+            self.dbg_mask_input.setFixedWidth(width)
 
-        self.dbg_user_mask_input = QLineEdit()
-        # Set a validator to allow only hex characters (0-9, A-F, a-f) and limit to 8 characters
-        reg_exp = QRegularExpression("[0-9A-Fa-f]{1,8}")
-        self.dbg_user_mask_input.setValidator(QRegularExpressionValidator(reg_exp))
-        width = QFontMetrics(self.dbg_user_mask_input.font()).horizontalAdvance('W') * 8
-        self.dbg_user_mask_input.setFixedWidth(width)
+            self.dbg_user_mask_input = QLineEdit()
+            # Set a validator to allow only hex characters (0-9, A-F, a-f) and limit to 8 characters
+            reg_exp = QRegularExpression("[0-9A-Fa-f]{1,8}")
+            self.dbg_user_mask_input.setValidator(QRegularExpressionValidator(reg_exp))
+            width = QFontMetrics(self.dbg_user_mask_input.font()).horizontalAdvance('W') * 8
+            self.dbg_user_mask_input.setFixedWidth(width)
 
-        self.dbg_mask_update_button = QPushButton("set")
-        self.dbg_mask_update_button.clicked.connect(self.update_keyb_dbg_mask)
-        self.dbg_mask_update_button.setFixedWidth(width)
+            self.dbg_mask_update_button = QPushButton("set")
+            self.dbg_mask_update_button.clicked.connect(self.update_keyb_dbg_mask)
+            self.dbg_mask_update_button.setFixedWidth(width)
 
-        hlayout.addWidget(dbg_mask_label)
-        hlayout.addWidget(self.dbg_mask_input)
-        hlayout.addWidget(self.dbg_user_mask_input)
-        hlayout.addWidget(self.dbg_mask_update_button)
-        hlayout.addStretch(1)
-        separator = QFrame()
-        separator.setFrameShape(QFrame.VLine)
-        hlayout.addWidget(separator)
-
-        #---------------------------------------
-        # mac/win mode
-        macwin_label = QLabel("mac/win mode")
-        self.mac_win_mode_selector = QComboBox()
-        self.mac_win_mode_selector.addItem('m')
-        self.mac_win_mode_selector.addItem('w')
-        self.mac_win_mode_selector.addItem('-')
-        hlayout.addWidget(macwin_label)
-        hlayout.addWidget(self.mac_win_mode_selector)
-        self.mac_win_mode_selector.setCurrentIndex(1)
-        self.mac_win_mode_selector.currentIndexChanged.connect(self.update_keyb_macwin_mode)
-        self.mac_win_mode_selector.setFixedWidth(width)
+            hlayout.addWidget(dbg_mask_label)
+            hlayout.addWidget(self.dbg_mask_input)
+            hlayout.addWidget(self.dbg_user_mask_input)
+            hlayout.addWidget(self.dbg_mask_update_button)
+            hlayout.addStretch(1)
+            separator = QFrame()
+            separator.setFrameShape(QFrame.VLine)
+            hlayout.addWidget(separator)
 
         #---------------------------------------
         # console output
@@ -146,19 +139,24 @@ class ConsoleTab(QWidget):
         self.console_output.ensureCursorVisible()
 
     def update_debug_mask(self, dbg_mask, dbg_user_mask):
-        self.dbg_mask_input.setText(f"{dbg_mask:02x}")
-        self.dbg_user_mask_input.setText(f"{dbg_user_mask:08x}")
-
-    def update_macwin_mode(self, macwin_mode):
-        self.mac_win_mode_selector.setCurrentIndex(0 if macwin_mode == 'm' else 1)
+        try:
+            self.dbg_mask_input.setText(f"{dbg_mask:02x}")
+            self.dbg_user_mask_input.setText(f"{dbg_user_mask:08x}")
+        except:
+            pass
 
 #-------------------------------------------------------------------------------
 class RGBMatrixTab(QWidget):
     signal_rgb_matrix_mode = Signal(int)
     signal_rgb_matrix_hsv = Signal(tuple)
 
-    def __init__(self, rgb_matrix_size):
-        self.rgb_matrix_size = rgb_matrix_size
+    def __init__(self, keyboard_model):
+        self.keyboard_model = keyboard_model
+        try:
+            self.keyboard_config = self.keyboard_model.keyb_config()
+        except:
+            self.keyboard_config = None
+        self.rgb_matrix_size = keyboard_model.rgb_matrix_size()
         super().__init__()
         self.init_gui()
 
@@ -182,30 +180,31 @@ class RGBMatrixTab(QWidget):
         hlayout = QHBoxLayout()
         self.tab_widget = QTabWidget()
 
-        #---------------------------------------
-        # rgb matrix mode
-        rgb_maxtrix_mode_label = QLabel("rgb matrix mode, hsv")
-        self.rgb_matrix_mode_input = QLineEdit()
-        reg_exp = QRegularExpression("[0-9]{1,2}")
-        self.rgb_matrix_mode_input.setValidator(QRegularExpressionValidator(reg_exp))
-        metrics = QFontMetrics(self.rgb_matrix_mode_input.font())
-        width = metrics.horizontalAdvance('W') * 3  # 'W' is used as it's typically the widest character
-        self.rgb_matrix_mode_input.setFixedWidth(width)
+        if self.keyboard_config == None:
+            #---------------------------------------
+            # rgb matrix mode
+            rgb_maxtrix_mode_label = QLabel("rgb matrix mode, hsv")
+            self.rgb_matrix_mode_input = QLineEdit()
+            reg_exp = QRegularExpression("[0-9]{1,2}")
+            self.rgb_matrix_mode_input.setValidator(QRegularExpressionValidator(reg_exp))
+            metrics = QFontMetrics(self.rgb_matrix_mode_input.font())
+            width = metrics.horizontalAdvance('W') * 3  # 'W' is used as it's typically the widest character
+            self.rgb_matrix_mode_input.setFixedWidth(width)
 
-        self.rgb_matrix_hsv_input = QLineEdit()
-        reg_exp = QRegularExpression("[0-9A-Fa-f]{6,6}")
-        self.rgb_matrix_hsv_input.setValidator(QRegularExpressionValidator(reg_exp))
-        self.rgb_matrix_hsv_input.setFixedWidth(width*2)
+            self.rgb_matrix_hsv_input = QLineEdit()
+            reg_exp = QRegularExpression("[0-9A-Fa-f]{6,6}")
+            self.rgb_matrix_hsv_input.setValidator(QRegularExpressionValidator(reg_exp))
+            self.rgb_matrix_hsv_input.setFixedWidth(width*2)
 
-        self.rgb_mode_update_button = QPushButton("set")
-        self.rgb_mode_update_button.clicked.connect(self.update_keyb_rgb_matrix_mode)
-        self.rgb_mode_update_button.setFixedWidth(width)
+            self.rgb_mode_update_button = QPushButton("set")
+            self.rgb_mode_update_button.clicked.connect(self.update_keyb_rgb_matrix_mode)
+            self.rgb_mode_update_button.setFixedWidth(width)
 
-        hlayout.addWidget(rgb_maxtrix_mode_label)
-        hlayout.addWidget(self.rgb_matrix_mode_input)
-        hlayout.addWidget(self.rgb_matrix_hsv_input)
-        hlayout.addWidget(self.rgb_mode_update_button)
-        hlayout.addStretch(1)
+            hlayout.addWidget(rgb_maxtrix_mode_label)
+            hlayout.addWidget(self.rgb_matrix_mode_input)
+            hlayout.addWidget(self.rgb_matrix_hsv_input)
+            hlayout.addWidget(self.rgb_mode_update_button)
+            hlayout.addStretch(1)
 
         #---------------------------------------
         self.rgb_video_tab = RGBVideoTab(self, self.rgb_matrix_size)
@@ -1205,7 +1204,8 @@ class LayerAutoSwitchTab(QWidget):
 
 #-------------------------------------------------------------------------------
 class KeybConfigTab(QWidget):
-    signal_keyb_config = Signal(tuple) # todo
+    signal_keyb_config = Signal(tuple)
+    signal_macwin_mode = Signal(str)
 
     def __init__(self):
         self.dbg = {}
@@ -1238,10 +1238,32 @@ class KeybConfigTab(QWidget):
             self.dbg['DEBUG'].tr(f"update_keyb_config:signal emit {config}")
             self.signal_keyb_config.emit(config)
 
+    def update_macwin_mode(self, macwin_mode):
+        self.mac_win_mode_selector.setCurrentIndex(0 if macwin_mode == 'm' else 1)
+
+    def update_keyb_macwin_mode(self):
+        macwin_mode = self.mac_win_mode_selector.currentText()
+        self.signal_macwin_mode.emit(macwin_mode)
+
     def init_gui(self):
         hlayout = QHBoxLayout()
         config_label = QLabel("keyboard configuration")
         hlayout.addWidget(config_label)
+        hlayout.addStretch(1)
+        #---------------------------------------
+        # mac/win mode
+        macwin_label = QLabel("mac/win mode")
+        self.mac_win_mode_selector = QComboBox()
+        self.mac_win_mode_selector.addItem('m')
+        self.mac_win_mode_selector.addItem('w')
+        self.mac_win_mode_selector.addItem('-')
+        hlayout.addWidget(macwin_label)
+        hlayout.addWidget(self.mac_win_mode_selector)
+        self.mac_win_mode_selector.setCurrentIndex(1)
+        self.mac_win_mode_selector.currentIndexChanged.connect(self.update_keyb_macwin_mode)
+        self.mac_win_mode_selector.setFixedWidth(40)
+        hlayout.addStretch(1)
+
         layout = QVBoxLayout()
         layout.addLayout(hlayout)
 
@@ -1257,7 +1279,8 @@ class KeybConfigTab(QWidget):
     def update_config_model(self, config_model):
         self.dbg['DEBUG'].tr(f"update_config_model: {config_model}")
         self.treeView.setModel(config_model)
-        config_model.dataChanged.connect(self.update_keyb_config)
+        if config_model:
+            config_model.dataChanged.connect(self.update_keyb_config)
 
     def update_config(self, config):
         config_id = config[0]
@@ -1443,8 +1466,8 @@ class MainWindow(QMainWindow):
         #-----------------------------------------------------------
         # add tabs
         tab_widget = QTabWidget()
-        self.console_tab = ConsoleTab()
-        self.rgb_matrix_tab = RGBMatrixTab(rgb_matrix_size)
+        self.console_tab = ConsoleTab(self.keyboard.keyboardModel)
+        self.rgb_matrix_tab = RGBMatrixTab(self.keyboard.keyboardModel)
         self.layer_switch_tab = LayerAutoSwitchTab(num_keyb_layers)
         self.keyb_config_tab = KeybConfigTab()
 
@@ -1458,25 +1481,23 @@ class MainWindow(QMainWindow):
         # connect signals
         self.keyboard.signal_console_output.connect(self.console_tab.update_text)
         self.keyboard.signal_debug_mask.connect(self.console_tab.update_debug_mask)
-        self.keyboard.signal_macwin_mode.connect(self.console_tab.update_macwin_mode)
         self.keyboard.signal_default_layer.connect(self.layer_switch_tab.update_default_layer)
         self.keyboard.signal_rgb_matrix_mode.connect(self.rgb_matrix_tab.update_rgb_matrix_mode)
         self.keyboard.signal_rgb_matrix_hsv.connect(self.rgb_matrix_tab.update_rgb_matrix_hsv)
         self.keyboard.signal_config_model.connect(self.keyb_config_tab.update_config_model)
         self.keyboard.signal_config.connect(self.keyb_config_tab.update_config)
+        self.keyboard.signal_macwin_mode.connect(self.keyb_config_tab.update_macwin_mode)
 
         self.console_tab.signal_dbg_mask.connect(self.keyboard.keyb_set_dbg_mask)
-        self.console_tab.signal_macwin_mode.connect(self.keyboard.keyb_set_macwin_mode)
-
         self.rgb_matrix_tab.signal_rgb_matrix_mode.connect(self.keyboard.keyb_set_rgb_matrix_mode)
         self.rgb_matrix_tab.signal_rgb_matrix_hsv.connect(self.keyboard.keyb_set_rgb_matrix_hsv)
         self.rgb_matrix_tab.rgb_video_tab.signal_rgb_frame.connect(self.keyboard.keyb_set_rgb_buf)
         self.rgb_matrix_tab.rgb_animation_tab.signal_rgb_frame.connect(self.keyboard.keyb_set_rgb_buf)
         self.rgb_matrix_tab.rgb_audio_tab.signal_rgb_frame.connect(self.keyboard.keyb_set_rgb_buf)
         self.rgb_matrix_tab.rgb_dynld_animation_tab.signal_dynld_function.connect(self.keyboard.keyb_set_dynld_function)
-
         self.layer_switch_tab.signal_keyb_set_layer.connect(self.keyboard.keyb_set_default_layer)
         self.keyb_config_tab.signal_keyb_config.connect(self.keyboard.keyb_set_config)
+        self.keyb_config_tab.signal_macwin_mode.connect(self.keyboard.keyb_set_macwin_mode)
 
         #-----------------------------------------------------------
         # window focus listener
