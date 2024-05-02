@@ -986,7 +986,6 @@ class RGBDynLDAnimationTab(QWidget):
 
     def init_gui(self):
         layout = QVBoxLayout()
-        layout.addStretch(1)
         #---------------------------------------
         # dynld animation bin file
         hlayout = QHBoxLayout()
@@ -1001,6 +1000,7 @@ class RGBDynLDAnimationTab(QWidget):
 
         #---------------------------------------
         self.dynld_funtext_edit = HexEditor()
+        self.dynld_funtext_edit.setFixedHeight(400)
         self.load_dynld_animation_func()
         layout.addWidget(self.dynld_funtext_edit)
 
@@ -1008,6 +1008,7 @@ class RGBDynLDAnimationTab(QWidget):
         self.send_button = QPushButton("send to keyboard")
         self.send_button.clicked.connect(self.send_dynld_animation_func)
         layout.addWidget(self.send_button)
+        layout.addStretch(1)
         self.setLayout(layout)
 
     def load_dynld_animation_func(self):
