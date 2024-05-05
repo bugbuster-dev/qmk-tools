@@ -214,11 +214,8 @@ class FirmataKeybCmd_v0_1:
 class FirmataKeybCmd_v0_2(FirmataKeybCmd_v0_1):
     ID_CONFIG_LAYOUT        = 8
     ID_CONFIG               = 9
+    ID_KEYPRESS_EVENT       = 10
     ID_CONFIG_EXTENDED      = 0
-    ID_CONFIG_DEBUG         = 1
-    ID_CONFIG_DEBUG_USER    = 2
-    ID_CONFIG_RGB           = 3
-    ID_CONFIG_KEYMAP        = 4
 
 # todo: dictionary with version as key
 FirmataKeybCmd = FirmataKeybCmd_v0_2
@@ -292,6 +289,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.dbg['DEBUG']           = DebugTracer(print=1, trace=1, obj=self)
         self.dbg['SYSEX_COMMAND']   = DebugTracer(print=1, trace=1, obj=self)
         self.dbg['SYSEX_RESPONSE']  = DebugTracer(print=1, trace=1, obj=self)
+        self.dbg['SYSEX_PUB']       = DebugTracer(print=1, trace=1, obj=self)
         self.dbg['RGB_BUF']         = DebugTracer(print=0, trace=1, obj=self)
         dbg = self.dbg['DEBUG']
         #endregion
@@ -399,20 +397,17 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.config_model = None
         self.add_cmd_handler(pyfirmata2.STRING_DATA, self.console_line_handler)
         self.add_cmd_handler(FirmataKeybCmd.RESPONSE, self.sysex_response_handler)
+        self.add_cmd_handler(FirmataKeybCmd.PUB, self.sysex_pub_handler)
 
         self.samplingOn()
         self.send_sysex(pyfirmata2.REPORT_FIRMWARE, [])
         self.send_sysex(pyfirmata2.REPORT_VERSION, [])
         self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_CONFIG_LAYOUT])
         self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_MACWIN_MODE])
-        self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_DEBUG_MASK])
         self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_BATTERY_STATUS])
+        self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_DEBUG_MASK])
         self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_RGB_MATRIX_MODE])
         self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_RGB_MATRIX_HSV])
-        self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_CONFIG, FirmataKeybCmd.ID_CONFIG_DEBUG])
-        self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_CONFIG, FirmataKeybCmd.ID_CONFIG_DEBUG_USER])
-        self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_CONFIG, FirmataKeybCmd.ID_CONFIG_RGB])
-        self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_CONFIG, FirmataKeybCmd.ID_CONFIG_KEYMAP])
 
         time.sleep(1)
         print("-"*80)
@@ -420,7 +415,18 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         print(f"qmk firmata version:{self.firmware} {self.firmware_version}, firmata={self.get_firmata_version()}")
         print("-"*80)
 
+        try:
+            for config_id in self.config_layout:
+                self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_CONFIG, config_id])
+        except Exception as e:
+            self.dbg['DEBUG'].tr(f"{e}")
+
         self.signal_config_model.emit(self.config_model)
+        config_auto_update = False
+        if config_auto_update and len(self.config_layout) > 0:
+            self.timer_config_update = QtCore.QTimer(self)
+            self.timer_config_update.timeout.connect(self.keyb_get_config)
+            self.timer_config_update.start(500)
 
     def stop(self):
         try:
@@ -430,18 +436,41 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.samplingOff()
 
     #-------------------------------------------------------------------------------
-    def sysex_response_handler(self, *data):
-        dbg = self.dbg['SYSEX_RESPONSE']
-        #dbg.tr(f"sysex_response_handler: {data}")
+    def _sysex_data_to_bytearray(self, data):
         buf = bytearray()
         if len(data) % 2 != 0:
-            self.dbg['ERROR'].tr(f"sysex_response_handler: invalid data length {len(data)}")
-            return
-
+            self.dbg['ERROR'].tr(f"sysex_pub_handler: invalid data length {len(data)}")
+            return buf
         for off in range(0, len(data), 2):
             # Combine two bytes
             buf.append(data[off+1] << 7 | data[off])
+        return buf
 
+    def sysex_pub_handler(self, *data):
+        dbg = self.dbg['SYSEX_PUB']
+        #dbg.tr(f"sysex_pub_handler: {data}")
+        buf = self._sysex_data_to_bytearray(data)
+        if dbg.print:
+            dbg.tr("-"*40)
+            dbg.tr(f"sysex pub:\n{buf.hex(' ')}")
+
+        if buf[0] == FirmataKeybCmd.ID_KEYPRESS_EVENT:
+            col = buf[1]
+            row = buf[2]
+            time = struct.unpack_from('<H', buf, 3)[0]
+            type = buf[5]
+            pressed = buf[6]
+            dbg.tr(f"key press event: row={row}, col={col}, time={time}, type={type}, pressed={pressed}")
+
+            if row == 0 and col == 0 and pressed:
+                import pyautogui
+                pyautogui.press("1")
+
+    #-------------------------------------------------------------------------------
+    def sysex_response_handler(self, *data):
+        dbg = self.dbg['SYSEX_RESPONSE']
+        #dbg.tr(f"sysex_response_handler: {data}")
+        buf = self._sysex_data_to_bytearray(data)
         if dbg.print:
             dbg.tr("-"*40)
             dbg.tr(f"sysex response:\n{buf.hex(' ')}")
@@ -665,6 +694,15 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         data.append(hsv[1])
         data.append(hsv[2])
         self.send_sysex(FirmataKeybCmd.SET, data)
+
+    def keyb_get_config(self, config_id = 0):
+        dbg = self.dbg['SYSEX_COMMAND']
+        dbg.tr(f"keyb_get_config: {config_id}")
+        if config_id == 0:
+            for config_id in self.config_layout:
+                self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_CONFIG, config_id])
+        else:
+            self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_CONFIG, config_id])
 
     def keyb_set_config(self, config):
         TYPE_BIT = self.keyboardModel.keyb_config().TYPES["bit"]

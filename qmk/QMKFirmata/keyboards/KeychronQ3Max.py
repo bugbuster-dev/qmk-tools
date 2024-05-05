@@ -99,11 +99,16 @@ class KeychronQ3Max:
             12: "swap_escape_capslock",
             13: "autocorrect_enable",
         }
+        CONFIG_DEVEL = {
+            1: "pub_keypress",
+            2: "process_keypress",
+        }
         CONFIG = {
             1: ("debug", CONFIG_DEBUG),
             2: ("debug user", CONFIG_DEBUG_USER),
             3: ("rgb", CONFIG_RGB),
             4: ("keymap", CONFIG_KEYMAP),
+            5: ("devel", CONFIG_DEVEL),
         }
         TYPES = { #todo move to common
             1: "bit",

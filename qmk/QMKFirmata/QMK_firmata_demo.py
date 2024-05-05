@@ -1,4 +1,4 @@
-import sys, time, hid, argparse, json
+import os, sys, time, hid, argparse, json
 import cv2, numpy as np, pyaudiowpatch as pyaudio
 import asyncio, websockets
 
@@ -69,6 +69,11 @@ class ConsoleTab(QWidget):
             self.keyboard_config = self.keyboard_model.keyb_config()
         except:
             self.keyboard_config = None
+
+        self.max_text_length = 2000000
+        self.max_console_file_size = self.max_text_length*2
+        self.console_text_len = 0
+        self.console_file_clear = True
         super().__init__()
         self.init_gui()
         self.dbg['DEBUG'].tr(f"keyboard_model: {self.keyboard_model} {self.keyboard_config}")
@@ -137,6 +142,34 @@ class ConsoleTab(QWidget):
         self.console_output.setTextCursor(cursor)
         self.console_output.insertPlainText(text)
         self.console_output.ensureCursorVisible()
+        self.console_text_len += len(text)
+        self.limit_text()
+
+    def save_to_file(self, filename, clear=False):
+        # check file size and append
+        try:
+            filesize = os.path.getsize(filename)
+            if clear:
+                try:
+                    os.remove(filename)
+                    filesize = 0
+                except Exception as e:
+                    self.dbg['DEBUG'].tr(f"remove console log: {e}")
+        except:
+            filesize = 0
+        if filesize < self.max_console_file_size:
+            try:
+                with open(filename, "a") as file:
+                    file.write(self.console_output.toPlainText())
+            except Exception as e:
+                self.dbg['DEBUG'].tr(f"save_to_file: {e}")
+
+    def limit_text(self):
+        if self.console_text_len >= self.max_text_length:
+            self.save_to_file("console_output.txt", self.console_file_clear)
+            self.console_file_clear = False
+            self.console_output.clear()
+            self.console_text_len = 0
 
     def update_debug_mask(self, dbg_mask, dbg_user_mask):
         try:
@@ -1211,7 +1244,8 @@ class LayerAutoSwitchTab(QWidget):
 
 #-------------------------------------------------------------------------------
 class KeybConfigTab(QWidget):
-    signal_keyb_config = Signal(tuple)
+    signal_keyb_set_config = Signal(tuple)
+    signal_keyb_get_config = Signal(int)
     signal_macwin_mode = Signal(str)
 
     def __init__(self):
@@ -1230,20 +1264,23 @@ class KeybConfigTab(QWidget):
                     update = True
 
         if update:
-            if tl.isValid():
+            try:
                 item = self.treeView.model().itemFromIndex(tl)
-                config = item.parent()
-                config_id = config.row() + 1
+                config_item = item.parent()
+                config_id = config_item.row() + 1
                 #print(f"{config.text()}:")
                 field_values = {}
-                for i in range(config.rowCount()):
-                    field = config.child(i, 0)
-                    value = config.child(i, 3)
+                for i in range(config_item.rowCount()):
+                    field = config_item.child(i, 0)
+                    value = config_item.child(i, 3)
                     #print(f"{field.text()} = {value.text()}")
                     field_values[i+1] = value.text()
+            except Exception as e:
+                self.dbg['DEBUG'].tr(f"update_keyb_config: {e}")
+                return
             config = (config_id, field_values)
             self.dbg['DEBUG'].tr(f"update_keyb_config:signal emit {config}")
-            self.signal_keyb_config.emit(config)
+            self.signal_keyb_set_config.emit(config)
 
     def update_macwin_mode(self, macwin_mode):
         self.mac_win_mode_selector.setCurrentIndex(0 if macwin_mode == 'm' else 1)
@@ -1255,7 +1292,10 @@ class KeybConfigTab(QWidget):
     def init_gui(self):
         hlayout = QHBoxLayout()
         config_label = QLabel("keyboard configuration")
+        config_refresh_button = QPushButton("refresh")
+        config_refresh_button.clicked.connect(lambda: self.signal_keyb_get_config.emit(0))
         hlayout.addWidget(config_label)
+        hlayout.addWidget(config_refresh_button)
         hlayout.addStretch(1)
         #---------------------------------------
         # mac/win mode
@@ -1296,7 +1336,6 @@ class KeybConfigTab(QWidget):
 
         model = self.treeView.model()
         config_item = model.item(config_id-1, 0)
-        model.blockSignals(True)
         self.dbg['DEBUG'].tr(f"update_config: {config_item.text()}")
         for i in range(config_item.rowCount()): # todo: row number may not match field id
             try:
@@ -1304,7 +1343,6 @@ class KeybConfigTab(QWidget):
                 value_item.setText(f"{field_values[i+1]}")
             except Exception as e:
                 self.dbg['DEBUG'].tr(f"update_config: {e}")
-        model.blockSignals(False)
 
 #-------------------------------------------------------------------------------
 from matplotlib.figure import Figure
@@ -1503,7 +1541,8 @@ class MainWindow(QMainWindow):
         self.rgb_matrix_tab.rgb_audio_tab.signal_rgb_frame.connect(self.keyboard.keyb_set_rgb_buf)
         self.rgb_matrix_tab.rgb_dynld_animation_tab.signal_dynld_function.connect(self.keyboard.keyb_set_dynld_function)
         self.layer_switch_tab.signal_keyb_set_layer.connect(self.keyboard.keyb_set_default_layer)
-        self.keyb_config_tab.signal_keyb_config.connect(self.keyboard.keyb_set_config)
+        self.keyb_config_tab.signal_keyb_set_config.connect(self.keyboard.keyb_set_config)
+        self.keyb_config_tab.signal_keyb_get_config.connect(self.keyboard.keyb_get_config)
         self.keyb_config_tab.signal_macwin_mode.connect(self.keyboard.keyb_set_macwin_mode)
 
         #-----------------------------------------------------------
