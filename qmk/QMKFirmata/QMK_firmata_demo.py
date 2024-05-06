@@ -1260,10 +1260,10 @@ class KeybConfigTab(QWidget):
         update = False
         if roles:
             for role in roles:
-                if role == Qt.DisplayRole:
+                if role == Qt.EditRole:
                     update = True
 
-        if update:
+        if update: # todo update only if changed via ui not from update_gui_config
             try:
                 item = self.treeView.model().itemFromIndex(tl)
                 config_item = item.parent()
@@ -1274,6 +1274,8 @@ class KeybConfigTab(QWidget):
                     field = config_item.child(i, 0)
                     value = config_item.child(i, 3)
                     #print(f"{field.text()} = {value.text()}")
+                    if value.text() == "":
+                        return
                     field_values[i+1] = value.text()
             except Exception as e:
                 self.dbg['DEBUG'].tr(f"update_keyb_config: {e}")
@@ -1329,20 +1331,19 @@ class KeybConfigTab(QWidget):
         if config_model:
             config_model.dataChanged.connect(self.update_keyb_config)
 
-    def update_config(self, config):
+    def update_gui_config(self, config): # update from firmata keyboard
         config_id = config[0]
         field_values = config[1]
-        self.dbg['DEBUG'].tr(f"update_config: {config}")
-
         model = self.treeView.model()
         config_item = model.item(config_id-1, 0)
-        self.dbg['DEBUG'].tr(f"update_config: {config_item.text()}")
+        self.dbg['DEBUG'].tr(f"update_gui_config: {config_item.text()}")
+        self.dbg['DEBUG'].tr(f"{config}")
         for i in range(config_item.rowCount()): # todo: row number may not match field id
             try:
                 value_item = config_item.child(i, 3)
                 value_item.setText(f"{field_values[i+1]}")
             except Exception as e:
-                self.dbg['DEBUG'].tr(f"update_config: {e}")
+                self.dbg['DEBUG'].tr(f"update_gui_config: {e}")
 
 #-------------------------------------------------------------------------------
 from matplotlib.figure import Figure
@@ -1530,7 +1531,7 @@ class MainWindow(QMainWindow):
         self.keyboard.signal_rgb_matrix_mode.connect(self.rgb_matrix_tab.update_rgb_matrix_mode)
         self.keyboard.signal_rgb_matrix_hsv.connect(self.rgb_matrix_tab.update_rgb_matrix_hsv)
         self.keyboard.signal_config_model.connect(self.keyb_config_tab.update_config_model)
-        self.keyboard.signal_config.connect(self.keyb_config_tab.update_config)
+        self.keyboard.signal_config.connect(self.keyb_config_tab.update_gui_config)
         self.keyboard.signal_macwin_mode.connect(self.keyb_config_tab.update_macwin_mode)
 
         self.console_tab.signal_dbg_mask.connect(self.keyboard.keyb_set_dbg_mask)

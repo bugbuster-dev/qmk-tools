@@ -182,7 +182,7 @@ class KeychronQ3Max:
                 config_name = KeychronQ3Max.KeybConfiguration_v0_1.config_name(config_id)
                 config_item = create_item(config_name)
                 for field_id, field_info in config_fields.items():
-                    print(f"field_id:{field_id}, field_info:{field_info}")
+                    #print(f"field_id:{field_id}, field_info:{field_info}")
                     try:
                         field_name = create_item(KeychronQ3Max.KeybConfiguration_v0_1.config_field_name(config_id, field_id))
                         field_type = create_item(KeychronQ3Max.KeybConfiguration_v0_1.config_field_type(field_info[0]))

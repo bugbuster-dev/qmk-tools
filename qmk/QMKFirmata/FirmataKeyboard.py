@@ -286,10 +286,10 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.dbg_rgb_buf = 0
         self.dbg = {}
         self.dbg['ERROR']           = DebugTracer(print=1, trace=1, obj=self)
-        self.dbg['DEBUG']           = DebugTracer(print=1, trace=1, obj=self)
-        self.dbg['SYSEX_COMMAND']   = DebugTracer(print=1, trace=1, obj=self)
-        self.dbg['SYSEX_RESPONSE']  = DebugTracer(print=1, trace=1, obj=self)
-        self.dbg['SYSEX_PUB']       = DebugTracer(print=1, trace=1, obj=self)
+        self.dbg['DEBUG']           = DebugTracer(print=0, trace=1, obj=self)
+        self.dbg['SYSEX_COMMAND']   = DebugTracer(print=0, trace=1, obj=self)
+        self.dbg['SYSEX_RESPONSE']  = DebugTracer(print=0, trace=1, obj=self)
+        self.dbg['SYSEX_PUB']       = DebugTracer(print=0, trace=1, obj=self)
         self.dbg['RGB_BUF']         = DebugTracer(print=0, trace=1, obj=self)
         dbg = self.dbg['DEBUG']
         #endregion
@@ -415,6 +415,35 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         print(f"qmk firmata version:{self.firmware} {self.firmware_version}, firmata={self.get_firmata_version()}")
         print("-"*80)
 
+        self.key_machine = KeyMachine(self)
+        keyboard_test = True
+        if keyboard_test:
+            def on_test_combo1():
+                import keyboard
+                keyboard.write("hello combo1")
+
+            def on_test_combo2():
+                import keyboard
+                keyboard.write("hello combo2")
+
+            def on_test_sequence():
+                import keyboard
+                keyboard.write("hello sequence")
+
+            def on_test_sequence1234():
+                import keyboard
+                keyboard.write("5678")
+
+            def on_test_sequence_sos():
+                import keyboard
+                keyboard.write("SOS")
+
+            self.key_machine.on_combo(['left ctrl','left menu','space','m'], on_test_combo1)
+            self.key_machine.on_combo(['right ctrl','up','esc'], on_test_combo2)
+            self.key_machine.on_sequence(['esc','esc','esc'], [(100,300), (100,300)], on_test_sequence)
+            self.key_machine.on_sequence(['1','2','3','4'], [(100,300), (100,300), (100,300)], on_test_sequence1234)
+            self.key_machine.on_sequence(['left']*9, [(100,200), (100,200), (300,600), (300,600), (300,600), (300,600), (100,200), (100,200)], on_test_sequence_sos)
+
         try:
             for config_id in self.config_layout:
                 self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_CONFIG, config_id])
@@ -460,11 +489,8 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             time = struct.unpack_from('<H', buf, 3)[0]
             type = buf[5]
             pressed = buf[6]
-            dbg.tr(f"key press event: row={row}, col={col}, time={time}, type={type}, pressed={pressed}")
-
-            if row == 0 and col == 0 and pressed:
-                import pyautogui
-                pyautogui.press("1")
+            #dbg.tr(f"key press event: row={row}, col={col}, time={time}, type={type}, pressed={pressed}")
+            self.key_machine.key_event(row, col, time, pressed)
 
     #-------------------------------------------------------------------------------
     def sysex_response_handler(self, *data):
@@ -521,7 +547,8 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                     break
             # config layout used to get/set of config field values in byte buffer
             self.config_layout[config_id] = config_fields
-            self.keyboardModel.keyb_config().print_config_layout(config_id, config_fields)
+            if dbg.print:
+                self.keyboardModel.keyb_config().print_config_layout(config_id, config_fields)
             self.config_model = self.keyboardModel.keyb_config().keyb_config_model(self.config_model, config_id, config_fields)
         elif buf[0] == FirmataKeybCmd.ID_CONFIG:
             TYPE_BIT = self.keyboardModel.keyb_config().TYPES["bit"]
@@ -586,7 +613,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
         #self.dbg['DEBUG'].tr(f"rgb img from sender {self.sender()} {img}")
         if not img:
-            self.dbg['DEBUG'].tr(f"sender {self.sender()} stopped")
+            self.dbg['DEBUG'].tr(f"rgb sender {self.sender()} stopped")
             if self.sender() in self.img:
                 self.img.pop(self.sender())
             return
@@ -818,3 +845,173 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         if buf:
             data.extend(buf)
         self.send_sysex(FirmataKeybCmd.SET, data)
+
+
+#-------------------------------------------------------------------------------
+# todo: move to separate file
+import keyboard
+
+'''
+features
+--------
+
+- "normal key press" (single "key tap")
+- "key press hold" (key repeat)
+- combo: multiple key press: hold/tap ("mod key" hold + "normal key" tap)
+- mod tap: key hold or tap
+- key sequence: leader key, tap dance, ...
+- auto shift
+- combo
+
+'''
+
+class KeyMachine:
+
+    MATRIX = [
+        ['esc'      , 'f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9', 'f10', 'f11', 'f12', 'volume mute', 'print screen', 'scroll lock', 'pause'],
+        ['`'        ,  '1',  '2',  '3',  '4',  '5',  '6',  '7',  '8',  '9',   '0',   '-',   '=', 'backspace', 'insert', 'home', 'page up'],
+        ['tab'      ,  'q',  'w',  'e',  'r',  't',  'y',  'u',  'i',   'o',   'p',   '[', ']', '\\', 'delete', 'end', 'page down'],
+        ['caps lock' ,  'a',  's',  'd',  'f',  'g',  'h',  'j',  'k',   'l',   ';',  '\'', '', 'enter', '', ''],
+        ['left shift',   '',  'z',  'x',  'c',  'v',  'b',  'n',  'm',   ',',   '.',   '/', '', 'right shift', '', 'up', ''],
+        ['left ctrl', 'left windows', 'left menu', '', '', '', 'space', '', '', '', 'right menu', 'right windows', 'fn', 'right ctrl', 'left', 'down', 'right']
+    ]
+
+    def __init__(self, keyboard):
+        self.dbg = {}
+        self.dbg['DEBUG'] = DebugTracer(print=1, trace=1, obj=self)
+        self.dbg['DEBUG'].tr(f"KeyboardStateMachine: {keyboard}")
+
+        self.keyboard = keyboard
+        self.send_keys = False
+        self.key_event_stack = [] #todo check if key event stack is needed
+        self.key_pressed = {}
+        self.combos = {}
+        self.sequences = {}
+
+        self.state = None
+        self.states = {}
+        self.transitions = {}
+        self.handlers = {}
+        self.start_state = None
+        self.end_states = []
+        self.default_state = None
+
+    def control_pressed(self):
+        return self.key_pressed.get('left ctrl', 0) or self.key_pressed.get('right ctrl', 0)
+
+    def shift_pressed(self):
+        return self.key_pressed.get('left shift', 0) or self.key_pressed.get('right shift', 0)
+
+    def alt_pressed(self):
+        return self.key_pressed.get('left menu', 0) or self.key_pressed.get('right menu', 0)
+
+    def mod_keys_pressed(self):
+        pressed = []
+        if self.alt_pressed():
+            pressed.append('alt')
+        if self.control_pressed():
+            pressed.append('ctrl')
+        if self.shift_pressed():
+            pressed.append('shift')
+        return pressed
+
+    def add_state(self, name, handler, end_state=0):
+        self.states[name] = handler
+        if end_state:
+            self.end_states.append(name)
+
+    def on_combo(self, keys, handler):
+        combo_keys = "+".join(keys)
+        self.combos[combo_keys] = (keys, handler)
+        self.dbg['DEBUG'].tr(f"on_combo: {combo_keys}, {keys}, {handler}")
+
+    # todo: leader key, tap dance, ...
+    def on_sequence(self, keys, timeout, handler):
+        sequence_keys = "+".join(keys)
+        self.sequences[sequence_keys] = (keys, timeout, (0, 0), handler) # sequence state: (index, time)
+        self.dbg['DEBUG'].tr(f"on_sequence: {sequence_keys}, {keys}, {timeout}, {handler}")
+
+    # todo: leader key, tap dance, ...
+    def handle_sequences(self, key, time, pressed):
+        if pressed:
+            for _key, seq_handler in self.sequences.items():
+                sequence_keys = seq_handler[0]
+                timeout = seq_handler[1]
+                state = seq_handler[2]
+                handler = seq_handler[3]
+                state_index = state[0]
+                state_time = state[1]
+                try:
+                    self.dbg['DEBUG'].tr(f"handle_sequences: {key}, {sequence_keys}, {state}")
+                    if key == sequence_keys[state_index]:
+                        if state_index > 0:
+                            time_diff = time - state_time
+                            time_diff = int.from_bytes(time_diff.to_bytes(2, byteorder='little', signed=False), 'little', signed=False)
+                            if time_diff > timeout[state_index-1][1] or time_diff < timeout[state_index-1][0]:
+                                self.dbg['DEBUG'].tr(f"handle_sequences: keypress time: {time_diff} out of range {timeout[state_index-1]}")
+                                break
+                        state_index += 1
+                        state = (state_index, time)
+                        if state_index == len(sequence_keys):
+                            self.dbg['DEBUG'].tr(f"handle_sequences: sequence!")
+                            self.sequences[_key] = (sequence_keys, timeout, (0, 0), handler)
+                            handler()
+                            return True
+                        self.sequences[_key] = (sequence_keys, timeout, state, handler)
+                        return False
+                except:
+                    pass
+
+            # no sequence found, reset all sequences
+            for _key, seq_handler in self.sequences.items():
+                self.sequences[_key] = (seq_handler[0], seq_handler[1], (0, 0), seq_handler[3])
+
+        return False
+
+    def handle_combos(self, key, time, pressed):
+        if len(self.key_pressed) == 0:
+            return False
+
+        if pressed:
+            for _, combo_handler in self.combos.items():
+                combo_keys = combo_handler[0]
+                handler = combo_handler[1]
+                try:
+                    if combo_keys[-1] == key:
+                        #self.dbg['DEBUG'].tr(f"handle_combos: {combo_keys}")
+                        if all([self.key_pressed.get(k, 0) for k in combo_keys[:-1]]):
+                            #self.dbg['DEBUG'].tr(f"combo!")
+                            handler()
+                            return True
+                except:
+                    pass
+        return False
+
+    def key_event(self, row, col, time, pressed):
+        self.dbg['DEBUG'].tr(f"key_event: {row}, {col}, {time}, {pressed}")
+        try:
+            key = self.MATRIX[row][col]
+            self.dbg['DEBUG'].tr(f"key: {key}")
+        except:
+            self.dbg['DEBUG'].tr(f"key: unknown")
+            return
+
+        process_key = True
+        if process_key and self.handle_combos(key, time, pressed):
+            process_key = False
+        if process_key and self.handle_sequences(key, time, pressed):
+            process_key = False
+
+        if pressed:
+            if process_key:
+                keyboard.press(key)
+            self.key_pressed[key] = time
+        else:
+            if key in self.key_pressed:
+                del self.key_pressed[key]
+            keyboard.release(key)
+
+        # push on key event stack
+        self.key_event_stack.append(((row, col), time, pressed))
+        if len(self.key_event_stack) > 100:
+            self.key_event_stack.pop(0)
