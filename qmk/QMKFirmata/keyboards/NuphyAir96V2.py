@@ -8,7 +8,7 @@ class NuphyAir96V2:
     RGB_MAXTRIX_W = 19
     RGB_MAXTRIX_H = 6
     NUM_RGB_LEDS = 110
-    RGB_MAX_REFRESH = 5
+    RGB_MAX_REFRESH = 25
 
     DEFAULT_LAYER = { 'm':0, 'w':2 }
     NUM_LAYERS = 8
