@@ -5,6 +5,8 @@ from PySide6.QtGui import QImage, QColor, QPainter
 import pyfirmata2, hid, serial, time, numpy as np
 import glob, inspect, os, importlib.util, struct
 from pathlib import Path
+import keyboard, sched, threading
+
 
 from DebugTracer import DebugTracer
 
@@ -413,30 +415,25 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         keyboard_test = True
         if keyboard_test:
             def on_test_combo1():
-                import keyboard
-                keyboard.write("hello combo1")
+                keyboard.write(u"hello äçξضяשå両めษᆆऔጩᗗ¿")
 
             def on_test_combo2():
-                import keyboard
                 keyboard.write("hello combo2")
 
             def on_test_sequence():
-                import keyboard
                 keyboard.write("hello sequence")
 
             def on_test_sequence1234():
-                import keyboard
                 keyboard.write("5678")
 
             def on_test_sequence_sos():
-                import keyboard
                 keyboard.write("SOS")
 
-            self.key_machine.on_combo(['left ctrl','left menu','space','m'], on_test_combo1)
-            self.key_machine.on_combo(['right ctrl','up','esc'], on_test_combo2)
-            self.key_machine.on_sequence(['esc','esc','esc'], [(100,300), (100,300)], on_test_sequence)
-            self.key_machine.on_sequence(['1','2','3','4'], [(100,300), (100,300), (100,300)], on_test_sequence1234)
-            self.key_machine.on_sequence(['left']*9, [(100,200), (100,200), (300,600), (300,600), (300,600), (300,600), (100,200), (100,200)], on_test_sequence_sos)
+            self.key_machine.register_combo(['left ctrl','left menu','space','m'], on_test_combo1)
+            self.key_machine.register_combo(['ctrl','up','esc'], on_test_combo2)
+            self.key_machine.register_sequence(['esc','esc','esc'], [(100,300), (100,300)], on_test_sequence)
+            self.key_machine.register_sequence(['1','2','3','4'], [(0,300), (0,300), (0,300)], on_test_sequence1234)
+            self.key_machine.register_sequence(['left']*9, [(100,300), (100,300), (400,800), (400,800), (400,800), (400,800), (100,300), (100,300)], on_test_sequence_sos)
 
         try:
             for config_id in self.config_layout:
@@ -798,55 +795,39 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
 #-------------------------------------------------------------------------------
 # todo: move to separate file
-import keyboard
-
-'''
-features
---------
-
-- "normal key press" (single "key tap")
-- "key press hold" (key repeat)
-- combo: multiple key press: hold/tap ("mod key" hold + "normal key" tap)
-- mod tap: key hold or tap
-- key sequence: leader key, tap dance, ...
-- auto shift
-- combo
-
-'''
 
 class KeyMachine:
 
-    MATRIX = [
+    KEY_LAYOUT = [
         ['esc'      , 'f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9', 'f10', 'f11', 'f12', 'volume mute', 'print screen', 'scroll lock', 'pause'],
-        ['`'        ,  '1',  '2',  '3',  '4',  '5',  '6',  '7',  '8',  '9',   '0',   '-',   '=', 'backspace', 'insert', 'home', 'page up'],
+        ['`'        ,  '1',  '2',  '3',  '4',  '5',  '6',  '7',  '8',  '9',   '0',   '-',   '=', 'backspace', 'morse', 'home', 'page up'],
         ['tab'      ,  'q',  'w',  'e',  'r',  't',  'y',  'u',  'i',   'o',   'p',   '[', ']', '\\', 'delete', 'end', 'page down'],
         ['caps lock' ,  'a',  's',  'd',  'f',  'g',  'h',  'j',  'k',   'l',   ';',  '\'', '', 'enter', '', ''],
         ['left shift',   '',  'z',  'x',  'c',  'v',  'b',  'n',  'm',   ',',   '.',   '/', '', 'right shift', '', 'up', ''],
-        ['left ctrl', 'left windows', 'left menu', '', '', '', 'space', '', '', '', 'right menu', 'right windows', 'fn', 'right ctrl', 'left', 'down', 'right']
+        ['left ctrl', 'left windows', 'left menu', '', '', '', 'space', '', '', '', 'right menu', 'right windows', 'fn', 'ctrl', 'left', 'down', 'right']
     ]
 
     def __init__(self, keyboard):
         self.dbg = {}
         self.dbg['DEBUG'] = DebugTracer(print=1, trace=1, obj=self)
-        self.dbg['DEBUG'].tr(f"KeyboardStateMachine: {keyboard}")
+        self.dbg['REPEAT'] = DebugTracer(print=1, trace=1, obj=self)
+        self.dbg['COMBO'] = DebugTracer(print=1, trace=1, obj=self)
+        self.dbg['SEQ'] = DebugTracer(print=1, trace=1, obj=self)
 
+        self.dbg['DEBUG'].tr(f"KeyboardStateMachine: {keyboard}")
         self.keyboard = keyboard
-        self.send_keys = False
-        self.key_event_stack = [] #todo check if key event stack is needed
+        self.key_event_stack = [] #todo remove if not needed
         self.key_pressed = {}
         self.combos = {}
         self.sequences = {}
 
-        self.state = None
-        self.states = {}
-        self.transitions = {}
-        self.handlers = {}
-        self.start_state = None
-        self.end_states = []
-        self.default_state = None
+        self.key_repeat_delay = 0.5
+        self.key_repeat_time = 0.05
+        self.key_repeat_scheduler = sched.scheduler(time.time, time.sleep)
+        self.key_repeat_sched_event = None
 
     def control_pressed(self):
-        return self.key_pressed.get('left ctrl', 0) or self.key_pressed.get('right ctrl', 0)
+        return self.key_pressed.get('left ctrl', 0) or self.key_pressed.get('ctrl', 0)
 
     def shift_pressed(self):
         return self.key_pressed.get('left shift', 0) or self.key_pressed.get('right shift', 0)
@@ -854,34 +835,37 @@ class KeyMachine:
     def alt_pressed(self):
         return self.key_pressed.get('left menu', 0) or self.key_pressed.get('right menu', 0)
 
+    def win_pressed(self):
+        return self.key_pressed.get('left windows', 0) or self.key_pressed.get('right windows', 0)
+
+    def is_mod_key(self, key):
+        return key.endswith('ctrl') or key.endswith('shift') or key.endswith('menu') or key.endswith('windows')
+
     def mod_keys_pressed(self):
         pressed = []
+        if self.win_pressed():
+            pressed.append('left windows')
         if self.alt_pressed():
-            pressed.append('alt')
+            pressed.append('left menu')
         if self.control_pressed():
-            pressed.append('ctrl')
+            pressed.append('left ctrl')
         if self.shift_pressed():
-            pressed.append('shift')
+            pressed.append('left shift')
         return pressed
 
-    def add_state(self, name, handler, end_state=0):
-        self.states[name] = handler
-        if end_state:
-            self.end_states.append(name)
-
-    def on_combo(self, keys, handler):
+    def register_combo(self, keys, handler):
         combo_keys = "+".join(keys)
         self.combos[combo_keys] = (keys, handler)
-        self.dbg['DEBUG'].tr(f"on_combo: {combo_keys}, {keys}, {handler}")
+        self.dbg['COMBO'].tr(f"register_combo: {combo_keys}, {keys}, {handler}")
 
     # todo: leader key, tap dance, ...
-    def on_sequence(self, keys, timeout, handler):
+    def register_sequence(self, keys, timeout, handler):
         sequence_keys = "+".join(keys)
         self.sequences[sequence_keys] = (keys, timeout, (0, 0), handler) # sequence state: (index, time)
-        self.dbg['DEBUG'].tr(f"on_sequence: {sequence_keys}, {keys}, {timeout}, {handler}")
+        self.dbg['SEQ'].tr(f"register_sequence: {sequence_keys}, {keys}, {timeout}, {handler}")
 
     # todo: leader key, tap dance, ...
-    def handle_sequences(self, key, time, pressed):
+    def process_sequences(self, key, time, pressed):
         if pressed:
             for _key, seq_handler in self.sequences.items():
                 sequence_keys = seq_handler[0]
@@ -891,18 +875,18 @@ class KeyMachine:
                 state_index = state[0]
                 state_time = state[1]
                 try:
-                    self.dbg['DEBUG'].tr(f"handle_sequences: {key}, {sequence_keys}, {state}")
                     if key == sequence_keys[state_index]:
+                        self.dbg['SEQ'].tr(f"process_sequences: {key}, {sequence_keys}, {state}")
                         if state_index > 0:
                             time_diff = time - state_time
                             time_diff = int.from_bytes(time_diff.to_bytes(2, byteorder='little', signed=False), 'little', signed=False)
                             if time_diff > timeout[state_index-1][1] or time_diff < timeout[state_index-1][0]:
-                                self.dbg['DEBUG'].tr(f"handle_sequences: keypress time: {time_diff} out of range {timeout[state_index-1]}")
+                                self.dbg['SEQ'].tr(f"process_sequences: keypress time: {time_diff} out of range {timeout[state_index-1]}")
                                 break
                         state_index += 1
                         state = (state_index, time)
                         if state_index == len(sequence_keys):
-                            self.dbg['DEBUG'].tr(f"handle_sequences: sequence!")
+                            self.dbg['SEQ'].tr(f"sequence!")
                             self.sequences[_key] = (sequence_keys, timeout, (0, 0), handler)
                             handler()
                             return True
@@ -917,7 +901,7 @@ class KeyMachine:
 
         return False
 
-    def handle_combos(self, key, time, pressed):
+    def process_combos(self, key, time, pressed):
         if len(self.key_pressed) == 0:
             return False
 
@@ -927,40 +911,98 @@ class KeyMachine:
                 handler = combo_handler[1]
                 try:
                     if combo_keys[-1] == key:
-                        #self.dbg['DEBUG'].tr(f"handle_combos: {combo_keys}")
+                        self.dbg['COMBO'].tr(f"process_combos: {combo_keys}")
                         if all([self.key_pressed.get(k, 0) for k in combo_keys[:-1]]):
-                            #self.dbg['DEBUG'].tr(f"combo!")
+                            self.dbg['COMBO'].tr(f"combo!")
                             handler()
                             return True
                 except:
                     pass
         return False
 
+    def repeat_needed(self, key):
+        if self.is_mod_key(key):
+            return False
+        if key == 'morse':
+            return False
+        return True
+
+    def key_repeat(self, key):
+        self.dbg['REPEAT'].tr(f"key_repeat: {key}")
+        if key in self.key_pressed: # may race with key_event, only read dict no lock needed
+            keyboard.press(key)
+            self.run_repeat(key, self.key_repeat_time)
+
     def key_event(self, row, col, time, pressed):
         self.dbg['DEBUG'].tr(f"key_event: {row}, {col}, {time}, {pressed}")
         try:
-            key = self.MATRIX[row][col]
+            key = self.KEY_LAYOUT[row][col]
             self.dbg['DEBUG'].tr(f"key: {key}")
         except:
             self.dbg['DEBUG'].tr(f"key: unknown")
             return
 
-        process_key = True
-        if process_key and self.handle_combos(key, time, pressed):
-            process_key = False
-        if process_key and self.handle_sequences(key, time, pressed):
-            process_key = False
+        if pressed and key != 'morse':
+            press_keys = []
+            pressed_mods = self.mod_keys_pressed()
+            for mod in pressed_mods:
+                self.dbg['DEBUG'].tr(f"mod key: {mod}")
+                press_keys.append(mod)
+            press_keys.append(key)
+            # workaround for '_', '/'
+            if len(press_keys) == 2:
+                check_shift_combo = press_keys.copy()
+                if check_shift_combo[0].endswith('shift'):
+                    check_shift_combo[0] = 'shift'
+
+                combine = [ (['shift','-'], '_'), (['shift','/'], '?') ]
+                for combo in combine:
+                    if check_shift_combo == combo[0]:
+                        keyboard.press(combo[1])
+                        press_keys = []
+
+            for key in press_keys:
+                keyboard.press(key)
+
+        self.process_combos(key, time, pressed)
+        self.process_sequences(key, time, pressed)
 
         if pressed:
-            if process_key:
-                keyboard.press(key)
             self.key_pressed[key] = time
+            if len(self.key_pressed) == 1:
+                if self.repeat_needed(key):
+                    self.dbg['DEBUG'].tr(f"schedule repeat: {key}")
+                    self.run_repeat(key, self.key_repeat_delay)
         else:
+            if key == 'morse':
+                try:
+                    self.dbg['DEBUG'].tr(f"morse: {self.key_pressed}")
+                    press_duration = time - self.key_pressed[key]
+                    if press_duration < 100:
+                        keyboard.write('.')
+                    else:
+                        keyboard.write('-')
+                except:
+                    pass
             if key in self.key_pressed:
                 del self.key_pressed[key]
+                if len(self.key_pressed) == 0:
+                    try:
+                        self.key_repeat_scheduler.cancel(self.key_repeat_sched_event)
+                        self.key_repeat_sched_event = None
+                        self.dbg['DEBUG'].tr(f"schedule repeat canceled: {key}")
+                    except:
+                        pass
             keyboard.release(key)
 
         # push on key event stack
         self.key_event_stack.append(((row, col), time, pressed))
         if len(self.key_event_stack) > 100:
             self.key_event_stack.pop(0)
+
+    def run_repeat(self, key, time):
+        self.dbg['REPEAT'].tr(f"run_repeat: {key}, {time}")
+        def run_repeat_scheduler(key):
+            self.key_repeat_sched_event = self.key_repeat_scheduler.enter(time, 1, self.key_repeat, (key,))
+            self.key_repeat_scheduler.run()
+        threading.Thread(target=run_repeat_scheduler, args=(key,)).start()
