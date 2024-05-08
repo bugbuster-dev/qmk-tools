@@ -13,6 +13,17 @@ class KeychronQ3Max:
     DEFAULT_LAYER   = { 'm':0, 'w':2 }
     NUM_LAYERS      = 8
     #---------------------------------------------------------------------------
+    KEY_LAYOUT = {
+        'win': [
+        ['esc'      , 'f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9', 'f10', 'f11', 'f12', 'volume mute', 'print screen', 'scroll lock', 'pause'],
+        ['`'        ,  '1',  '2',  '3',  '4',  '5',  '6',  '7',  '8',  '9',   '0',   '-',   '=', 'backspace', 'morse', 'home', 'page up'],
+        ['tab'      ,  'q',  'w',  'e',  'r',  't',  'y',  'u',  'i',   'o',   'p',   '[', ']', '\\', 'delete', 'end', 'page down'],
+        ['caps lock' ,  'a',  's',  'd',  'f',  'g',  'h',  'j',  'k',   'l',   ';',  '\'', '', 'enter', '', ''],
+        ['left shift',   '',  'z',  'x',  'c',  'v',  'b',  'n',  'm',   ',',   '.',   '/', '', 'right shift', '', 'up', ''],
+        ['left ctrl', 'left windows', 'left menu', '', '', '', 'space', '', '', '', 'right menu', 'right windows', 'fn', 'ctrl', 'left', 'down', 'right']]
+    }
+
+    #---------------------------------------------------------------------------
     def __init__(self):
         pass
 

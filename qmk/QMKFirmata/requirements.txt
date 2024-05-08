@@ -8,3 +8,4 @@ pywin32
 pyfirmata2
 websockets
 keyboard
+pysinewave
