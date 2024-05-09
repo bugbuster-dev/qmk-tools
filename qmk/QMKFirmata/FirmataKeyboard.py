@@ -91,8 +91,10 @@ class SerialRawHID(serial.SerialBase):
     def _read_msg(self):
         try:
             data = bytearray(self.hid_device.read(self.epsize, self.timeout))
-            #self.dbg.tr(f"rawhid read:{data.hex(' ')}")
-            data = data.rstrip(bytearray([0])) # remove trailing zeros
+            # todo may strip trailing zeroes after END_SYSEX
+            #data = data.rstrip(bytearray([0])) # remove trailing zeros
+            #if len(data) > 0:
+                #self.dbg.tr(f"rawhid read:{data.hex(' ')}")
         except Exception as e:
             data = bytearray()
 
@@ -211,6 +213,7 @@ class FirmataKeybCmd_v0_1:
     ID_DYNLD_FUNEXEC    = 251 # execute dynamic loaded function
 
 class FirmataKeybCmd_v0_2(FirmataKeybCmd_v0_1):
+    ID_CLI                  = 3
     ID_CONFIG_LAYOUT        = 8
     ID_CONFIG               = 9
     ID_KEYPRESS_EVENT       = 10
@@ -283,8 +286,9 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.dbg = {}
         self.dbg['ERROR']           = DebugTracer(print=1, trace=1, obj=self)
         self.dbg['DEBUG']           = DebugTracer(print=0, trace=1, obj=self)
+        self.dbg['CONSOLE']         = DebugTracer(print=1, trace=1, obj=self)
         self.dbg['SYSEX_COMMAND']   = DebugTracer(print=0, trace=1, obj=self)
-        self.dbg['SYSEX_RESPONSE']  = DebugTracer(print=0, trace=1, obj=self)
+        self.dbg['SYSEX_RESPONSE']  = DebugTracer(print=1, trace=1, obj=self)
         self.dbg['SYSEX_PUB']       = DebugTracer(print=0, trace=1, obj=self)
         self.dbg['RGB_BUF']         = DebugTracer(print=0, trace=1, obj=self)
         dbg = self.dbg['DEBUG']
@@ -567,8 +571,21 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                     value = struct.unpack_from('<Q', buf, off)[0]
                 elif field_type == TYPE_FLOAT:
                     value = struct.unpack_from('<f', buf, off)[0]
-                elif field_type == TYPE_ARRAY:
-                    value = buf[off:off+field_size]
+                elif (field_type & TYPE_ARRAY) == TYPE_ARRAY:
+                    item_type = field_type & ~TYPE_ARRAY
+                    # item type size depends on item type
+                    if item_type == TYPE_UINT8:
+                        item_type_size = 1
+                    elif item_type == TYPE_UINT16:
+                        item_type_size = 2
+                    elif item_type == TYPE_UINT32:
+                        item_type_size = 4
+                    elif item_type == TYPE_UINT64:
+                        item_type_size = 8
+                    elif item_type == TYPE_FLOAT:
+                        item_type_size = 4
+                    #field_type_size = 1 # todo: for now array always as byte array
+                    value = buf[off:off+(field_size*item_type_size)]
                 else:
                     value = 0
                 field_values[field_id] = value
@@ -579,12 +596,23 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             self.signal_config.emit((config_id, field_values))
 
     def console_line_handler(self, *data):
-        line = pyfirmata2.util.two_byte_iter_to_str(data)
-        #self.dbg['DEBUG'].tr(f"console: {line}")
+        #self.dbg['CONSOLE'].tr(f"console: {data}")
+        if len(data) % 2 != 0:
+            data = data[:-1 ]
+        line = self._sysex_data_to_bytearray(data).decode('utf-8', 'ignore')
         if line:
             self.signal_console_output.emit(line)
 
     #-------------------------------------------------------------------------------
+    def keyb_set_cli_command(self, cmd):
+        dbg = self.dbg['SYSEX_COMMAND']
+        dbg.tr(f"keyb_set_cli_command: {cmd}")
+        data = bytearray()
+        data.append(FirmataKeybCmd.ID_CLI)
+        data.extend(cmd.encode('utf-8'))
+        data.extend([0])
+        self.send_sysex(FirmataKeybCmd.SET, data)
+
     def keyb_set_rgb_buf(self, img, rgb_multiplier):
         if self.dbg_rgb_buf:
             self.dbg['RGB_BUF'].tr("-"*120)
@@ -724,7 +752,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                     struct.pack_into('<H', data, off, value)
                 elif field_type == TYPE_UINT32:
                     struct.pack_into('<I', data, off, value)
-                elif field_type == TYPE_UINT64: # todo: remove uint64/float/array
+                elif field_type == TYPE_UINT64: # todo: remove unused types
                     struct.pack_into('<Q', data, off, value)
                 elif field_type == TYPE_FLOAT:
                     value = float(field_values[field_id])
@@ -834,7 +862,7 @@ class KeyMachine:
 
         try:
             from pysinewave import SineWave
-            self.morse_beep = SineWave(pitch = 12, pitch_per_second = 10, decibels=-200, decibels_per_second=10000)
+            self.morse_beep = SineWave(pitch = 14, pitch_per_second = 10, decibels=-200, decibels_per_second=10000)
             self.morse_beep.play()
         except:
             self.morse_beep = None
@@ -1001,6 +1029,7 @@ class KeyMachine:
                 '-.--': 'Y', '--..': 'Z',
                 '.----': '1', '..---': '2', '...--': '3', '....-': '4', '.....': '5',
                 '-....': '6', '--...': '7', '---..': '8', '----.': '9', '-----': '0',
+                '...---...': 'SOS',
                 '': ' '
             }
             morse = ''.join([tap[0] for tap in tap_stack])
@@ -1023,7 +1052,6 @@ class KeyMachine:
         SPACE_CHAR      = int(3*DIT_DURATION*SPACING_FACTOR)
         SPACE_WORD      = int(7*DIT_DURATION*SPACING_FACTOR)
 
-
         if self.morse_handler_sched_event:
             try:
                 self.morse_handler_scheduler.cancel(self.morse_handler_sched_event)
@@ -1040,10 +1068,9 @@ class KeyMachine:
                 self.morse_beep.set_volume(-200)
 
             press_duration = self.time_elapsed(self.key_pressed[key], time)
+            dit_dah = '-'
             if press_duration < DIT_DURATION:
                 dit_dah = '.'
-            else:
-                dit_dah = '-'
 
             if len(self.morse_tap_stack) > 0:
                 last_tap = self.morse_tap_stack[-1]

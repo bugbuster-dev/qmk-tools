@@ -5,6 +5,8 @@ class KeychronQ3Max:
     MCU     = "STM32F402","cortex-m4","le32"
     PORT_TYPE   = "rawhid"
 
+    MAXTRIX_W       = 17
+    MAXTRIX_H       = 6
     RGB_MAXTRIX_W   = 17
     RGB_MAXTRIX_H   = 6
     NUM_RGB_LEDS    = 87
@@ -34,6 +36,14 @@ class KeychronQ3Max:
     @staticmethod
     def vid_pid():
         return (KeychronQ3Max.VID, KeychronQ3Max.PID)
+
+    @staticmethod
+    def mcu():
+        return KeychronQ3Max.MCU
+
+    @staticmethod
+    def matrix_size():
+        return (KeychronQ3Max.MAXTRIX_W, KeychronQ3Max.MAXTRIX_H)
 
     @staticmethod
     def rgb_matrix_size():
@@ -110,6 +120,9 @@ class KeychronQ3Max:
             12: "swap_escape_capslock",
             13: "autocorrect_enable",
         }
+        CONFIG_KEYMAP_LAYOUT = {
+            1: "keymap layout",
+        }
         CONFIG_DEBOUNCE = {
             1: "debounce",
         }
@@ -122,8 +135,9 @@ class KeychronQ3Max:
             2: ("debug user", CONFIG_DEBUG_USER),
             3: ("rgb", CONFIG_RGB),
             4: ("keymap", CONFIG_KEYMAP),
-            5: ("debounce", CONFIG_DEBOUNCE),
-            6: ("devel", CONFIG_DEVEL),
+            5: ("keymap layout", CONFIG_KEYMAP_LAYOUT),
+            6: ("debounce", CONFIG_DEBOUNCE),
+            7: ("devel", CONFIG_DEVEL),
         }
         TYPES = { #todo move to common
             1: "bit",
@@ -132,14 +146,14 @@ class KeychronQ3Max:
             4: "uint32",
             5: "uint64",
             6: "float",
-            7: "array",
+            0x80: "array",
             "bit":      1,
             "uint8":    2,
             "uint16":   3,
             "uint32":   4,
             "uint64":   5,
             "float":    6,
-            "array":    7,
+            "array":    0x80,
         }
 
         @staticmethod
@@ -159,7 +173,11 @@ class KeychronQ3Max:
         @staticmethod
         def config_field_type(field_type):
             try:
-                return KeychronQ3Max.KeybConfiguration_v0_1.TYPES[field_type]
+                if field_type & 0x80:
+                    item_type = field_type & 0x7F
+                    return 'array:' + KeychronQ3Max.KeybConfiguration_v0_1.TYPES[item_type]
+                else:
+                    return KeychronQ3Max.KeybConfiguration_v0_1.TYPES[field_type]
             except:
                 return "unknown"
 

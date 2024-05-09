@@ -58,6 +58,37 @@ class WSServer(QThread):
 
 #-------------------------------------------------------------------------------
 class ConsoleTab(QWidget):
+    signal_cli_command = Signal(str)
+
+    class CommandLineEdit(QLineEdit):
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            self.command_history = []
+            self.history_index = 0
+
+        def keyPressEvent(self, event):
+            if event.key() == Qt.Key.Key_Up:
+                if self.history_index > 0:
+                    self.history_index -= 1
+                    self.setText(self.command_history[self.history_index])
+                    self.selectAll()
+                return
+            elif event.key() == Qt.Key.Key_Down:
+                if self.history_index < len(self.command_history) - 1:
+                    self.history_index += 1
+                    self.setText(self.command_history[self.history_index])
+                elif self.history_index == len(self.command_history) - 1:
+                    self.history_index += 1
+                    self.clear()
+                return
+            super().keyPressEvent(event)
+
+        def store_clear_command(self):
+            command = self.text().strip()
+            if command:
+                self.command_history.append(command)
+                self.history_index = len(self.command_history)
+                self.clear()
 
     def __init__(self, keyboard_model):
         self.dbg = {}
@@ -68,23 +99,35 @@ class ConsoleTab(QWidget):
             self.keyboard_config = self.keyboard_model.keyb_config()
         except:
             self.keyboard_config = None
+        self.dbg['DEBUG'].tr(f"keyboard_model: {self.keyboard_model} {self.keyboard_config}")
 
         self.max_text_length = 2000000
         self.max_console_file_size = self.max_text_length*2
         self.console_text_len = 0
         self.console_file_clear = True
+
         super().__init__()
         self.init_gui()
-        self.dbg['DEBUG'].tr(f"keyboard_model: {self.keyboard_model} {self.keyboard_config}")
+
+    def handle_cli_command(self):
+        cmd = self.cli.text()
+        self.dbg['DEBUG'].tr(f"cli command: {cmd}")
+        self.signal_cli_command.emit(cmd)
+        self.cli.store_clear_command()
 
     def init_gui(self):
         # console output
         layout = QVBoxLayout()
+        self.cli = self.CommandLineEdit()
         self.console_output = QTextEdit()
         self.console_output.setReadOnly(True)
         font = QFont()
-        font.setFamily("Courier New");
-        self.console_output.setFont(font);
+        font.setFamily("Courier New")
+        self.cli.setFont(font)
+        self.console_output.setFont(font)
+        # todo cli handle on return
+        self.cli.returnPressed.connect(self.handle_cli_command)
+        layout.addWidget(self.cli)
         layout.addWidget(self.console_output)
         self.setLayout(layout)
 
@@ -1137,10 +1180,11 @@ class KeybConfigTab(QWidget):
     signal_keyb_get_config = Signal(int)
     signal_macwin_mode = Signal(str)
 
-    def __init__(self):
+    def __init__(self, keyboard_model):
         self.dbg = {}
         self.dbg['DEBUG'] = DebugTracer(print=1, trace=1, obj=self)
 
+        self.keyboard_model = keyboard_model
         super().__init__()
         self.init_gui()
 
@@ -1173,9 +1217,6 @@ class KeybConfigTab(QWidget):
             self.dbg['DEBUG'].tr(f"update_keyb_config:signal emit {config}")
             self.signal_keyb_set_config.emit(config)
 
-    def update_macwin_mode(self, macwin_mode):
-        self.mac_win_mode_selector.setCurrentIndex(0 if macwin_mode == 'm' else 1)
-
     def update_keyb_macwin_mode(self):
         macwin_mode = self.mac_win_mode_selector.currentText()
         self.signal_macwin_mode.emit(macwin_mode)
@@ -1205,14 +1246,19 @@ class KeybConfigTab(QWidget):
         layout = QVBoxLayout()
         layout.addLayout(hlayout)
 
+        #---------------------------------------
+        # config tree view
         model = QStandardItemModel()
         self.treeView = QTreeView()
         self.treeView.setModel(model)
-        self.treeView.setFixedHeight(600)
+        self.treeView.setFixedHeight(800)
         layout.addWidget(self.treeView)
 
         layout.addStretch(1)
         self.setLayout(layout)
+
+    def update_macwin_mode(self, macwin_mode):
+        self.mac_win_mode_selector.setCurrentIndex(0 if macwin_mode == 'm' else 1)
 
     def update_config_model(self, config_model):
         self.dbg['DEBUG'].tr(f"update_config_model: {config_model}")
@@ -1230,7 +1276,42 @@ class KeybConfigTab(QWidget):
         for i in range(config_item.rowCount()): # todo: row number may not match field id
             try:
                 value_item = config_item.child(i, 3)
-                value_item.setText(f"{field_values[i+1]}")
+                type_item = config_item.child(i, 1)
+                field_value = field_values[i+1]
+                if type(field_value) == bytearray:
+                    value_item.setFont(QFont("Courier New", 7)) # todo move this to update_config_model
+                    #self.dbg['DEBUG'].tr(f"update_gui_config: {type_item.text()}")
+                    hex_string = ''
+                    if type_item.text().endswith("uint8"):
+                        item_size = 1
+                        items_per_line = 16
+                        format_str = "%02x "
+                    elif type_item.text().endswith("uint16"):
+                        item_size = 2
+                        items_per_line = 10
+                        format_str = "%04x "
+                        if config_item.text() == "keymap layout":
+                            items_per_line = self.keyboard_model.matrix_size()[0]
+                    elif type_item.text().endswith("uint32"):
+                        item_size = 4
+                        items_per_line = 8
+                        format_str = "%08x "
+                    elif type_item.text().endswith("uint64"):
+                        item_size = 8
+                        items_per_line = 4
+                        format_str = "%016x "
+
+                    for i in range(0, len(field_value), item_size):
+                        val = int.from_bytes(field_value[i:i+item_size], 'little') # todo endianess from keyboard mcu, (probably arm le)
+                        hex_string += format_str % val
+                        #hex_string += f"{val:02x} "
+                        if i % (items_per_line*item_size) == (items_per_line*item_size) - item_size:
+                            hex_string += '\n'
+                    formatted_string = hex_string
+
+                    field_value = formatted_string
+                    #field_value = field_value.hex(' ')
+                value_item.setText(f"{field_value}")
             except Exception as e:
                 self.dbg['DEBUG'].tr(f"update_gui_config: {e}")
 
@@ -1404,7 +1485,7 @@ class MainWindow(QMainWindow):
         self.console_tab = ConsoleTab(self.keyboard.keyboardModel)
         self.rgb_matrix_tab = RGBMatrixTab(self.keyboard.keyboardModel)
         self.layer_switch_tab = LayerAutoSwitchTab(num_keyb_layers)
-        self.keyb_config_tab = KeybConfigTab()
+        self.keyb_config_tab = KeybConfigTab(self.keyboard.keyboardModel)
 
         tab_widget.addTab(self.console_tab, 'console')
         tab_widget.addTab(self.rgb_matrix_tab, 'rgb matrix')
@@ -1420,6 +1501,7 @@ class MainWindow(QMainWindow):
         self.keyboard.signal_config_model.connect(self.keyb_config_tab.update_config_model)
         self.keyboard.signal_config.connect(self.keyb_config_tab.update_gui_config)
 
+        self.console_tab.signal_cli_command.connect(self.keyboard.keyb_set_cli_command)
         self.rgb_matrix_tab.rgb_video_tab.signal_rgb_frame.connect(self.keyboard.keyb_set_rgb_buf)
         self.rgb_matrix_tab.rgb_animation_tab.signal_rgb_frame.connect(self.keyboard.keyb_set_rgb_buf)
         self.rgb_matrix_tab.rgb_audio_tab.signal_rgb_frame.connect(self.keyboard.keyb_set_rgb_buf)
