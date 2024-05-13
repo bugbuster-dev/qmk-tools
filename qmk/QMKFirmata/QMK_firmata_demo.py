@@ -125,7 +125,6 @@ class ConsoleTab(QWidget):
         font.setFamily("Courier New")
         self.cli.setFont(font)
         self.console_output.setFont(font)
-        # todo cli handle on return
         self.cli.returnPressed.connect(self.handle_cli_command)
         layout.addWidget(self.cli)
         layout.addWidget(self.console_output)
@@ -1501,7 +1500,7 @@ class MainWindow(QMainWindow):
         self.keyboard.signal_config_model.connect(self.keyb_config_tab.update_config_model)
         self.keyboard.signal_config.connect(self.keyb_config_tab.update_gui_config)
 
-        self.console_tab.signal_cli_command.connect(self.keyboard.keyb_set_cli_command)
+        self.console_tab.signal_cli_command.connect(self.keyboard.run_cli_script)
         self.rgb_matrix_tab.rgb_video_tab.signal_rgb_frame.connect(self.keyboard.keyb_set_rgb_buf)
         self.rgb_matrix_tab.rgb_animation_tab.signal_rgb_frame.connect(self.keyboard.keyb_set_rgb_buf)
         self.rgb_matrix_tab.rgb_audio_tab.signal_rgb_frame.connect(self.keyboard.keyb_set_rgb_buf)

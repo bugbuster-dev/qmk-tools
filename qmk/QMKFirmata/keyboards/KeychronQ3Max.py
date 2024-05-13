@@ -139,6 +139,10 @@ class KeychronQ3Max:
             6: ("debounce", CONFIG_DEBOUNCE),
             7: ("devel", CONFIG_DEVEL),
         }
+        CONFIG_FLAGS = {
+            1: "flash",
+            2: "readonly",
+        }
         TYPES = { #todo move to common
             1: "bit",
             2: "uint8",
@@ -220,7 +224,12 @@ class KeychronQ3Max:
                         field_name = create_item(KeychronQ3Max.KeybConfiguration_v0_1.config_field_name(config_id, field_id))
                         field_type = create_item(KeychronQ3Max.KeybConfiguration_v0_1.config_field_type(field_info[0]))
                         field_size = create_item(field_info[2])
-                        field_value = create_item("", editable=True)
+                        field_flags = field_info[3]
+                        if field_flags & 0x2:
+                            editable = False
+                        else:
+                            editable = True
+                        field_value = create_item("", editable=editable)
                         field = [field_name, field_type, field_size, field_value]
                         config_item.appendRow(field)
                     except:

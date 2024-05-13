@@ -5,12 +5,13 @@ from PySide6.QtGui import QImage, QColor, QPainter
 import pyfirmata2, hid, serial, time, numpy as np
 import glob, inspect, os, importlib.util, struct
 from pathlib import Path
-import keyboard, sched, threading
-
+import keyboard, sched, threading, re
 
 from DebugTracer import DebugTracer
 
 #todo: add license
+# this program is like a box of bugs, you never know what you're gonna get
+
 #-------------------------------------------------------------------------------
 #region list com ports
 def list_com_ports():
@@ -213,11 +214,11 @@ class FirmataKeybCmd_v0_1:
     ID_DYNLD_FUNEXEC    = 251 # execute dynamic loaded function
 
 class FirmataKeybCmd_v0_2(FirmataKeybCmd_v0_1):
-    ID_CLI                  = 3
+    ID_CLI                  = 3 # debug mask deprecated
+    ID_STATUS               = 4 # status, follow up with status id
     ID_CONFIG_LAYOUT        = 8
     ID_CONFIG               = 9
     ID_KEYPRESS_EVENT       = 10
-    ID_CONFIG_EXTENDED      = 0
 
 # todo: dictionary with version as key
 FirmataKeybCmd = FirmataKeybCmd_v0_2
@@ -278,6 +279,97 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
     RAW_EPSIZE_FIRMATA = 64 # 32
     MAX_LEN_SYSEX_DATA = 60
 
+    class KeybCli:
+        class DictOnReadWrite(dict):
+            def __init__(self, kb_cli, on_read, on_write):
+                self.kb_cli = kb_cli
+                self.on_read = on_read
+                self.on_write = on_write
+
+            def __getitem__(self, key):
+                try:
+                    return self.on_read(key)
+                except:
+                    return -1
+
+            def __setitem__(self, key, val):
+                try:
+                    self.on_write(key, val)
+                except:
+                    return -1
+
+        def __init__(self, keyboard):
+            self.keyboard = keyboard
+            self.m = self.DictOnReadWrite(self, self.on_mem_read, self.on_mem_write) # memory access
+            self.e = self.DictOnReadWrite(self, self.on_eeprom_read, self.on_eeprom_write) # eeprom access
+            self.fn = {} # function table, todo load map file
+
+        def on_mem_read(self, key):
+            try:
+                addr = key[0]
+                size = key[1]
+            except:
+                addr = key
+                size = 1
+            #print(f"on_mem_read: key={key}, addr={addr}, size={size}")
+            resp = self.keyboard.keyb_set_cli_command(f"mr {hex(addr)} {size}")
+            if size == 1:
+                return resp[0]
+            if size == 2:
+                return struct.unpack_from('<H', resp)[0]
+            if size == 4:
+                return struct.unpack_from('<I', resp)[0]
+            return resp
+
+        def on_mem_write(self, key, val):
+            try:
+                addr = key[0]
+                size = key[1]
+            except:
+                addr = key
+                size = 1
+            #print(f"on_mem_write: key={key}, addr={addr}, size={size}")
+            resp = self.keyboard.keyb_set_cli_command(f"mw {hex(addr)} {size} {hex(val)}")
+
+        def on_eeprom_read(self, key):
+            if key == "layout":
+                resp = self.keyboard.keyb_set_cli_command("el")
+                return resp
+            try:
+                addr = key[0]
+                size = key[1]
+            except:
+                addr = key
+                size = 1
+            #print(f"on_eeprom_read: key={key}, addr={addr}, size={size}")
+            resp = self.keyboard.keyb_set_cli_command(f"er {hex(addr)} {size}")
+            if size == 1:
+                return resp[0]
+            if size == 2:
+                return struct.unpack_from('<H', resp)[0]
+            if size == 4:
+                return struct.unpack_from('<I', resp)[0]
+            return resp
+
+        def on_eeprom_write(self, key, val):
+            try:
+                addr = key[0]
+                size = key[1]
+            except:
+                addr = key
+                size = 1
+            #print(f"on_eeprom_write: key={key}, addr={addr}, size={size}")
+            resp = self.keyboard.keyb_set_cli_command(f"ew {hex(addr)} {size} {hex(val)}")
+
+        def call(self, addr):
+            resp = self.keyboard.keyb_set_cli_command(f"c {hex(addr)}")
+
+        def set(self, key, val):
+            print("todo")
+
+        def get(self, key):
+            print("todo")
+
     def __init__(self, *args, **kwargs):
         QtCore.QObject.__init__(self)
         #----------------------------------------------------
@@ -287,12 +379,15 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.dbg['ERROR']           = DebugTracer(print=1, trace=1, obj=self)
         self.dbg['DEBUG']           = DebugTracer(print=0, trace=1, obj=self)
         self.dbg['CONSOLE']         = DebugTracer(print=1, trace=1, obj=self)
+        self.dbg['CLI']             = DebugTracer(print=1, trace=1, obj=self)
         self.dbg['SYSEX_COMMAND']   = DebugTracer(print=0, trace=1, obj=self)
         self.dbg['SYSEX_RESPONSE']  = DebugTracer(print=1, trace=1, obj=self)
         self.dbg['SYSEX_PUB']       = DebugTracer(print=0, trace=1, obj=self)
         self.dbg['RGB_BUF']         = DebugTracer(print=0, trace=1, obj=self)
         dbg = self.dbg['DEBUG']
         #endregion
+
+        self.kb_cli = self.KeybCli(self)
         #----------------------------------------------------
         self.samplerThread = None
 
@@ -393,6 +488,9 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         else:
             self.auto_setup()
 
+        self.keyb_cli_response = {}
+        self.keyb_cli_seq = 0
+
         self.config_layout = {}
         self.config_model = None
         self.add_cmd_handler(pyfirmata2.STRING_DATA, self.console_line_handler)
@@ -404,46 +502,23 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.send_sysex(pyfirmata2.REPORT_VERSION, [])
         self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_CONFIG_LAYOUT])
         self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_MACWIN_MODE])
-        self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_BATTERY_STATUS])
+        self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_STATUS])
+
+        self.pack_endian = '<' # most likely little endian
+        try:
+            if self.keyboardModel.MCU[2].startswith("be"):
+                self.pack_endian = '>' # big endian
+        except:
+            pass
 
         time.sleep(1)
         print("-"*80)
         print(f"{self}")
         print(f"qmk firmata version:{self.firmware} {self.firmware_version}, firmata={self.get_firmata_version()}")
+        print(f"mcu:{self.keyboardModel.MCU} {self.pack_endian}")
         print("-"*80)
 
         self.key_machine = KeyMachine(self)
-        if self.key_machine:
-            def on_test_combo1():
-                keyboard.write(u"hello äçξضяשå両めษᆆऔጩᗗ¿")
-
-            def on_test_combo_leader():
-                keyboard.write("leader key todo")
-
-            def on_test_sequence():
-                keyboard.write("hello hello hello")
-
-            def on_windows_lock():
-                os.system("rundll32.exe user32.dll,LockWorkStation")
-
-            def on_test_sequence_1():
-                keyboard.write("pam pam")
-
-            def on_test_sequence_tap_1():
-                keyboard.write("1st tap")
-            def on_test_sequence_tap_2():
-                keyboard.write("2nd tap")
-            def on_test_sequence_tap_4():
-                keyboard.write("all tapped!")
-
-            self.key_machine.register_combo(['left ctrl','left menu','space','m'], on_test_combo1)
-            self.key_machine.register_combo(['fn',';'], on_test_combo_leader)
-            self.key_machine.register_combo(['left windows','l'], on_windows_lock)
-
-            self.key_machine.register_sequence(['1','2','3'], [(0,300), (0,300)], on_test_sequence)
-            self.key_machine.register_sequence(['pause','pause','pause','pause'], [(0,300), (0,300), (0,300)], [ on_test_sequence_tap_1, on_test_sequence_tap_2, None, on_test_sequence_tap_4])
-            self.key_machine.register_sequence(['right','right','right','right','right'], [(350,500), (100,250), (100,250), (300,450)], on_test_sequence_1)
-
         try:
             for config_id in self.config_layout:
                 self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_CONFIG, config_id])
@@ -454,7 +529,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         config_auto_update = False
         if config_auto_update and len(self.config_layout) > 0:
             self.timer_config_update = QtCore.QTimer(self)
-            self.timer_config_update.timeout.connect(self.keyb_get_config)
+            self.timer_config_update.timeout.connect(self.keyb_config)
             self.timer_config_update.start(500)
 
     def stop(self):
@@ -486,7 +561,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         if buf[0] == FirmataKeybCmd.ID_KEYPRESS_EVENT:
             col = buf[1]
             row = buf[2]
-            time = struct.unpack_from('<H', buf, 3)[0]
+            time = struct.unpack_from('<H', buf, 3)[0] # todo use self.pack_endian
             type = buf[5]
             pressed = buf[6]
             #dbg.tr(f"key press event: row={row}, col={col}, time={time}, type={type}, pressed={pressed}")
@@ -502,27 +577,37 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             dbg.tr("-"*40)
             dbg.tr(f"sysex response:\n{buf.hex(' ')}")
 
+        if buf[0] == FirmataKeybCmd.ID_CLI:
+            dbg.tr(f"cli response: {buf}")
+            cli_seq = buf[1]
+            buf.pop(0); buf.pop(0)
+            self.keyb_cli_response[cli_seq] = buf
+            return
         if buf[0] == FirmataKeybCmd.ID_MACWIN_MODE:
             macwin_mode = chr(buf[1])
             dbg.tr(f"macwin mode: {macwin_mode}")
             self.signal_macwin_mode.emit(macwin_mode)
             self.signal_default_layer.emit(self.default_layer(macwin_mode))
-        elif buf[0] == FirmataKeybCmd.ID_BATTERY_STATUS:
+            return
+        if buf[0] == FirmataKeybCmd.ID_STATUS:
+            # todo
             battery_charging = buf[1]
             battery_level = buf[2]
             dbg.tr(f"battery charging: {battery_charging}, battery level: {battery_level}")
-        elif buf[0] == FirmataKeybCmd.ID_CONFIG_LAYOUT:
+            return
+        if buf[0] == FirmataKeybCmd.ID_CONFIG_LAYOUT:
             off = 1
             config_id = buf[off]; off += 1
             config_size = buf[off]; off += 1
-            dbg.tr(f"config id: {config_id}, size: {config_size}")
+            config_flags = buf[off]; off += 1
+            dbg.tr(f"config id: {config_id}, size: {config_size}, flags: {config_flags}")
             config_fields = {}
             config_field = buf[off]
             while config_field != 0:
                 field_type = buf[off+1]
                 field_offset = buf[off+2]
                 field_size = buf[off+3]
-                config_fields[config_field] = (field_type, field_offset, field_size)
+                config_fields[config_field] = (field_type, field_offset, field_size, config_flags)
                 off += 4
                 try:
                     config_field = buf[off]
@@ -533,7 +618,8 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             if dbg.print:
                 self.keyboardModel.keyb_config().print_config_layout(config_id, config_fields)
             self.config_model = self.keyboardModel.keyb_config().keyb_config_model(self.config_model, config_id, config_fields)
-        elif buf[0] == FirmataKeybCmd.ID_CONFIG:
+            return
+        if buf[0] == FirmataKeybCmd.ID_CONFIG:
             TYPE_BIT = self.keyboardModel.keyb_config().TYPES["bit"]
             TYPE_UINT8 = self.keyboardModel.keyb_config().TYPES["uint8"]
             TYPE_UINT16 = self.keyboardModel.keyb_config().TYPES["uint16"]
@@ -573,7 +659,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                     value = struct.unpack_from('<f', buf, off)[0]
                 elif (field_type & TYPE_ARRAY) == TYPE_ARRAY:
                     item_type = field_type & ~TYPE_ARRAY
-                    # item type size depends on item type
+                    # array item size
                     if item_type == TYPE_UINT8:
                         item_type_size = 1
                     elif item_type == TYPE_UINT16:
@@ -584,7 +670,6 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                         item_type_size = 8
                     elif item_type == TYPE_FLOAT:
                         item_type_size = 4
-                    #field_type_size = 1 # todo: for now array always as byte array
                     value = buf[off:off+(field_size*item_type_size)]
                 else:
                     value = 0
@@ -594,6 +679,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                     break
             # signal to gui the config values
             self.signal_config.emit((config_id, field_values))
+            return
 
     def console_line_handler(self, *data):
         #self.dbg['CONSOLE'].tr(f"console: {data}")
@@ -603,15 +689,79 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         if line:
             self.signal_console_output.emit(line)
 
+    def run_cli_script(self, script):
+        globals_dict = globals()
+        globals_dict.update({ "kb": self.kb_cli })
+        exec(script, globals_dict, {})
+
     #-------------------------------------------------------------------------------
     def keyb_set_cli_command(self, cmd):
-        dbg = self.dbg['SYSEX_COMMAND']
+        dbg = self.dbg['CLI']
         dbg.tr(f"keyb_set_cli_command: {cmd}")
+
+        def cli_cmd_encode(cmd_str, endian):
+            CLI_CMD_MEMORY      = 0x01
+            CLI_CMD_EEPROM      = 0x02
+            CLI_CMD_CALL        = 0x03
+            CLI_CMD_WRITE       = 0x80
+            try:
+                cmd_args = cmd_str.strip().split(' ')
+                cmd = cmd_args[0]
+                if cmd[0] == 'm' or cmd[0] == 'e':
+                    cli_cmd = CLI_CMD_MEMORY if cmd[0] == 'm' else CLI_CMD_EEPROM
+                    if cmd[1] == 'r':
+                        addr = int(cmd_args[1], 16)
+                        size = int(cmd_args[2])
+                        #print(f"cli_cmd_encode: {cli_cmd}, {addr}, {size}")
+                        ba = bytearray([cli_cmd])
+                        return ba + bytearray(struct.pack(endian+'I', addr)) + bytearray([size%256])
+                    if cmd[1] == 'w':
+                        addr = int(cmd_args[1], 16)
+                        size = int(cmd_args[2])
+                        val = int(cmd_args[3], 16)
+                        #print(f"cli_cmd_encode: {cli_cmd}, {addr}, {size}, {val}")
+                        ba = bytearray([cli_cmd|CLI_CMD_WRITE])
+                        return ba + bytearray(struct.pack(endian+'I', addr)) + bytearray([size%256]) + bytearray(struct.pack(endian+'I', val))
+                if cmd[0] == 'c':
+                    addr = int(cmd_args[1], 16)
+                    #print(f"cli_cmd_encode: {CLI_CMD_CALL}, {addr}")
+                    return bytearray([CLI_CMD_CALL]) + bytearray(struct.pack(endian+'I', addr))
+            except:
+                return None
+
+        cmd_ba = cli_cmd_encode(cmd, self.pack_endian)
+        if dbg.print:
+            dbg.tr(f"keyb_set_cli_command: cmd_ba: {cmd_ba.hex(' ')}")
+
+        cli_seq = self.keyb_cli_seq % 256
+        self.keyb_cli_seq += 1
         data = bytearray()
         data.append(FirmataKeybCmd.ID_CLI)
-        data.extend(cmd.encode('utf-8'))
-        data.extend([0])
+        data.append(cli_seq)
+        data.extend(cmd_ba)
         self.send_sysex(FirmataKeybCmd.SET, data)
+
+        # todo: wait for response
+        wait_for_response = True
+        response = None
+        if wait_for_response:
+            keyb_poll_time = 1/1000
+            timed_out = False
+            start = time.monotonic()
+            while response == None and not timed_out:
+                time.sleep(keyb_poll_time*2)
+                try:
+                    response = self.keyb_cli_response[cli_seq]
+                    del self.keyb_cli_response[cli_seq]
+                except:
+                    timed_out = time.monotonic() - start > keyb_poll_time * 100
+
+            if dbg.print:
+                response_str = "none"
+                if response:
+                    response_str = response.hex(' ')
+                dbg.tr(f"keyb_set_cli_command: response: {response_str}")
+        return response
 
     def keyb_set_rgb_buf(self, img, rgb_multiplier):
         if self.dbg_rgb_buf:
@@ -832,7 +982,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
 class KeyMachine:
 
-    def __init__(self, keyboard):
+    def __init__(self, keyb):
         self.dbg = {}
         self.dbg['DEBUG']   = DebugTracer(print=0, trace=1, obj=self)
         self.dbg['REPEAT']  = DebugTracer(print=0, trace=1, obj=self)
@@ -840,9 +990,9 @@ class KeyMachine:
         self.dbg['SEQ']     = DebugTracer(print=0, trace=1, obj=self)
         self.dbg['MORSE']   = DebugTracer(print=1, trace=1, obj=self)
 
-        self.dbg['DEBUG'].tr(f"KeyMachine: {keyboard}")
-        self.keyboard = keyboard
-        self.key_layout = keyboard.keyboardModel.KEY_LAYOUT['win']
+        self.dbg['DEBUG'].tr(f"KeyMachine: {keyb}")
+        self.keyb = keyb
+        self.key_layout = keyb.keyboardModel.KEY_LAYOUT['win']
         self.key_event_stack = [] #todo remove if not needed
         self.key_pressed = {}
         self.combos = {}
@@ -866,6 +1016,38 @@ class KeyMachine:
             self.morse_beep.play()
         except:
             self.morse_beep = None
+
+        devel_test = True
+        if devel_test:
+            def on_test_combo1():
+                keyboard.write(u"hello äçξضяשå両めษᆆऔጩᗗ¿")
+
+            def on_test_combo_leader():
+                keyboard.write("leader key todo")
+
+            def on_test_sequence():
+                keyboard.write("hello hello hello")
+
+            def on_windows_lock():
+                os.system("rundll32.exe user32.dll,LockWorkStation")
+
+            def on_test_sequence_1():
+                keyboard.write("pam pam")
+
+            def on_test_sequence_tap_1():
+                keyboard.write("1st tap")
+            def on_test_sequence_tap_2():
+                keyboard.write("2nd tap")
+            def on_test_sequence_tap_4():
+                keyboard.write("all tapped!")
+
+            self.register_combo(['left ctrl','left menu','space','m'], on_test_combo1)
+            self.register_combo(['fn',';'], on_test_combo_leader)
+            self.register_combo(['left windows','l'], on_windows_lock)
+
+            self.register_sequence(['1','2','3'], [(0,300), (0,300)], on_test_sequence)
+            self.register_sequence(['pause','pause','pause','pause'], [(0,300), (0,300), (0,300)], [ on_test_sequence_tap_1, on_test_sequence_tap_2, None, on_test_sequence_tap_4])
+            self.register_sequence(['right','right','right','right','right'], [(350,500), (100,250), (100,250), (300,450)], on_test_sequence_1)
 
     def control_pressed(self):
         return self.key_pressed.get('left ctrl', 0) or self.key_pressed.get('ctrl', 0)
@@ -904,11 +1086,12 @@ class KeyMachine:
         self.combos[combo_keys] = (keys, handler)
         self.dbg['COMBO'].tr(f"register_combo: {combo_keys}, {keys}, {handler}")
 
-    # todo: leader key, tap dance, ...
-    def register_sequence(self, keys, timeout, handler):
+    # todo: flags/options[] to define behavior for different "sequence types" (leader key, tap dance, ...)
+    # - can define state change on key press/hold/release on each "sequence step"
+    def register_sequence(self, keys, timeout, handler, flags=[]):
         sequence_keys = "+".join(keys)
-        self.sequences[sequence_keys] = (keys, timeout, (0, 0), handler) # sequence state: (index, time)
-        self.dbg['SEQ'].tr(f"register_sequence: {sequence_keys}, {keys}, {timeout}, {handler}")
+        self.sequences[sequence_keys] = (keys, timeout, (0, 0), handler, flags) # sequence state: (index, time)
+        self.dbg['SEQ'].tr(f"register_sequence: {sequence_keys}, {keys}, {timeout}, {handler}, {flags}")
 
     @staticmethod
     def time_elapsed(time_begin, time_end):
@@ -1030,7 +1213,6 @@ class KeyMachine:
                 '.----': '1', '..---': '2', '...--': '3', '....-': '4', '.....': '5',
                 '-....': '6', '--...': '7', '---..': '8', '----.': '9', '-----': '0',
                 '...---...': 'SOS',
-                '': ' '
             }
             morse = ''.join([tap[0] for tap in tap_stack])
             if morse in morse_code:
@@ -1042,6 +1224,7 @@ class KeyMachine:
             char = morse_get_char(self.morse_tap_stack)
             self.morse_tap_stack = []
         self.dbg['MORSE'].tr(f"morse: {char}")
+        keyboard.write(' ')
 
     def handle_morse_key(self, key, time, pressed):
         # https://morsecode.world/international/timing.html
