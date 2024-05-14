@@ -1033,7 +1033,7 @@ class KeyMachine:
         self.morse_tap_stack = []
 
         try:
-            from pysinewave import SineWave
+            #from pysinewave import SineWave
             self.morse_beep = SineWave(pitch = 14, pitch_per_second = 10, decibels=-200, decibels_per_second=10000)
             self.morse_beep.play()
         except:

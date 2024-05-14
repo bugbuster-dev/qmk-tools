@@ -1,18 +1,22 @@
 import os, sys, time, hid, argparse, json
-import cv2, numpy as np, pyaudiowpatch as pyaudio
+import cv2, numpy as np
 import asyncio, websockets
 
 from PySide6 import QtCore
-from PySide6.QtCore import Qt, QThread, Signal, QTimer, QRegularExpression
-from PySide6.QtCore import QAbstractItemModel, QModelIndex
+from PySide6.QtCore import Qt, QThread, Signal, QTimer
 from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QFrame
 from PySide6.QtWidgets import QTextEdit, QPushButton, QFileDialog, QLabel, QSlider, QLineEdit, QTreeView
 from PySide6.QtWidgets import QCheckBox, QComboBox, QMessageBox, QStyledItemDelegate
 from PySide6.QtGui import QImage, QPixmap, QColor, QFont, QTextCursor, QFontMetrics, QMouseEvent, QKeyEvent, QKeySequence
-from PySide6.QtGui import QRegularExpressionValidator, QIntValidator, QDoubleValidator
+from PySide6.QtGui import QIntValidator, QDoubleValidator
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 
-from WinFocusListener import WinFocusListener
+try:
+    import pyaudiowpatch as pyaudio
+    from WinFocusListener import WinFocusListener
+except:
+    pass
+
 from FirmataKeyboard import FirmataKeyboard
 from DebugTracer import DebugTracer
 
@@ -412,13 +416,14 @@ class RGBVideoTab(QWidget):
 class AudioCaptureThread(QThread):
 
     def __init__(self, freq_bands, interval):
+        self.dbg = {}
+        self.dbg['DEBUG']   = DebugTracer(print=1, trace=1)
+
         super().__init__()
         self.running = False
         self.freq_bands = freq_bands
         self.interval = interval
-
-        self.dbg = {}
-        self.dbg['DEBUG']   = DebugTracer(print=1, trace=1)
+        p = pyaudio.PyAudio()
 
     def connect_callback(self, callback):
         self.callback = callback
@@ -430,7 +435,11 @@ class AudioCaptureThread(QThread):
         dbg = self.dbg['DEBUG']
 
         default_speakers = None
-        p = pyaudio.PyAudio()
+        try:
+            p = pyaudio.PyAudio()
+        except:
+            dbg.tr("pyaudio not installed")
+            return
         try:
             # see https://github.com/s0d3s/PyAudioWPatch/blob/master/examples/pawp_record_wasapi_loopback.py
             wasapi_info = p.get_host_api_info_by_type(pyaudio.paWASAPI)
@@ -550,7 +559,10 @@ class RGBAudioTab(QWidget):
         self.rgb_multiplier = (1.0,1.0,1.0)
 
         self.sample_count = 0
-        self.audio_thread = AudioCaptureThread(self.freq_bands, 0.05)
+        try:
+            self.audio_thread = AudioCaptureThread(self.freq_bands, 0.05)
+        except:
+            self.audio_thread = None
 
     def load_freqbands_jsonfile(self):
         filename, _ = QFileDialog.getOpenFileName(self, "open file", "", "json (*.json)")
@@ -700,7 +712,8 @@ class RGBAudioTab(QWidget):
             self.freq_bands[i] = (float(self.freqbands_input[i][0].text()), float(self.freqbands_input[i][1].text()))
 
         self.dbg['FREQ_BAND'].tr(f"freq bands {self.freq_bands}")
-        self.audio_thread.set_freq_bands(self.freq_bands)
+        if self.audio_thread:
+            self.audio_thread.set_freq_bands(self.freq_bands)
 
     def update_min_max_level(self):
         n_ranges = len(self.freq_bands)
@@ -841,6 +854,9 @@ class RGBAudioTab(QWidget):
             self.keyb_rgb = img
 
     def start(self):
+        if not self.audio_thread:
+            return
+
         if not self.audio_thread.isRunning():
             self.update_freq_rgb()
             self.update_freq_bands()
@@ -856,6 +872,9 @@ class RGBAudioTab(QWidget):
             self.running = False
 
     def closeEvent(self, event):
+        if not self.audio_thread:
+            return
+
         if self.audio_thread.isRunning():
             self.audio_thread.stop()
             self.audio_thread.wait()
@@ -1312,9 +1331,6 @@ class KeybConfigTab(QWidget):
                 self.dbg['DEBUG'].tr(f"update_gui_config: {e}")
 
 #-------------------------------------------------------------------------------
-# todo: add script support
-# - script editor
-# - script output
 class KeybScriptTab(QWidget):
     signal_run_script = Signal(str, object)
     signal_script_output = Signal(str)
@@ -1508,7 +1524,7 @@ class RGBAnimationTab(QWidget):
 
 #-------------------------------------------------------------------------------
 app_width       = 800
-app_height      = 1000
+app_height      = 900
 
 class MainWindow(QMainWindow):
     def __init__(self, keyboard_vid_pid):
@@ -1549,7 +1565,7 @@ class MainWindow(QMainWindow):
         self.keyboard.signal_config_model.connect(self.keyb_config_tab.update_config_model)
         self.keyboard.signal_config.connect(self.keyb_config_tab.update_gui_config)
 
-        self.console_tab.signal_cli_command.connect(self.keyboard.run_script) # todo remove
+        self.console_tab.signal_cli_command.connect(self.keyboard.keyb_set_cli_command)
         self.rgb_matrix_tab.rgb_video_tab.signal_rgb_frame.connect(self.keyboard.keyb_set_rgb_buf)
         self.rgb_matrix_tab.rgb_animation_tab.signal_rgb_frame.connect(self.keyboard.keyb_set_rgb_buf)
         self.rgb_matrix_tab.rgb_audio_tab.signal_rgb_frame.connect(self.keyboard.keyb_set_rgb_buf)
@@ -1562,16 +1578,22 @@ class MainWindow(QMainWindow):
 
         #-----------------------------------------------------------
         # window focus listener
-        self.winfocus_listener = WinFocusListener()
-        self.winfocus_listener.signal_winfocus.connect(self.layer_switch_tab.on_winfocus)
-        self.winfocus_listener.start()
+        try:
+            self.winfocus_listener = WinFocusListener()
+            self.winfocus_listener.signal_winfocus.connect(self.layer_switch_tab.on_winfocus)
+            self.winfocus_listener.start()
+        except:
+            pass
 
         #-----------------------------------------------------------
         # start keyboard communication
         self.keyboard.start()
 
     def closeEvent(self, event):
-        self.winfocus_listener.stop()
+        try:
+            self.winfocus_listener.stop()
+        except:
+            pass
         self.keyboard.stop()
         # close event to child widgets
         for child in self.findChildren(QWidget):
