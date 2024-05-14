@@ -179,10 +179,8 @@ class RGBMatrixTab(QWidget):
 
     def init_gui(self):
         layout = QVBoxLayout()
-        hlayout = QHBoxLayout()
         self.tab_widget = QTabWidget()
 
-        #---------------------------------------
         self.rgb_video_tab = RGBVideoTab(self, self.rgb_matrix_size)
         self.rgb_animation_tab = RGBAnimationTab(self.rgb_matrix_size)
         self.rgb_audio_tab = RGBAudioTab(self.rgb_matrix_size)
@@ -193,7 +191,6 @@ class RGBMatrixTab(QWidget):
         self.tab_widget.addTab(self.rgb_audio_tab, 'audio')
         self.tab_widget.addTab(self.rgb_dynld_animation_tab, 'dynld animation')
 
-        layout.addLayout(hlayout)
         layout.addWidget(self.tab_widget)
         self.setLayout(layout)
 
@@ -1315,6 +1312,56 @@ class KeybConfigTab(QWidget):
                 self.dbg['DEBUG'].tr(f"update_gui_config: {e}")
 
 #-------------------------------------------------------------------------------
+# todo: add script support
+# - script editor
+# - script output
+class KeybScriptTab(QWidget):
+    signal_run_script = Signal(str, object)
+    signal_script_output = Signal(str)
+
+    def __init__(self, keyboard_model):
+        self.dbg = {}
+        self.dbg['DEBUG'] = DebugTracer(print=1, trace=1, obj=self)
+        #---------------------------------------
+        self.keyboard_model = keyboard_model
+
+        super().__init__()
+        self.init_gui()
+        self.signal_script_output.connect(self.append_script_output)
+
+    def append_script_output(self, text):
+        try:
+            cursor = self.script_output.textCursor()
+            cursor.movePosition(QTextCursor.End)
+            self.script_output.setTextCursor(cursor)
+            self.script_output.insertPlainText(text)
+            self.script_output.ensureCursorVisible()
+        except:
+            pass
+
+    def exec_script(self):
+        self.script_output.clear()
+        script = self.code_editor.toPlainText()
+        self.signal_run_script.emit(script, self.signal_script_output)
+
+    def init_gui(self):
+        layout = QVBoxLayout()
+
+        self.exec_button = QPushButton("exec")
+        self.exec_button.clicked.connect(self.exec_script)
+        self.code_editor = CodeTextEdit()
+        self.script_output = QTextEdit()
+        self.script_output.setReadOnly(True)
+        font = QFont()
+        font.setFamily("Courier New")
+        self.script_output.setFont(font)
+
+        layout.addWidget(self.exec_button)
+        layout.addWidget(self.code_editor)
+        layout.addWidget(self.script_output)
+        self.setLayout(layout)
+
+#-------------------------------------------------------------------------------
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
 import matplotlib.pyplot as plt
@@ -1333,10 +1380,11 @@ def add_method_to_class(class_def, method):
         setattr(class_def, method.__name__, method)
 
 class CodeTextEdit(QTextEdit):
-    def __init__(self, parent=None):
+    def __init__(self, filepath=None, parent=None):
         super().__init__(parent)
         self.setFont(QFont("Courier New", 9))
-        self.load_text_file("animation.py")
+        if filepath:
+            self.load_text_file(filepath)
 
     def load_text_file(self, filepath):
         try:
@@ -1348,7 +1396,7 @@ class CodeTextEdit(QTextEdit):
 
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key_Tab:
-            # Insert four spaces instead of a tab
+            # four spaces instead of a tab
             self.insertPlainText("    ")
         else:
             super().keyPressEvent(event)
@@ -1380,7 +1428,7 @@ class RGBAnimationTab(QWidget):
 
         # Layout to hold the canvas and buttons
         layout = QVBoxLayout()
-        self.code_editor = CodeTextEdit()
+        self.code_editor = CodeTextEdit("animation.py")
         layout.addWidget(self.code_editor)
         layout.addWidget(self.canvas)
         layout.addWidget(self.start_button)
@@ -1475,7 +1523,6 @@ class MainWindow(QMainWindow):
 
         # instantiate firmata keyboard
         self.keyboard = FirmataKeyboard(port=None, vid_pid=self.keyboard_vid_pid)
-        rgb_matrix_size = self.keyboard.rgb_matrix_size()
         num_keyb_layers = self.keyboard.num_layers()
 
         #-----------------------------------------------------------
@@ -1485,11 +1532,13 @@ class MainWindow(QMainWindow):
         self.rgb_matrix_tab = RGBMatrixTab(self.keyboard.keyboardModel)
         self.layer_switch_tab = LayerAutoSwitchTab(num_keyb_layers)
         self.keyb_config_tab = KeybConfigTab(self.keyboard.keyboardModel)
+        self.keyb_script_tab = KeybScriptTab(self.keyboard.keyboardModel)
 
         tab_widget.addTab(self.console_tab, 'console')
         tab_widget.addTab(self.rgb_matrix_tab, 'rgb matrix')
         tab_widget.addTab(self.layer_switch_tab, 'layer auto switch')
         tab_widget.addTab(self.keyb_config_tab, 'keyboard config')
+        tab_widget.addTab(self.keyb_script_tab, 'keyboard script')
 
         self.setCentralWidget(tab_widget)
         #-----------------------------------------------------------
@@ -1500,7 +1549,7 @@ class MainWindow(QMainWindow):
         self.keyboard.signal_config_model.connect(self.keyb_config_tab.update_config_model)
         self.keyboard.signal_config.connect(self.keyb_config_tab.update_gui_config)
 
-        self.console_tab.signal_cli_command.connect(self.keyboard.run_cli_script)
+        self.console_tab.signal_cli_command.connect(self.keyboard.run_script) # todo remove
         self.rgb_matrix_tab.rgb_video_tab.signal_rgb_frame.connect(self.keyboard.keyb_set_rgb_buf)
         self.rgb_matrix_tab.rgb_animation_tab.signal_rgb_frame.connect(self.keyboard.keyb_set_rgb_buf)
         self.rgb_matrix_tab.rgb_audio_tab.signal_rgb_frame.connect(self.keyboard.keyb_set_rgb_buf)
@@ -1509,6 +1558,7 @@ class MainWindow(QMainWindow):
         self.keyb_config_tab.signal_keyb_set_config.connect(self.keyboard.keyb_set_config)
         self.keyb_config_tab.signal_keyb_get_config.connect(self.keyboard.keyb_get_config)
         self.keyb_config_tab.signal_macwin_mode.connect(self.keyboard.keyb_set_macwin_mode)
+        self.keyb_script_tab.signal_run_script.connect(self.keyboard.run_script)
 
         #-----------------------------------------------------------
         # window focus listener

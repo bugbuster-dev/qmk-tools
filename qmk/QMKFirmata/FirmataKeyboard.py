@@ -332,7 +332,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             resp = self.keyboard.keyb_set_cli_command(f"mw {hex(addr)} {size} {hex(val)}")
 
         def on_eeprom_read(self, key):
-            if key == "layout":
+            if key == "l": # layout
                 resp = self.keyboard.keyb_set_cli_command("el")
                 return resp
             try:
@@ -378,10 +378,10 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.dbg = {}
         self.dbg['ERROR']           = DebugTracer(print=1, trace=1, obj=self)
         self.dbg['DEBUG']           = DebugTracer(print=0, trace=1, obj=self)
-        self.dbg['CONSOLE']         = DebugTracer(print=1, trace=1, obj=self)
-        self.dbg['CLI']             = DebugTracer(print=1, trace=1, obj=self)
+        self.dbg['CONSOLE']         = DebugTracer(print=0, trace=1, obj=self)
+        self.dbg['CLI']             = DebugTracer(print=0, trace=1, obj=self)
         self.dbg['SYSEX_COMMAND']   = DebugTracer(print=0, trace=1, obj=self)
-        self.dbg['SYSEX_RESPONSE']  = DebugTracer(print=1, trace=1, obj=self)
+        self.dbg['SYSEX_RESPONSE']  = DebugTracer(print=0, trace=1, obj=self)
         self.dbg['SYSEX_PUB']       = DebugTracer(print=0, trace=1, obj=self)
         self.dbg['RGB_BUF']         = DebugTracer(print=0, trace=1, obj=self)
         dbg = self.dbg['DEBUG']
@@ -689,10 +689,25 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         if line:
             self.signal_console_output.emit(line)
 
-    def run_cli_script(self, script):
+    # todo: move from ui thread to separate thread/process
+    def run_script(self, script, signal_output=None):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        class ScriptOutput(StringIO):
+            def __init__(self, signal_output):
+                self.signal_output = signal_output
+                super().__init__()
+
+            def write(self, string):
+                if self.signal_output:
+                    self.signal_output.emit(string)
+                super().write(string)
+
         globals_dict = globals()
         globals_dict.update({ "kb": self.kb_cli })
-        exec(script, globals_dict, {})
+        script_output = ScriptOutput(signal_output)
+        with redirect_stdout(script_output):
+            exec(script, globals_dict, {})
 
     #-------------------------------------------------------------------------------
     def keyb_set_cli_command(self, cmd):
@@ -703,12 +718,16 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             CLI_CMD_MEMORY      = 0x01
             CLI_CMD_EEPROM      = 0x02
             CLI_CMD_CALL        = 0x03
+            CLI_CMD_LAYOUT      = 0x40
             CLI_CMD_WRITE       = 0x80
             try:
                 cmd_args = cmd_str.strip().split(' ')
                 cmd = cmd_args[0]
                 if cmd[0] == 'm' or cmd[0] == 'e':
                     cli_cmd = CLI_CMD_MEMORY if cmd[0] == 'm' else CLI_CMD_EEPROM
+                    if cmd[1] == 'l' and cli_cmd == CLI_CMD_EEPROM:
+                        ba = bytearray([cli_cmd|CLI_CMD_LAYOUT])
+                        return ba
                     if cmd[1] == 'r':
                         addr = int(cmd_args[1], 16)
                         size = int(cmd_args[2])
@@ -992,7 +1011,10 @@ class KeyMachine:
 
         self.dbg['DEBUG'].tr(f"KeyMachine: {keyb}")
         self.keyb = keyb
-        self.key_layout = keyb.keyboardModel.KEY_LAYOUT['win']
+        try:
+            self.key_layout = keyb.keyboardModel.KEY_LAYOUT['win']
+        except:
+            self.key_layout = None
         self.key_event_stack = [] #todo remove if not needed
         self.key_pressed = {}
         self.combos = {}

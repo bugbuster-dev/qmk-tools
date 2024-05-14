@@ -13,6 +13,15 @@ class NuphyAir96V2:
     DEFAULT_LAYER = { 'm':0, 'w':2 }
     NUM_LAYERS = 8
     #---------------------------------------------------------------------------
+    KEY_LAYOUT = { # todo bb
+        'win': [
+        ['esc'      , 'f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9', 'f10', 'f11', 'f12', 'volume mute', 'print screen', 'scroll lock', 'pause'],
+        ['`'        ,  '1',  '2',  '3',  '4',  '5',  '6',  '7',  '8',  '9',   '0',   '-',   '=', 'backspace', 'morse', 'home', 'page up'],
+        ['tab'      ,  'q',  'w',  'e',  'r',  't',  'y',  'u',  'i',   'o',   'p',   '[', ']', '\\', 'delete', 'end', 'page down'],
+        ['caps lock' ,  'a',  's',  'd',  'f',  'g',  'h',  'j',  'k',   'l',   ';',  '\'', '', 'enter', '', ''],
+        ['left shift',   '',  'z',  'x',  'c',  'v',  'b',  'n',  'm',   ',',   '.',   '/', '', 'right shift', '', 'up', ''],
+        ['left ctrl', 'left windows', 'left menu', '', '', '', 'space', '', '', '', 'right menu', 'right windows', 'fn', 'ctrl', 'left', 'down', 'right']]
+    }
 
     def __init__(self):
         pass
@@ -24,6 +33,14 @@ class NuphyAir96V2:
     @staticmethod
     def vid_pid():
         return (NuphyAir96V2.VID, NuphyAir96V2.PID)
+
+    @staticmethod
+    def mcu():
+        return NuphyAir96V2.MCU
+
+    @staticmethod
+    def matrix_size():
+        return (NuphyAir96V2.MAXTRIX_W, NuphyAir96V2.MAXTRIX_H)
 
     @staticmethod
     def rgb_matrix_size():
@@ -100,6 +117,12 @@ class NuphyAir96V2:
             12: "swap_escape_capslock",
             13: "autocorrect_enable",
         }
+        CONFIG_KEYMAP_LAYOUT = {
+            1: "keymap layout",
+        }
+        CONFIG_DEBOUNCE = {
+            1: "debounce",
+        }
         CONFIG_DEVEL = {
             1: "pub_keypress",
             2: "process_keypress",
@@ -109,7 +132,13 @@ class NuphyAir96V2:
             2: ("debug user", CONFIG_DEBUG_USER),
             3: ("rgb", CONFIG_RGB),
             4: ("keymap", CONFIG_KEYMAP),
-            5: ("devel", CONFIG_DEVEL),
+            5: ("keymap layout", CONFIG_KEYMAP_LAYOUT),
+            6: ("debounce", CONFIG_DEBOUNCE),
+            7: ("devel", CONFIG_DEVEL),
+        }
+        CONFIG_FLAGS = {
+            1: "flash",
+            2: "readonly",
         }
         TYPES = { #todo move to common
             1: "bit",
@@ -118,14 +147,14 @@ class NuphyAir96V2:
             4: "uint32",
             5: "uint64",
             6: "float",
-            7: "array",
+            0x80: "array",
             "bit":      1,
             "uint8":    2,
             "uint16":   3,
             "uint32":   4,
             "uint64":   5,
             "float":    6,
-            "array":    7,
+            "array":    0x80,
         }
 
         @staticmethod
@@ -145,7 +174,11 @@ class NuphyAir96V2:
         @staticmethod
         def config_field_type(field_type):
             try:
-                return NuphyAir96V2.KeybConfiguration_v0_1.TYPES[field_type]
+                if field_type & 0x80:
+                    item_type = field_type & 0x7F
+                    return 'array:' + NuphyAir96V2.KeybConfiguration_v0_1.TYPES[item_type]
+                else:
+                    return NuphyAir96V2.KeybConfiguration_v0_1.TYPES[field_type]
             except:
                 return "unknown"
 
@@ -188,7 +221,12 @@ class NuphyAir96V2:
                         field_name = create_item(NuphyAir96V2.KeybConfiguration_v0_1.config_field_name(config_id, field_id))
                         field_type = create_item(NuphyAir96V2.KeybConfiguration_v0_1.config_field_type(field_info[0]))
                         field_size = create_item(field_info[2])
-                        field_value = create_item("", editable=True)
+                        field_flags = field_info[3]
+                        if field_flags & 0x2:
+                            editable = False
+                        else:
+                            editable = True
+                        field_value = create_item("", editable=editable)
                         field = [field_name, field_type, field_size, field_value]
                         config_item.appendRow(field)
                     except:
