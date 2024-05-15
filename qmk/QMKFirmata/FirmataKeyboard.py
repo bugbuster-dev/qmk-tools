@@ -302,6 +302,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             self.keyboard = keyboard
             self.m = self.DictOnReadWrite(self, self.on_mem_read, self.on_mem_write) # memory access
             self.e = self.DictOnReadWrite(self, self.on_eeprom_read, self.on_eeprom_write) # eeprom access
+            self.rgb = self.DictOnReadWrite(self, self.on_rgb_read, self.on_rgb_write) # rgb matrix buffer access
             self.fn = {} # function table, todo load map file
 
         def on_mem_read(self, key):
@@ -360,6 +361,18 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 size = 1
             #print(f"on_eeprom_write: key={key}, addr={addr}, size={size}")
             resp = self.keyboard.keyb_set_cli_command(f"ew {hex(addr)} {size} {hex(val)}")
+
+        def on_rgb_read(self, key):
+            return None
+
+        def on_rgb_write(self, key, val):
+            #print(f"on_rgb_write: key={key}, val={val}")
+            rgb_index = key
+            rgb_data = val
+            # rgb matrix image or pixel(s)
+            if key == "img":
+                rgb_index = None
+            self.keyboard.keyb_set_rgb_pixel((rgb_index, rgb_data))
 
         def call(self, addr):
             resp = self.keyboard.keyb_set_cli_command(f"c {hex(addr)}")
@@ -689,25 +702,40 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         if line:
             self.signal_console_output.emit(line)
 
-    # todo: move from ui thread to separate thread/process
     def run_script(self, script, signal_output=None):
-        from contextlib import redirect_stdout
-        from io import StringIO
-        class ScriptOutput(StringIO):
-            def __init__(self, signal_output):
-                self.signal_output = signal_output
-                super().__init__()
+        import threading
+        # todo: check where locks are needed
+        def run_script_on_thread(script, signal_output):
+            from contextlib import redirect_stdout
+            from io import StringIO
+            class ScriptOutput(StringIO):
+                def __init__(self, signal_output):
+                    self.signal_output = signal_output
+                    super().__init__()
 
-            def write(self, string):
-                if self.signal_output:
-                    self.signal_output.emit(string)
-                super().write(string)
+                def write(self, string):
+                    if self.signal_output:
+                        self.signal_output.emit(string)
 
-        globals_dict = globals()
-        globals_dict.update({ "kb": self.kb_cli })
-        script_output = ScriptOutput(signal_output)
-        with redirect_stdout(script_output):
-            exec(script, globals_dict, {})
+            globals_dict = globals()
+            globals_dict.update({ "kb": self.kb_cli })
+            script_output = ScriptOutput(signal_output)
+            with redirect_stdout(script_output):
+                exec(script, globals_dict, { "stopped": self.script_stopped })
+
+        # stop previous script
+        self.script_stop = True
+        try:
+            self.script_thread.join()
+        except:
+            pass
+
+        self.script_stop = False
+        self.script_thread = threading.Thread(target=run_script_on_thread, name="run_script_on_thread",args=(script, signal_output))
+        self.script_thread.start()
+
+    def script_stopped(self):
+        return self.script_stop
 
     #-------------------------------------------------------------------------------
     def keyb_set_cli_command(self, cmd):
@@ -782,7 +810,40 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 dbg.tr(f"keyb_set_cli_command: response: {response_str}")
         return response
 
-    def keyb_set_rgb_buf(self, img, rgb_multiplier):
+    def keyb_set_rgb_pixel(self, pixels):
+        rgb_index = pixels[0]
+        rgb_data = pixels[1]
+        if type(rgb_index) == tuple:
+            rgb_index = list(rgb_index)
+        elif type(rgb_index) == int:
+            rgb_index = [rgb_index]
+
+        self.dbg['RGB_BUF'].tr(f"keyb_set_rgb_pixel: {rgb_index} {rgb_data}")
+        if rgb_index == None:
+            #todo: qimage from rgb_data
+            #rgb_image = ...
+            #self.keyb_set_rgb_image(rgb_image, 1.0)
+            return
+
+        data = bytearray()
+        data.append(FirmataKeybCmd.ID_RGB_MATRIX_BUF)
+        for i in range(len(rgb_index)):
+            pixel = rgb_data
+            try:
+                if type(rgb_data[0]) == list:
+                    pixel = rgb_data[i]
+            except:
+                pass
+
+            rgb_pixel = self.pixel_to_rgb_index_duration(pixel, QImage.Format_RGB888, rgb_index[i], 200)
+            if rgb_pixel:
+                #self.dbg['RGB_BUF'].tr(f"pixel: {rgb_pixel.hex(' ')}")
+                data.extend(rgb_pixel)
+
+        #self.dbg['RGB_BUF'].tr(f"rgb data: {data.hex(' ')}")
+        self.send_sysex(FirmataKeybCmd.SET, data)
+
+    def keyb_set_rgb_image(self, img, rgb_multiplier):
         if self.dbg_rgb_buf:
             self.dbg['RGB_BUF'].tr("-"*120)
             self.dbg['RGB_BUF'].tr(f"rgb mult {rgb_multiplier}")

@@ -200,7 +200,7 @@ class RGBMatrixTab(QWidget):
 
 #-------------------------------------------------------------------------------
 class RGBVideoTab(QWidget):
-    signal_rgb_frame = Signal(QImage, object)
+    signal_rgb_image = Signal(QImage, object)
 
     def __init__(self, rgb_matrix_tab, rgb_matrix_size):
         self.dbg = {}
@@ -245,7 +245,7 @@ class RGBVideoTab(QWidget):
                                             #self.dbg['WS_MSG'].tr(f"ws_handler: {e}")
                                             pass
 
-                                self.signal_rgb_frame.emit(img, self.rgb_multiplier)
+                                self.signal_rgb_image.emit(img, self.rgb_multiplier)
                                 self.dbg['WS_MSG'].tr(f"ws_handler:emit(img) done")
                 self.dbg['WS_MSG'].tr(f"ws_handler: message handled")
                 await asyncio.sleep(0)  # Ensures control is yielded back to the event loop
@@ -253,7 +253,7 @@ class RGBVideoTab(QWidget):
         except Exception as e:
             self.dbg['WS_MSG'].tr(f"ws_handler: {e}")
         self.dbg['WS_MSG'].tr(f"ws_handler: done")
-        self.signal_rgb_frame.emit(None, self.rgb_multiplier)
+        self.signal_rgb_image.emit(None, self.rgb_multiplier)
 
     def ws_server_startstop(self, state):
         #self.dbg['DEBUG'].tr(f"{state}")
@@ -371,7 +371,7 @@ class RGBVideoTab(QWidget):
         if self.cap is not None and self.cap.isOpened():
             self.cap.release()
             self.timer.stop()
-            self.signal_rgb_frame.emit(None, self.rgb_multiplier)
+            self.signal_rgb_image.emit(None, self.rgb_multiplier)
             self.open_button.setText("open file")
             return
 
@@ -397,7 +397,7 @@ class RGBVideoTab(QWidget):
 
             keyb_rgb = scaled_img.scaled(self.rgb_matrix_size[0], self.rgb_matrix_size[1])
             #self.videoLabel.setPixmap(QPixmap.fromImage(keyb_rgb))
-            self.signal_rgb_frame.emit(keyb_rgb, self.rgb_multiplier)
+            self.signal_rgb_image.emit(keyb_rgb, self.rgb_multiplier)
         else:
             #print("Reached the end of the video, restarting...")
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Rewind the video
@@ -423,7 +423,7 @@ class AudioCaptureThread(QThread):
         self.running = False
         self.freq_bands = freq_bands
         self.interval = interval
-        p = pyaudio.PyAudio()
+        self.paudio = pyaudio.PyAudio()
 
     def connect_callback(self, callback):
         self.callback = callback
@@ -434,20 +434,16 @@ class AudioCaptureThread(QThread):
     def run(self):
         dbg = self.dbg['DEBUG']
 
+        self.paudio = pyaudio.PyAudio()
         default_speakers = None
         try:
-            p = pyaudio.PyAudio()
-        except:
-            dbg.tr("pyaudio not installed")
-            return
-        try:
             # see https://github.com/s0d3s/PyAudioWPatch/blob/master/examples/pawp_record_wasapi_loopback.py
-            wasapi_info = p.get_host_api_info_by_type(pyaudio.paWASAPI)
+            wasapi_info = self.paudio.get_host_api_info_by_type(pyaudio.paWASAPI)
             dbg.tr(f"wasapi: {wasapi_info}")
 
-            default_speakers = p.get_device_info_by_index(wasapi_info["defaultOutputDevice"])
+            default_speakers = self.paudio.get_device_info_by_index(wasapi_info["defaultOutputDevice"])
             if not default_speakers["isLoopbackDevice"]:
-                for loopback in p.get_loopback_device_info_generator():
+                for loopback in self.paudio.get_loopback_device_info_generator():
                     if default_speakers["name"] in loopback["name"]:
                         default_speakers = loopback
                         break
@@ -464,7 +460,7 @@ class AudioCaptureThread(QThread):
         CHUNK = int(RATE * self.interval)
 
         self.running = True
-        self.stream = p.open(format=FORMAT,
+        self.stream = self.paudio.open(format=FORMAT,
                         channels=CHANNELS,
                         rate=RATE,
                         input=True,
@@ -501,7 +497,7 @@ class AudioCaptureThread(QThread):
         self.stream.stop_stream()
         self.stream.close()
         dbg.tr(f"audio stream {self.stream} closed")
-        p.terminate()
+        self.paudio.terminate()
         self.callback(None)
 
     def stop(self):
@@ -513,7 +509,7 @@ class AudioCaptureThread(QThread):
 
 #-------------------------------------------------------------------------------
 class RGBAudioTab(QWidget):
-    signal_rgb_frame = Signal(QImage, object)
+    signal_rgb_image = Signal(QImage, object)
 
     @staticmethod
     def freq_bands_linear(f_min, f_max, k):
@@ -635,7 +631,7 @@ class RGBAudioTab(QWidget):
             #-----------------------
             for j, rgb in enumerate(self.freqbands_rgb_input[-1]):
                 rgb.setValidator(QDoubleValidator(0.0,5.0,2))
-                rgb.setFixedWidth(30)
+                rgb.setFixedWidth(40)
                 rgb.setText(format(color[j], '.2f'))
                 rgb.textChanged.connect(self.update_freq_rgb)
                 hlayout.addWidget(rgb)
@@ -764,7 +760,7 @@ class RGBAudioTab(QWidget):
     #-------------------------------------------------------------------------------
     def process_audiopeak_levels(self, peak_levels):
         if peak_levels is None:
-            self.signal_rgb_frame.emit(None, self.rgb_multiplier)
+            self.signal_rgb_image.emit(None, self.rgb_multiplier)
             return
 
         self.sample_count += 1
@@ -817,7 +813,7 @@ class RGBAudioTab(QWidget):
         #-----------------------------------------------------------
         if self.running:
             #self.dbg['DEBUG'].tr(f"send rgb {self.keyb_rgb}")
-            self.signal_rgb_frame.emit(self.keyb_rgb, self.rgb_multiplier)
+            self.signal_rgb_image.emit(self.keyb_rgb, self.rgb_multiplier)
 
     # todo: add effects
     # - mask leds per freq band/peak level
@@ -1418,7 +1414,7 @@ class CodeTextEdit(QTextEdit):
             super().keyPressEvent(event)
 
 class RGBAnimationTab(QWidget):
-    signal_rgb_frame = Signal(QImage, object)
+    signal_rgb_image = Signal(QImage, object)
 
     def __init__(self, rgb_matrix_size):
         self.dbg = {}
@@ -1488,7 +1484,7 @@ class RGBAnimationTab(QWidget):
         else:
             self.ani.event_source.stop()
             self.ani = None
-            self.signal_rgb_frame.emit(None, (0,0,0))
+            self.signal_rgb_image.emit(None, (0,0,0))
             self.start_button.setText("start")
 
     def capture_animation_frame(self):
@@ -1505,7 +1501,7 @@ class RGBAnimationTab(QWidget):
         rgba_qimg = QImage(rgba_array.data, width, height, QImage.Format_RGBA8888)
         keyb_rgb = rgba_qimg.scaled(self.rgb_matrix_size[0], self.rgb_matrix_size[1], Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.FastTransformation)
         keyb_rgb = keyb_rgb.convertToFormat(QImage.Format_RGB888)
-        self.signal_rgb_frame.emit(keyb_rgb, (1.0,1.0,1.0))
+        self.signal_rgb_image.emit(keyb_rgb, (1.0,1.0,1.0))
 
         self.ani.resume()
 
@@ -1566,9 +1562,9 @@ class MainWindow(QMainWindow):
         self.keyboard.signal_config.connect(self.keyb_config_tab.update_gui_config)
 
         self.console_tab.signal_cli_command.connect(self.keyboard.keyb_set_cli_command)
-        self.rgb_matrix_tab.rgb_video_tab.signal_rgb_frame.connect(self.keyboard.keyb_set_rgb_buf)
-        self.rgb_matrix_tab.rgb_animation_tab.signal_rgb_frame.connect(self.keyboard.keyb_set_rgb_buf)
-        self.rgb_matrix_tab.rgb_audio_tab.signal_rgb_frame.connect(self.keyboard.keyb_set_rgb_buf)
+        self.rgb_matrix_tab.rgb_video_tab.signal_rgb_image.connect(self.keyboard.keyb_set_rgb_image)
+        self.rgb_matrix_tab.rgb_animation_tab.signal_rgb_image.connect(self.keyboard.keyb_set_rgb_image)
+        self.rgb_matrix_tab.rgb_audio_tab.signal_rgb_image.connect(self.keyboard.keyb_set_rgb_image)
         self.rgb_matrix_tab.rgb_dynld_animation_tab.signal_dynld_function.connect(self.keyboard.keyb_set_dynld_function)
         self.layer_switch_tab.signal_keyb_set_layer.connect(self.keyboard.keyb_set_default_layer)
         self.keyb_config_tab.signal_keyb_set_config.connect(self.keyboard.keyb_set_config)
