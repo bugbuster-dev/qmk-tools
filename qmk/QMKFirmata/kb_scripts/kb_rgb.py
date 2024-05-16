@@ -7,15 +7,17 @@ while not stopped():
         i = 0
 
     if i % 3 == 0:
-        r,g,b = 0xff, 0x0, 0x0
+        rgb = [0xff, 0x0, 0x0]
     if i % 3 == 1:
-        r,g,b = 0x0, 0xff, 0x0
+        rgb = [0x0, 0xff, 0x0]
     if i % 3 == 2:
-        r,g,b = 0x0, 0x0, 0xff
-    kb.rgb[0] = [r,g,b]        
+        rgb = [0x0, 0x0, 0xff]
+    kb.rgb[0] = rgb
     time.sleep(delay)
     
-    kb.rgb[(i+1,i+2,i+3)] = [[r,g,b],[g,b,r],[b,r,g]]
+    brg = [rgb[-1]] + rgb[:-1]
+    gbr = [brg[-1]] + brg[:-1]
+    kb.rgb[(i+1,i+2,i+3)] = [rgb,gbr,brg]
     i = i + 1        
     time.sleep(delay)
 
