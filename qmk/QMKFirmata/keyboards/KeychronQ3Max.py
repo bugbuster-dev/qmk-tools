@@ -84,6 +84,110 @@ class KeychronQ3Max:
         except:
             return -1
 
+    class KeybStruct:
+        TYPES = {
+            1: "bit",
+            2: "uint8",
+            3: "uint16",
+            4: "uint32",
+            5: "uint64",
+            6: "float",
+            0x80: "array",
+            "bit":      1,
+            "uint8":    2,
+            "uint16":   3,
+            "uint32":   4,
+            "uint64":   5,
+            "float":    6,
+            "array":    0x80,
+        }
+        FLAGS = {
+            1: "readonly",
+            "readonly": 1,
+        }
+
+        @staticmethod
+        def struct_name(_name_dict, _id):
+            try:
+                return _name_dict[_id][0]
+            except:
+                return "unknown"
+        @staticmethod
+        def struct_field_name(_name_dict, config_id, field_id):
+            try:
+                return _name_dict[config_id][1][field_id]
+            except:
+                return "unknown"
+
+        @staticmethod
+        def struct_field_type(field_type):
+            try:
+                if field_type & 0x80:
+                    item_type = field_type & 0x7F
+                    return 'array:' + KeychronQ3Max.KeybStruct.TYPES[item_type]
+                else:
+                    return KeychronQ3Max.KeybStruct.TYPES[field_type]
+            except:
+                return "unknown"
+
+        @staticmethod
+        def print_struct(derived_class, struct_id, struct_fields):
+            config_name = derived_class.struct_name(struct_id)
+            print(f"struct[{struct_id}]: {config_name}")
+            for field_id, field in struct_fields.items():
+                field_name = derived_class.struct_field_name(struct_id, field_id)
+                field_type = derived_class.struct_field_type(field[0])
+                try:
+                    field_offset = field[1]
+                except:
+                    field_offset = -1
+                try:
+                    field_size = field[2]
+                except:
+                    field_size = -1
+                print(f"  field:{field_name}, "
+                        f"type:{field_type}, "
+                        f"offset:{field_offset}, "
+                        f"size:{field_size}")
+
+        @staticmethod
+        def struct_model(model, derived_class, config_id, config_fields):
+            from PySide6.QtGui import Qt, QStandardItemModel, QStandardItem
+
+            def create_item(text, editable=False):
+                item = QStandardItem(str(text))
+                if not editable:
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                return item
+
+            def add_config_to_model(model, config_id, config_fields):
+                config_name = derived_class.struct_name(config_id)
+                config_item = create_item(config_name)
+                for field_id, field_info in config_fields.items():
+                    #print(f"field_id:{field_id}, field_info:{field_info}")
+                    try:
+                        field_name = create_item(derived_class.struct_field_name(config_id, field_id))
+                        field_type = create_item(derived_class.struct_field_type(field_info[0]))
+                        field_size = create_item(field_info[2])
+                        field_flags = field_info[3]
+                        if field_flags & KeychronQ3Max.KeybStruct.FLAGS["readonly"]:
+                            editable = False
+                        else:
+                            editable = True
+                        field_value = create_item("", editable=editable)
+                        field = [field_name, field_type, field_size, field_value]
+                        config_item.appendRow(field)
+                    except:
+                        pass
+                model.appendRow(config_item)
+
+            if model is None:
+                model = QStandardItemModel()
+                model.setHorizontalHeaderLabels(["field", "type", "size", "value"])
+
+            add_config_to_model(model, config_id, config_fields)
+            return model
+
     class KeybConfiguration_v0_1:
         CONFIG_DEBUG = {
             1: "enable",
@@ -139,110 +243,68 @@ class KeychronQ3Max:
             6: ("debounce", CONFIG_DEBOUNCE),
             7: ("devel", CONFIG_DEVEL),
         }
-        CONFIG_FLAGS = {
-            1: "flash",
-            2: "readonly",
+
+        @staticmethod
+        def struct_name(config_id):
+            return KeychronQ3Max.KeybStruct.struct_name(KeychronQ3Max.KeybConfiguration_v0_1.CONFIG, config_id)
+
+        @staticmethod
+        def struct_field_name(config_id, field_id):
+            return KeychronQ3Max.KeybStruct.struct_field_name(KeychronQ3Max.KeybConfiguration_v0_1.CONFIG, config_id, field_id)
+
+        @staticmethod
+        def struct_field_type(field_type):
+            return KeychronQ3Max.KeybStruct.struct_field_type(field_type)
+
+        @staticmethod
+        def print_struct(struct_id, struct_fields):
+            KeychronQ3Max.KeybStruct.print_struct(KeychronQ3Max.KeybConfiguration_v0_1, struct_id, struct_fields)
+
+        @staticmethod
+        def struct_model(model, config_id, config_fields):
+            return KeychronQ3Max.KeybStruct.struct_model(model, KeychronQ3Max.KeybConfiguration_v0_1, config_id, config_fields)
+
+    class KeybStatus_v0_1:
+        STATUS_BATTERY = {
+            1: "level",
+            2: "charging",
         }
-        TYPES = { #todo move to common
-            1: "bit",
-            2: "uint8",
-            3: "uint16",
-            4: "uint32",
-            5: "uint64",
-            6: "float",
-            0x80: "array",
-            "bit":      1,
-            "uint8":    2,
-            "uint16":   3,
-            "uint32":   4,
-            "uint64":   5,
-            "float":    6,
-            "array":    0x80,
+        STATUS_DIP_SWITCH = {
+            1: "mac/win",
+        }
+        STATUS_MATRIX = {
+            1: "raw matrix",
+        }
+        STATUS = {
+            1: ("battery", STATUS_BATTERY),
+            2: ("dip switch", STATUS_DIP_SWITCH),
+            3: ("matrix", STATUS_MATRIX),
         }
 
         @staticmethod
-        def config_name(config_id):
-            try:
-                return KeychronQ3Max.KeybConfiguration_v0_1.CONFIG[config_id][0]
-            except:
-                return "unknown"
+        def struct_name(config_id):
+            return KeychronQ3Max.KeybStruct.struct_name(KeychronQ3Max.KeybStatus_v0_1.STATUS, config_id)
 
         @staticmethod
-        def config_field_name(config_id, field_id):
-            try:
-                return KeychronQ3Max.KeybConfiguration_v0_1.CONFIG[config_id][1][field_id]
-            except:
-                return "unknown"
+        def struct_field_name(config_id, field_id):
+            return KeychronQ3Max.KeybStruct.struct_field_name(KeychronQ3Max.KeybStatus_v0_1.STATUS, config_id, field_id)
 
         @staticmethod
-        def config_field_type(field_type):
-            try:
-                if field_type & 0x80:
-                    item_type = field_type & 0x7F
-                    return 'array:' + KeychronQ3Max.KeybConfiguration_v0_1.TYPES[item_type]
-                else:
-                    return KeychronQ3Max.KeybConfiguration_v0_1.TYPES[field_type]
-            except:
-                return "unknown"
+        def struct_field_type(field_type):
+            return KeychronQ3Max.KeybStruct.struct_field_type(field_type)
 
         @staticmethod
-        def print_config_layout(config_id, config_fields):
-            config_name = KeychronQ3Max.KeybConfiguration_v0_1.config_name(config_id)
-            print(f"config[{config_id}]: {config_name}")
-            for field_id, field in config_fields.items():
-                field_name = KeychronQ3Max.KeybConfiguration_v0_1.config_field_name(config_id, field_id)
-                field_type = KeychronQ3Max.KeybConfiguration_v0_1.config_field_type(field[0])
-                try:
-                    field_offset = field[1]
-                except:
-                    field_offset = -1
-                try:
-                    field_size = field[2]
-                except:
-                    field_size = -1
-                print(f"  field:{field_name}, "
-                        f"type:{field_type}, "
-                        f"offset:{field_offset}, "
-                        f"size:{field_size}")
+        def print_struct(struct_id, struct_fields):
+            KeychronQ3Max.KeybStruct.print_struct(KeychronQ3Max.KeybStatus_v0_1, struct_id, struct_fields)
 
         @staticmethod
-        def keyb_config_model(model, config_id, config_fields):
-            from PySide6.QtGui import Qt, QStandardItemModel, QStandardItem
-
-            def create_item(text, editable=False):
-                item = QStandardItem(str(text))
-                if not editable:
-                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-                return item
-
-            def add_config_to_model(model, config_id, config_fields):
-                config_name = KeychronQ3Max.KeybConfiguration_v0_1.config_name(config_id)
-                config_item = create_item(config_name)
-                for field_id, field_info in config_fields.items():
-                    #print(f"field_id:{field_id}, field_info:{field_info}")
-                    try:
-                        field_name = create_item(KeychronQ3Max.KeybConfiguration_v0_1.config_field_name(config_id, field_id))
-                        field_type = create_item(KeychronQ3Max.KeybConfiguration_v0_1.config_field_type(field_info[0]))
-                        field_size = create_item(field_info[2])
-                        field_flags = field_info[3]
-                        if field_flags & 0x2:
-                            editable = False
-                        else:
-                            editable = True
-                        field_value = create_item("", editable=editable)
-                        field = [field_name, field_type, field_size, field_value]
-                        config_item.appendRow(field)
-                    except:
-                        pass
-                model.appendRow(config_item)
-
-            if model is None:
-                model = QStandardItemModel()
-                model.setHorizontalHeaderLabels(["field", "type", "size", "value"])
-
-            add_config_to_model(model, config_id, config_fields)
-            return model
+        def struct_model(model, config_id, config_fields):
+            return KeychronQ3Max.KeybStruct.struct_model(model, KeychronQ3Max.KeybStatus_v0_1, config_id, config_fields)
 
     @staticmethod
     def keyb_config():
         return KeychronQ3Max.KeybConfiguration_v0_1
+
+    @staticmethod
+    def keyb_status():
+        return KeychronQ3Max.KeybStatus_v0_1

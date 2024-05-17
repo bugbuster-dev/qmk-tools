@@ -1327,6 +1327,102 @@ class KeybConfigTab(QWidget):
                 self.dbg['DEBUG'].tr(f"update_gui_config: {e}")
 
 #-------------------------------------------------------------------------------
+class KeybStatusTab(QWidget):
+    signal_keyb_get_status = Signal(int, int)
+
+    def __init__(self, keyboard_model):
+        self.dbg = {}
+        self.dbg['DEBUG'] = DebugTracer(print=1, trace=1, obj=self)
+
+        self.keyboard_model = keyboard_model
+        super().__init__()
+        self.init_gui()
+
+    def init_gui(self):
+        hlayout = QHBoxLayout()
+        status_label = QLabel("keyboard status")
+        status_refresh_button = QPushButton("refresh")
+        every_label = QLabel("every (ms)")
+        every_msec_edit = QLineEdit("100")
+        every_msec_edit.setValidator(QIntValidator(0, 60000))
+        every_msec_edit.setFixedWidth(50)
+        status_refresh_button.clicked.connect(lambda: self.signal_keyb_get_status.emit(int(every_msec_edit.text()), 0))
+
+        hlayout.addWidget(status_label)
+        hlayout.addWidget(status_refresh_button)
+        hlayout.addWidget(every_label)
+        hlayout.addWidget(every_msec_edit)
+
+        hlayout.addStretch(1)
+
+        layout = QVBoxLayout()
+        layout.addLayout(hlayout)
+
+        #---------------------------------------
+        # status tree view
+        model = QStandardItemModel()
+        self.treeView = QTreeView()
+        self.treeView.setModel(model)
+        self.treeView.setFixedHeight(800)
+        layout.addWidget(self.treeView)
+
+        layout.addStretch(1)
+        self.setLayout(layout)
+
+    def update_status_model(self, status_model):
+        self.dbg['DEBUG'].tr(f"update_status_model: {status_model}")
+        self.treeView.setModel(status_model)
+
+    def update_gui_status(self, status): # update from firmata keyboard
+        self.dbg['DEBUG'].tr(f"update_gui_status: {status}")
+        status_id = status[0]
+        field_values = status[1]
+        model = self.treeView.model()
+        status_item = model.item(status_id-1, 0)
+        self.dbg['DEBUG'].tr(f"update_gui_status: {status_item.text()}")
+        self.dbg['DEBUG'].tr(f"{status}")
+
+        for i in range(status_item.rowCount()): # todo: row number may not match field id
+            try:
+                value_item = status_item.child(i, 3)
+                type_item = status_item.child(i, 1)
+                field_value = field_values[i+1]
+                if type(field_value) == bytearray:
+                    value_item.setFont(QFont("Courier New", 7)) # todo move this to update_config_model
+                    #self.dbg['DEBUG'].tr(f"update_gui_config: {type_item.text()}")
+                    hex_string = ''
+                    if type_item.text().endswith("uint8"):
+                        item_size = 1
+                        items_per_line = 16
+                        format_str = "%02x "
+                    elif type_item.text().endswith("uint16"):
+                        item_size = 2
+                        items_per_line = 10
+                        format_str = "%04x "
+                    elif type_item.text().endswith("uint32"):
+                        item_size = 4
+                        items_per_line = 8
+                        format_str = "%08x "
+                    elif type_item.text().endswith("uint64"):
+                        item_size = 8
+                        items_per_line = 4
+                        format_str = "%016x "
+
+                    for i in range(0, len(field_value), item_size):
+                        val = int.from_bytes(field_value[i:i+item_size], 'little') # todo endianess from keyboard mcu, (probably arm le)
+                        hex_string += format_str % val
+                        #hex_string += f"{val:02x} "
+                        if i % (items_per_line*item_size) == (items_per_line*item_size) - item_size:
+                            hex_string += '\n'
+                    formatted_string = hex_string
+
+                    field_value = formatted_string
+                    #field_value = field_value.hex(' ')
+                value_item.setText(f"{field_value}")
+            except Exception as e:
+                self.dbg['DEBUG'].tr(f"update_gui_config: {e}")
+
+#-------------------------------------------------------------------------------
 class KeybScriptTab(QWidget):
     signal_run_script = Signal(str, object)
     signal_script_output = Signal(str)
@@ -1544,13 +1640,15 @@ class MainWindow(QMainWindow):
         self.rgb_matrix_tab = RGBMatrixTab(self.keyboard.keyboardModel)
         self.layer_switch_tab = LayerAutoSwitchTab(num_keyb_layers)
         self.keyb_config_tab = KeybConfigTab(self.keyboard.keyboardModel)
+        self.keyb_status_tab = KeybStatusTab(self.keyboard.keyboardModel)
         self.keyb_script_tab = KeybScriptTab(self.keyboard.keyboardModel)
 
         tab_widget.addTab(self.console_tab, 'console')
+        tab_widget.addTab(self.keyb_script_tab, 'keyboard script')
         tab_widget.addTab(self.rgb_matrix_tab, 'rgb matrix')
         tab_widget.addTab(self.layer_switch_tab, 'layer auto switch')
         tab_widget.addTab(self.keyb_config_tab, 'keyboard config')
-        tab_widget.addTab(self.keyb_script_tab, 'keyboard script')
+        tab_widget.addTab(self.keyb_status_tab, 'keyboard status')
 
         self.setCentralWidget(tab_widget)
         #-----------------------------------------------------------
@@ -1559,7 +1657,9 @@ class MainWindow(QMainWindow):
         self.keyboard.signal_default_layer.connect(self.layer_switch_tab.update_default_layer)
         self.keyboard.signal_macwin_mode.connect(self.keyb_config_tab.update_macwin_mode)
         self.keyboard.signal_config_model.connect(self.keyb_config_tab.update_config_model)
+        self.keyboard.signal_status_model.connect(self.keyb_status_tab.update_status_model)
         self.keyboard.signal_config.connect(self.keyb_config_tab.update_gui_config)
+        self.keyboard.signal_status.connect(self.keyb_status_tab.update_gui_status)
 
         self.console_tab.signal_cli_command.connect(self.keyboard.keyb_set_cli_command)
         self.rgb_matrix_tab.rgb_video_tab.signal_rgb_image.connect(self.keyboard.keyb_set_rgb_image)
@@ -1571,6 +1671,7 @@ class MainWindow(QMainWindow):
         self.keyb_config_tab.signal_keyb_get_config.connect(self.keyboard.keyb_get_config)
         self.keyb_config_tab.signal_macwin_mode.connect(self.keyboard.keyb_set_macwin_mode)
         self.keyb_script_tab.signal_run_script.connect(self.keyboard.run_script)
+        self.keyb_status_tab.signal_keyb_get_status.connect(self.keyboard.keyb_get_status)
 
         #-----------------------------------------------------------
         # window focus listener

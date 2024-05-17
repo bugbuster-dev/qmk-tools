@@ -136,11 +136,8 @@ class NuphyAir96V2:
             6: ("debounce", CONFIG_DEBOUNCE),
             7: ("devel", CONFIG_DEVEL),
         }
-        CONFIG_FLAGS = {
-            1: "flash",
-            2: "readonly",
-        }
-        TYPES = { #todo move to common
+
+        TYPES = { #todo move to keybstruct
             1: "bit",
             2: "uint8",
             3: "uint16",
@@ -183,7 +180,7 @@ class NuphyAir96V2:
                 return "unknown"
 
         @staticmethod
-        def print_config_layout(config_id, config_fields):
+        def print_struct(config_id, config_fields):
             config_name = NuphyAir96V2.KeybConfiguration_v0_1.config_name(config_id)
             print(f"config[{config_id}]: {config_name}")
             for field_id, field in config_fields.items():
@@ -203,7 +200,7 @@ class NuphyAir96V2:
                         f"size:{field_size}")
 
         @staticmethod
-        def keyb_config_model(model, config_id, config_fields):
+        def struct_model(model, config_id, config_fields):
             from PySide6.QtGui import Qt, QStandardItemModel, QStandardItem
 
             def create_item(text, editable=False):
