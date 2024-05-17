@@ -10,7 +10,7 @@ from SerialRawHID import SerialRawHID
 from DebugTracer import DebugTracer
 
 #todo: add license
-# this program is like a box of bugs, you never know what you're gonna get
+# this code is like a box of bugs, you never know what you're gonna get
 
 #-------------------------------------------------------------------------------
 #region list com ports
@@ -287,6 +287,11 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             resp = self.keyboard.keyb_set_cli_command(f"c {hex(addr)}")
             return resp
 
+        def exec(self, code):
+            print("todo")
+            #resp = self.keyboard.keyb_set_cli_command(f"exec {hex(addr)}")
+            #return resp
+
         def set(self, key, val):
             print("todo")
 
@@ -303,8 +308,8 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.dbg['DEBUG']           = DebugTracer(print=0, trace=1, obj=self)
         self.dbg['CONSOLE']         = DebugTracer(print=0, trace=1, obj=self)
         self.dbg['CLI']             = DebugTracer(print=0, trace=1, obj=self)
-        self.dbg['SYSEX_COMMAND']   = DebugTracer(print=1, trace=1, obj=self)
-        self.dbg['SYSEX_RESPONSE']  = DebugTracer(print=1, trace=1, obj=self)
+        self.dbg['SYSEX_COMMAND']   = DebugTracer(print=0, trace=1, obj=self)
+        self.dbg['SYSEX_RESPONSE']  = DebugTracer(print=0, trace=1, obj=self)
         self.dbg['SYSEX_PUB']       = DebugTracer(print=0, trace=1, obj=self)
         self.dbg['RGB_BUF']         = DebugTracer(print=0, trace=1, obj=self)
         dbg = self.dbg['DEBUG']
@@ -556,11 +561,10 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 except:
                     break
 
-            #print(f"layout id: {layout_id}, struct id: {struct_id}, fields: {struct_fields}")
             if layout_id not in self.struct_layout:
                 self.struct_layout[layout_id] = {}
             self.struct_layout[layout_id][struct_id] = struct_fields
-            print(f"struct layout: {self.struct_layout[layout_id][struct_id]}")
+            #print(f"struct layout:layout/struct id: {layout_id}/{struct_id} {self.struct_layout[layout_id][struct_id]}")
 
             if layout_id == FirmataKeybCmd.ID_CONFIG:
                 self.config_layout[struct_id] = struct_fields
@@ -608,9 +612,9 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                         dbg.tr(f"struct[{struct_id}][{field_id}]:off={off}, offset={field_offset}, value={value}")
                     else:
                         value = (buf[off] >> field_offset) & bits_mask(field_size)
-                elif field_type == TYPE_UINT8:
+                elif field_type == TYPE_UINT8: # todo: test all types
                     value = buf[off]
-                elif field_type == TYPE_UINT16: # todo: test uint16/32/64/float/array
+                elif field_type == TYPE_UINT16:
                     value = struct.unpack_from(self.pack_endian+'H', buf, off)[0]
                 elif field_type == TYPE_UINT32:
                     value = struct.unpack_from(self.pack_endian+'I', buf, off)[0]
@@ -946,19 +950,18 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                     else:
                         data[off] &= ~(bits_mask(field_size) << field_offset)
                         data[off] |= (value & bits_mask(field_size)) << field_offset
-                elif field_type == TYPE_UINT8:
+                elif field_type == TYPE_UINT8: # todo: test and remove unused types
                     struct.pack_into(self.pack_endian+'B', data, off, value)
                 elif field_type == TYPE_UINT16:
                     struct.pack_into(self.pack_endian+'H', data, off, value)
                 elif field_type == TYPE_UINT32:
                     struct.pack_into(self.pack_endian+'I', data, off, value)
-                elif field_type == TYPE_UINT64: # todo: remove unused types
+                elif field_type == TYPE_UINT64:
                     struct.pack_into(self.pack_endian+'Q', data, off, value)
                 elif field_type == TYPE_FLOAT:
                     value = float(field_values[field_id])
                     struct.pack_into(self.pack_endian+'f', data, off, value)
                 elif field_type == TYPE_ARRAY:
-                    #todo: field_values[field_id] to bytearray
                     data[off:off+field_size] = value
                 else:
                     value = 0

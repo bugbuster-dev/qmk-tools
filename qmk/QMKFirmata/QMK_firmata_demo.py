@@ -1186,39 +1186,123 @@ class LayerAutoSwitchTab(QWidget):
             self.ws_server.wait()
 
 #-------------------------------------------------------------------------------
-class KeybConfigTab(QWidget):
+class TreeviewWidget(QWidget):
+
+    def __init__(self, keyboard_model):
+        self.keyboard_model = keyboard_model
+        super().__init__()
+
+    def init_gui(self):
+        if not hasattr(self, 'layout'):
+            self.layout = QVBoxLayout()
+
+        # default tree view
+        model = QStandardItemModel()
+        self.tree_view = QTreeView()
+        self.tree_view.setModel(model)
+        self.tree_view.setFixedHeight(800)
+        self.layout.addWidget(self.tree_view)
+        self.layout.addStretch(1)
+        self.setLayout(self.layout)
+
+    def update_view_model(self, view_model):
+        self.dbg['DEBUG'].tr(f"update_view_model: {view_model}")
+        self.tree_view.setModel(view_model)
+        if view_model:
+            try:
+                view_model.dataChanged.connect(self.update_keyb_data)
+            except Exception as e:
+                self.dbg['DEBUG'].tr(f"update_view_model: {e}")
+
+    def update_view(self, item_data): # update from firmata keyboard
+        try:
+            item_id = item_data[0]
+        except Exception as e:
+            self.dbg['DEBUG'].tr(f"update_view: {e}, {item_data}")
+            return
+        field_values = item_data[1]
+        model = self.tree_view.model()
+        item = model.item(item_id-1, 0)
+        self.dbg['DEBUG'].tr(f"update_view: {item.text()} {item_data}")
+        for i in range(item.rowCount()): # todo: row number may not match field id
+            try:
+                value_item = item.child(i, 3)
+                type_item = item.child(i, 1)
+                field_value = field_values[i+1]
+                if type(field_value) == bytearray:
+                    value_item.setFont(QFont("Courier New", 7)) # todo move this to update_view_model
+                    #self.dbg['DEBUG'].tr(f"update_view: {type_item.text()}")
+                    hex_string = ''
+                    if type_item.text().endswith("uint8"):
+                        item_size = 1
+                        items_per_line = 16
+                        format_str = "%02x "
+                    elif type_item.text().endswith("uint16"):
+                        item_size = 2
+                        items_per_line = 10
+                        format_str = "%04x "
+                    elif type_item.text().endswith("uint32"):
+                        item_size = 4
+                        items_per_line = 8
+                        format_str = "%08x "
+                    elif type_item.text().endswith("uint64"):
+                        item_size = 8
+                        items_per_line = 4
+                        format_str = "%016x "
+
+                    if item.text() == "keymap layout":
+                        items_per_line = self.keyboard_model.matrix_size()[0]
+
+                    for i in range(0, len(field_value), item_size):
+                        val = int.from_bytes(field_value[i:i+item_size], 'little') # todo endianess from keyboard mcu
+                        hex_string += format_str % val
+                        #hex_string += f"{val:02x} "
+                        if i % (items_per_line*item_size) == (items_per_line*item_size) - item_size:
+                            hex_string += '\n'
+
+                    formatted_string = hex_string
+                    field_value = formatted_string
+                    #field_value = field_value.hex(' ')
+                value_item.setText(f"{field_value}")
+            except Exception as e:
+                self.dbg['DEBUG'].tr(f"update_view: {e}")
+
+#-------------------------------------------------------------------------------
+class KeybConfigTab(TreeviewWidget):
     signal_keyb_set_config = Signal(tuple)
     signal_keyb_get_config = Signal(int)
     signal_macwin_mode = Signal(str)
 
     def __init__(self, keyboard_model):
         self.dbg = {}
-        self.dbg['DEBUG'] = DebugTracer(print=1, trace=1, obj=self)
+        self.dbg['DEBUG'] = DebugTracer(print=0, trace=1, obj=self)
 
         self.keyboard_model = keyboard_model
-        super().__init__()
+        super().__init__(keyboard_model)
         self.init_gui()
 
-    def update_keyb_config(self, tl, br, roles):
-        #self.dbg['DEBUG'].tr(f"update_keyb_config: topleft:{tl}, roles:{roles}")
+    def update_keyb_data(self, tl, br, roles):
+        #self.dbg['DEBUG'].tr(f"update_keyb_data: topleft:{tl}, roles:{roles}")
         update = False
         if roles:
             for role in roles:
                 if role == Qt.EditRole:
                     update = True
 
-        if update: # todo update only if changed via ui not from update_gui_config
+        if update: # todo update only if changed via ui not from update_view
             try:
-                item = self.treeView.model().itemFromIndex(tl)
+                item = self.tree_view.model().itemFromIndex(tl)
                 config_item = item.parent()
                 config_id = config_item.row() + 1
-                #print(f"{config.text()}:")
+
                 field_values = {}
                 for i in range(config_item.rowCount()):
                     field = config_item.child(i, 0)
                     value = config_item.child(i, 3)
                     #print(f"{field.text()} = {value.text()}")
                     if value.text() == "":
+                        return
+                    if not value.flags() & Qt.ItemIsEditable:
                         return
                     field_values[i+1] = value.text()
             except Exception as e:
@@ -1254,88 +1338,23 @@ class KeybConfigTab(QWidget):
         self.mac_win_mode_selector.setFixedWidth(40)
         hlayout.addStretch(1)
 
-        layout = QVBoxLayout()
-        layout.addLayout(hlayout)
-
-        #---------------------------------------
-        # config tree view
-        model = QStandardItemModel()
-        self.treeView = QTreeView()
-        self.treeView.setModel(model)
-        self.treeView.setFixedHeight(800)
-        layout.addWidget(self.treeView)
-
-        layout.addStretch(1)
-        self.setLayout(layout)
+        self.layout = QVBoxLayout()
+        self.layout.addLayout(hlayout)
+        super().init_gui()
 
     def update_macwin_mode(self, macwin_mode):
         self.mac_win_mode_selector.setCurrentIndex(0 if macwin_mode == 'm' else 1)
 
-    def update_config_model(self, config_model):
-        self.dbg['DEBUG'].tr(f"update_config_model: {config_model}")
-        self.treeView.setModel(config_model)
-        if config_model:
-            config_model.dataChanged.connect(self.update_keyb_config)
-
-    def update_gui_config(self, config): # update from firmata keyboard
-        config_id = config[0]
-        field_values = config[1]
-        model = self.treeView.model()
-        config_item = model.item(config_id-1, 0)
-        self.dbg['DEBUG'].tr(f"update_gui_config: {config_item.text()}")
-        self.dbg['DEBUG'].tr(f"{config}")
-        for i in range(config_item.rowCount()): # todo: row number may not match field id
-            try:
-                value_item = config_item.child(i, 3)
-                type_item = config_item.child(i, 1)
-                field_value = field_values[i+1]
-                if type(field_value) == bytearray:
-                    value_item.setFont(QFont("Courier New", 7)) # todo move this to update_config_model
-                    #self.dbg['DEBUG'].tr(f"update_gui_config: {type_item.text()}")
-                    hex_string = ''
-                    if type_item.text().endswith("uint8"):
-                        item_size = 1
-                        items_per_line = 16
-                        format_str = "%02x "
-                    elif type_item.text().endswith("uint16"):
-                        item_size = 2
-                        items_per_line = 10
-                        format_str = "%04x "
-                        if config_item.text() == "keymap layout":
-                            items_per_line = self.keyboard_model.matrix_size()[0]
-                    elif type_item.text().endswith("uint32"):
-                        item_size = 4
-                        items_per_line = 8
-                        format_str = "%08x "
-                    elif type_item.text().endswith("uint64"):
-                        item_size = 8
-                        items_per_line = 4
-                        format_str = "%016x "
-
-                    for i in range(0, len(field_value), item_size):
-                        val = int.from_bytes(field_value[i:i+item_size], 'little') # todo endianess from keyboard mcu, (probably arm le)
-                        hex_string += format_str % val
-                        #hex_string += f"{val:02x} "
-                        if i % (items_per_line*item_size) == (items_per_line*item_size) - item_size:
-                            hex_string += '\n'
-                    formatted_string = hex_string
-
-                    field_value = formatted_string
-                    #field_value = field_value.hex(' ')
-                value_item.setText(f"{field_value}")
-            except Exception as e:
-                self.dbg['DEBUG'].tr(f"update_gui_config: {e}")
-
 #-------------------------------------------------------------------------------
-class KeybStatusTab(QWidget):
+class KeybStatusTab(TreeviewWidget):
     signal_keyb_get_status = Signal(int, int)
 
     def __init__(self, keyboard_model):
         self.dbg = {}
-        self.dbg['DEBUG'] = DebugTracer(print=1, trace=1, obj=self)
+        self.dbg['DEBUG'] = DebugTracer(print=0, trace=1, obj=self)
 
         self.keyboard_model = keyboard_model
-        super().__init__()
+        super().__init__(keyboard_model)
         self.init_gui()
 
     def init_gui(self):
@@ -1352,75 +1371,11 @@ class KeybStatusTab(QWidget):
         hlayout.addWidget(status_refresh_button)
         hlayout.addWidget(every_label)
         hlayout.addWidget(every_msec_edit)
-
         hlayout.addStretch(1)
 
-        layout = QVBoxLayout()
-        layout.addLayout(hlayout)
-
-        #---------------------------------------
-        # status tree view
-        model = QStandardItemModel()
-        self.treeView = QTreeView()
-        self.treeView.setModel(model)
-        self.treeView.setFixedHeight(800)
-        layout.addWidget(self.treeView)
-
-        layout.addStretch(1)
-        self.setLayout(layout)
-
-    def update_status_model(self, status_model):
-        self.dbg['DEBUG'].tr(f"update_status_model: {status_model}")
-        self.treeView.setModel(status_model)
-
-    def update_gui_status(self, status): # update from firmata keyboard
-        self.dbg['DEBUG'].tr(f"update_gui_status: {status}")
-        status_id = status[0]
-        field_values = status[1]
-        model = self.treeView.model()
-        status_item = model.item(status_id-1, 0)
-        self.dbg['DEBUG'].tr(f"update_gui_status: {status_item.text()}")
-        self.dbg['DEBUG'].tr(f"{status}")
-
-        for i in range(status_item.rowCount()): # todo: row number may not match field id
-            try:
-                value_item = status_item.child(i, 3)
-                type_item = status_item.child(i, 1)
-                field_value = field_values[i+1]
-                if type(field_value) == bytearray:
-                    value_item.setFont(QFont("Courier New", 7)) # todo move this to update_config_model
-                    #self.dbg['DEBUG'].tr(f"update_gui_config: {type_item.text()}")
-                    hex_string = ''
-                    if type_item.text().endswith("uint8"):
-                        item_size = 1
-                        items_per_line = 16
-                        format_str = "%02x "
-                    elif type_item.text().endswith("uint16"):
-                        item_size = 2
-                        items_per_line = 10
-                        format_str = "%04x "
-                    elif type_item.text().endswith("uint32"):
-                        item_size = 4
-                        items_per_line = 8
-                        format_str = "%08x "
-                    elif type_item.text().endswith("uint64"):
-                        item_size = 8
-                        items_per_line = 4
-                        format_str = "%016x "
-
-                    for i in range(0, len(field_value), item_size):
-                        val = int.from_bytes(field_value[i:i+item_size], 'little') # todo endianess from keyboard mcu, (probably arm le)
-                        hex_string += format_str % val
-                        #hex_string += f"{val:02x} "
-                        if i % (items_per_line*item_size) == (items_per_line*item_size) - item_size:
-                            hex_string += '\n'
-                    formatted_string = hex_string
-
-                    field_value = formatted_string
-                    #field_value = field_value.hex(' ')
-                value_item.setText(f"{field_value}")
-            except Exception as e:
-                self.dbg['DEBUG'].tr(f"update_gui_config: {e}")
+        self.layout = QVBoxLayout()
+        self.layout.addLayout(hlayout)
+        super().init_gui()
 
 #-------------------------------------------------------------------------------
 class KeybScriptTab(QWidget):
@@ -1656,10 +1611,10 @@ class MainWindow(QMainWindow):
         self.keyboard.signal_console_output.connect(self.console_tab.update_text)
         self.keyboard.signal_default_layer.connect(self.layer_switch_tab.update_default_layer)
         self.keyboard.signal_macwin_mode.connect(self.keyb_config_tab.update_macwin_mode)
-        self.keyboard.signal_config_model.connect(self.keyb_config_tab.update_config_model)
-        self.keyboard.signal_status_model.connect(self.keyb_status_tab.update_status_model)
-        self.keyboard.signal_config.connect(self.keyb_config_tab.update_gui_config)
-        self.keyboard.signal_status.connect(self.keyb_status_tab.update_gui_status)
+        self.keyboard.signal_config_model.connect(self.keyb_config_tab.update_view_model)
+        self.keyboard.signal_status_model.connect(self.keyb_status_tab.update_view_model)
+        self.keyboard.signal_config.connect(self.keyb_config_tab.update_view)
+        self.keyboard.signal_status.connect(self.keyb_status_tab.update_view)
 
         self.console_tab.signal_cli_command.connect(self.keyboard.keyb_set_cli_command)
         self.rgb_matrix_tab.rgb_video_tab.signal_rgb_image.connect(self.keyboard.keyb_set_rgb_image)

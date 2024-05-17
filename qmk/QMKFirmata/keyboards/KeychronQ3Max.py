@@ -267,7 +267,8 @@ class KeychronQ3Max:
     class KeybStatus_v0_1:
         STATUS_BATTERY = {
             1: "level",
-            2: "charging",
+            2: "voltage",
+            3: "charging",
         }
         STATUS_DIP_SWITCH = {
             1: "mac/win",

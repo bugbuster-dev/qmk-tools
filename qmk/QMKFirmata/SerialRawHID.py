@@ -50,8 +50,8 @@ class SerialRawHID(serial.SerialBase):
 
     def open(self):
         try:
-            device_list = hid.enumerate(self.vid, self.pid)
             device = None
+            device_list = hid.enumerate(self.vid, self.pid)
             for _device in device_list:
                 #self.dbg.tr(f"found hid device: {_device}")
                 if _device['usage_page'] == self.QMK_RAW_USAGE_PAGE: # 'usage' should be QMK_RAW_USAGE_ID
@@ -92,7 +92,7 @@ class SerialRawHID(serial.SerialBase):
         #print(f"rawhid write:{data.hex(' ')}")
         return self.hid_device.write(data)
 
-    def read(self, size=1):
+    def read(self):
         if not self.hid_device:
             raise serial.SerialException("device not open")
 
@@ -106,7 +106,7 @@ class SerialRawHID(serial.SerialBase):
         return chr(0)
 
     def read_all(self):
-        pass
+        raise serial.SerialException("read_all: not implemented")
 
     def read_until(self, expected=b'\n', size=None):
-        pass
+        raise serial.SerialException("read_until: not implemented")
