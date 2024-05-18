@@ -9,12 +9,17 @@ class SerialRawHID(serial.SerialBase):
     QMK_RAW_USAGE_ID    = 0x61
 
     def __init__(self, vid, pid, epsize=64, timeout=100):
+        #region debug tracers
         self.dbg = {}
+        self.dbg["DEBUG"] = DebugTracer(print=1, trace=1, obj=self)
         self.dbg["INFO"] = DebugTracer(print=1, trace=1, obj=self)
         self.dbg["WRITE"] = DebugTracer(print=1, trace=1, obj=self)
         self.dbg["READ"] = DebugTracer(print=1, trace=1, obj=self)
-        self.dbg_write = None # self.dbg["WRITE"]
-        self.dbg_read = None # self.dbg["READ"]
+        self.dbg_write = self.dbg["WRITE"]
+        self.dbg_read = self.dbg["READ"]
+        self.dbg_write = None
+        self.dbg_read = None
+        #regionend
 
         self.vid = vid
         self.pid = pid
@@ -92,7 +97,6 @@ class SerialRawHID(serial.SerialBase):
     def write(self, data):
         if not self.hid_device:
             raise serial.SerialException("device not open")
-
         # todo: span sysex data over multiple epsized packets
         total_sent = 0
         while len(data) > 0:
@@ -100,8 +104,9 @@ class SerialRawHID(serial.SerialBase):
             data = data[self.epsize:]
             self.hid_device.write(chunk)
             total_sent += len(chunk)
-            if self.dbg_write: self.dbg_write.tr(f"rawhid write: {chunk.hex(' ')}")
-        if self.dbg_write: self.dbg_write.tr(f"rawhid write sent: {total_sent}")
+            if self.dbg_write: self.dbg_write.tr(f"write: {chunk.hex(' ')}")
+        if self.dbg_write:
+            self.dbg_write.tr(f"total sent: {total_sent}")
         return total_sent
 
     def read(self):

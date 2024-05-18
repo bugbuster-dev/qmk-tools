@@ -315,7 +315,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.dbg['ERROR']           = DebugTracer(print=1, trace=1, obj=self)
         self.dbg['DEBUG']           = DebugTracer(print=0, trace=1, obj=self)
         self.dbg['CONSOLE']         = DebugTracer(print=0, trace=1, obj=self)
-        self.dbg['CLI']             = DebugTracer(print=1, trace=1, obj=self)
+        self.dbg['CLI']             = DebugTracer(print=0, trace=1, obj=self)
         self.dbg['SYSEX_COMMAND']   = DebugTracer(print=0, trace=1, obj=self)
         self.dbg['SYSEX_RESPONSE']  = DebugTracer(print=0, trace=1, obj=self)
         self.dbg['SYSEX_PUB']       = DebugTracer(print=0, trace=1, obj=self)
@@ -371,7 +371,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         if self.port_type == "rawhid":
             self.sp = SerialRawHID(self.vid_pid[0], self.vid_pid[1], self.RAW_EPSIZE_FIRMATA)
             sysex_encoding_byte_size = 2
-            self.MAX_LEN_SYSEX_DATA = self.RAW_EPSIZE_FIRMATA - 4
+            self.MAX_LEN_SYSEX_DATA = self.RAW_EPSIZE_FIRMATA - 5
             self.MAX_LEN_SYSEX_DATA //= sysex_encoding_byte_size
         else:
             self.sp = serial.Serial(self.port, 115200, timeout=1)
@@ -512,10 +512,10 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         data_7bits_encoded = bytearray()
         for i in range(len(data)):
             data_7bits_encoded.extend(self.lookup_table_sysex_byte[data[i]])
-        if len(data_7bits_encoded) > self.MAX_LEN_SYSEX_DATA:
-            self.dbg['ERROR'].tr(f"send_sysex: invalid data length {len(data_7bits_encoded)}")
         #print(f"sysex_cmd:{sysex_cmd}, encoded len:{len(data_7bits_encoded)}")
         #print(f"encoded data:{data_7bits_encoded.hex(' ')}")
+        if len(data) > self.MAX_LEN_SYSEX_DATA:
+            self.dbg['ERROR'].tr(f"send_sysex: data len too large {len(data_7bits_encoded)}")
         super().send_sysex(sysex_cmd, data_7bits_encoded)
 
     def _sysex_data_to_bytearray(self, data):
@@ -894,7 +894,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                     data = bytearray()
                     data.append(FirmataKeybCmd.ID_RGB_MATRIX_BUF)
 
-        if len(data) > 0:
+        if len(data) > RGB_PIXEL_SIZE:
             self.send_sysex(FirmataKeybCmd.SET, data)
             num_sends += 1
         #time.sleep(0.005)
@@ -995,6 +995,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 dbg.tr(f"config[{config_id}][{field_id}]: {value}")
                 if off >= len(data):
                     break
+            data = data[:off+1]
             self.send_sysex(FirmataKeybCmd.SET, data)
         except Exception as e:
             self.dbg['ERROR'].tr(f"keyb_set_config: {e}")
