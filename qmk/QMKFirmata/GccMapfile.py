@@ -1,4 +1,4 @@
-import re
+import re, io
 
 class GccMapfile:
     def __init__(self, map_file_path):
@@ -19,6 +19,75 @@ class GccMapfile:
                 \s*(0x[\da-fA-F]+)\s*   # second address (same as the first address)
                 \s*(.*)                 # symbol name
             ''' % section, re.VERBOSE)
+
+        def symbol_entry_match(section, symbol_entry):
+            if not symbol_entry:
+                return
+
+            # bss COMMON section
+            if section == 'bss':
+                if symbol_entry.strip().startswith('COMMON'):
+                    #print(f"{symbol_entry}")
+                    buf = io.StringIO(symbol_entry)
+                    common = {}
+                    for line in buf:
+                        if line.strip().startswith('COMMON'):
+                            _addr_size_obj = line.split()
+                            common['addr'] = int(_addr_size_obj[1], 16)
+                            common['size'] = int(_addr_size_obj[2], 16)
+                            common['obj'] = _addr_size_obj[3]
+                            common['symbols'] = []
+                            #print(f"common: {common}")
+                            try:
+                                if "~last_common~" in variables:
+                                    prev_sym_size = common['addr'] - variables["~last_common~"]['address']
+                                    variables["~last_common~"]['size'] = prev_sym_size
+                            except:
+                                pass
+                        else:
+                            _addr_symbol = line.split()
+                            try:
+                                sym_addr = int(_addr_symbol[0], 16)
+                            except:
+                                pass
+                            sym_name = _addr_symbol[1]
+                            if len(common['symbols']) > 0:
+                                prev_sym = common['symbols'][-1]
+                                prev_sym_size = sym_addr - prev_sym[0]
+                                common['symbols'][-1] = (prev_sym[0], prev_sym_size, prev_sym[2])
+                            common['symbols'].append((sym_addr, 0, sym_name))
+                    #print(f"common: {common}")
+                    for sym in common['symbols']:
+                        entry = {
+                            "section": section,
+                            "address": sym[0],
+                            "size": sym[1],
+                            "object_file": common['obj'],
+                            "symbol_address": sym[0],
+                            "symbol_name": sym[2],
+                        }
+                        variables[entry["symbol_name"]] = entry
+                        variables["~last_common~"] = entry
+                    return
+
+            # regex pattern to match symbol entry
+            symbol_pattern = symbol_entry_pattern(section)
+            matches = symbol_pattern.findall(symbol_entry)
+            for match in matches:
+                entry = {
+                    "section": match[0],
+                    "address": int(match[1], 16),
+                    "size": int(match[2], 16),
+                    "object_file": match[3],
+                    "symbol_address": int(match[4], 16),
+                    "symbol_name": match[5],
+                }
+                if section == 'text':
+                    functions[entry["symbol_name"]] = entry
+                    #print(f"function: {entry['symbol_name']} {entry['address']} {entry['size']} {entry['object_file']}")
+                else:
+                    variables[entry["symbol_name"]] = entry
+                    #print(f"variable: {entry['symbol_name']} {entry['address']} {entry['size']} {entry['object_file']}")
 
         functions = {}
         variables = {}
@@ -41,6 +110,7 @@ class GccMapfile:
                 if section_start:
                     continue
                 if section_end:
+                    symbol_entry_match(section, symbol_entry)
                     section = None
                     continue
                 if section is None:
@@ -48,32 +118,26 @@ class GccMapfile:
 
                 if line.strip().startswith(f'.{section}.'):
                     if symbol_entry:
-                        # regex pattern to match each variable symbol
-                        symbol_pattern = symbol_entry_pattern(section)
-                        matches = symbol_pattern.findall(symbol_entry)
-                        for match in matches:
-                            entry = {
-                                "section": match[0],
-                                "address": int(match[1], 16),
-                                "size": int(match[2], 16),
-                                "object_file": match[3],
-                                "symbol_address": int(match[4], 16),
-                                "symbol_name": match[5],
-                            }
-                            if section == 'text':
-                                functions[entry["symbol_name"]] = entry
-                                #print(f"function: {entry['symbol_name']} {entry['address']} {entry['size']} {entry['object_file']}")
-                            else:
-                                variables[entry["symbol_name"]] = entry
-                                #print(f"variable: {entry['symbol_name']} {entry['address']} {entry['size']} {entry['object_file']}")
+                        symbol_entry_match(section, symbol_entry)
                     symbol_entry = line
                 else:
-                    symbol_entry += line
+                    if section == 'bss' and line.strip().startswith('COMMON'):
+                        if symbol_entry:
+                            symbol_entry_match(section, symbol_entry)
+                        symbol_entry = line
+                    else:
+                        symbol_entry += line
 
         return functions, variables
 
 if __name__ == '__main__':
     map_file_path = 'V:\shared\keychron\keychron_q3_max_ansi_encoder_via.map'
     mapfile = GccMapfile(map_file_path)
-    #print("functions:", mapfile.functions)
-    #print("variables:", mapfile.variables)
+    print("================================== functions ==================================")
+    #print(mapfile.functions)
+    print("================================== variables ==================================")
+    #print(mapfile.variables)
+    print("===============================================================================")
+    vars = [ "keymaps", "g_rgb_matrix_host_buf" ]
+    for var in vars:
+        print(f"var: {var} {mapfile.variables[var]}")

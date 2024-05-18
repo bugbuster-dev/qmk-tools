@@ -1,6 +1,6 @@
 
 try:
-    debug_led_on_fun = kb.fn["debug_led_on"]
+    debug_led_on_fun = kb.fun["debug_led_on"]
     fun_addr = debug_led_on_fun["address"]
 except:
     fun_addr = None
