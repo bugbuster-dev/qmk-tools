@@ -541,7 +541,7 @@ class RGBAudioTab(QWidget):
         self.dbg['DEBUG']       = DebugTracer(print=1, trace=1, obj=self)
         self.dbg['FREQ_BAND']   = DebugTracer(print=0, trace=1, obj=self)
         self.dbg['PEAK_LEVEL']  = DebugTracer(print=0, trace=1, obj=self)
-        self.dbg['MAX_PEAK']    = DebugTracer(print=1, trace=1, obj=self)
+        self.dbg['MAX_PEAK']    = DebugTracer(print=0, trace=1, obj=self)
         #-----------------------------------------------------------
         self.freq_bands = []
         super().__init__()
@@ -596,8 +596,17 @@ class RGBAudioTab(QWidget):
         hlayout.addWidget(label)
         hlayout.addWidget(self.loadbutton)
         hlayout.addStretch(1)
+
+        label = QLabel("peak level")
+        self.peak_level = QLineEdit()
+        self.peak_level.setFixedWidth(80)
+        self.peak_level.setReadOnly(True)
+        hlayout.addWidget(label)
+        hlayout.addWidget(self.peak_level)
+
         layout.addLayout(hlayout)
 
+        #-----------------------------------------------------------
         # load freq bands colors and add widgets
         self.load_freq_bands_colors()
         self.freqbands_input = []
@@ -776,7 +785,7 @@ class RGBAudioTab(QWidget):
                 peak_level = lvl
 
         # update "max level" every N samples, brightness is based on current peak levels and "max level"
-        if self.sample_count == 30:
+        if self.sample_count == 20:
             self.sample_count = 0
             max_level_running = 0
             max_level_running_band = 0
@@ -802,6 +811,8 @@ class RGBAudioTab(QWidget):
                     #i = 15; self.dbg['MAX_PEAK'].tr(f"{time.monotonic()}:max level {max_level_running}:[{i}]:{self.max_level_running[i]} ({self.max_level[i]}), db_min: {self.db_min[i]}")
                 except:
                     pass
+
+            self.peak_level.setText(f"{max_level_running:.2f}")
             self.max_level_running = [0] * len(self.freq_bands)
 
         if all(level < 0.05 for (level) in peak_levels):
