@@ -10,15 +10,14 @@ class SerialRawHID(serial.SerialBase):
 
     def __init__(self, vid, pid, epsize=64, timeout=100):
         #region debug tracers
-        self.dbg = {}
-        self.dbg["DEBUG"] = DebugTracer(print=1, trace=1, obj=self)
-        self.dbg["INFO"] = DebugTracer(print=1, trace=1, obj=self)
-        self.dbg["WRITE"] = DebugTracer(print=1, trace=1, obj=self)
-        self.dbg["READ"] = DebugTracer(print=1, trace=1, obj=self)
-        self.dbg_write = self.dbg["WRITE"]
-        self.dbg_read = self.dbg["READ"]
-        self.dbg_write = None
-        self.dbg_read = None
+        self.dbg = DebugTracer(zones={
+            "DEBUG": False,
+            "INFO": False,
+            "WRITE": False,
+            "READ": False,
+        })
+        self.dbg_write = False
+        self.dbg_read = False
         #regionend
 
         self.vid = vid
@@ -41,7 +40,7 @@ class SerialRawHID(serial.SerialBase):
             # todo may strip trailing zeroes after END_SYSEX
             #data = data.rstrip(bytearray([0])) # remove trailing zeros
             #if len(data) > 0:
-                #self.dbg["READ"].tr(f"rawhid read:{data.hex(' ')}")
+                #self.dbg.tr("READ", f"rawhid read:{data.hex(' ')}")
         except Exception as e:
             data = bytearray()
 
@@ -63,9 +62,8 @@ class SerialRawHID(serial.SerialBase):
             device = None
             device_list = hid.enumerate(self.vid, self.pid)
             for _device in device_list:
-                #self.info.tr(f"found hid device: {_device}")
                 if _device['usage_page'] == self.QMK_RAW_USAGE_PAGE: # 'usage' should be QMK_RAW_USAGE_ID
-                    self.dbg["INFO"].tr(f"found qmk raw hid device: {_device}")
+                    self.dbg.tr("INFO", f"found qmk raw hid device: {_device}")
                     device = _device
                     break
 
@@ -79,12 +77,12 @@ class SerialRawHID(serial.SerialBase):
             self.write(bytearray([0x00, self.FIRMATA_MSG, 0xf0, 0x71, 0xf7]))
             #self._read_msg()
             #if len(self.data) == 0:
-                #self.dbg["READ"].tr(f"no response from device")
+                #self.dbg.tr("READ", f"no response from device")
         except Exception as e:
             self.hid_device = None
             raise serial.SerialException(f"Could not open HID device: {e}")
 
-        self.dbg["INFO"].tr(f"opened HID device: {self.hid_device}")
+        self.dbg.tr("INFO", f"opened HID device: {self.hid_device}")
 
     def is_open(self):
         return self.hid_device != None
@@ -104,9 +102,9 @@ class SerialRawHID(serial.SerialBase):
             data = data[self.epsize:]
             self.hid_device.write(chunk)
             total_sent += len(chunk)
-            if self.dbg_write: self.dbg_write.tr(f"write: {chunk.hex(' ')}")
+            if self.dbg_write: self.dbg_write.tr("WRITE", f"write: {chunk.hex(' ')}")
         if self.dbg_write:
-            self.dbg_write.tr(f"total sent: {total_sent}")
+            self.dbg_write.tr("WRITE", f"total sent: {total_sent}")
         return total_sent
 
     def read(self):
@@ -116,10 +114,10 @@ class SerialRawHID(serial.SerialBase):
         if len(self.data) == 0:
             self._read_msg()
         if len(self.data) > 0:
-            if self.dbg_read: self.dbg_read.tr(f"read:{self.data[0]}")
+            if self.dbg_read: self.dbg_read.tr("READ", f"read:{self.data[0]}")
             return chr(self.data.pop(0))
 
-        if self.dbg_read: self.dbg_read.tr(f"read: no data")
+        if self.dbg_read: self.dbg_read.tr("READ", f"read: no data")
         return chr(0)
 
     def read_all(self):

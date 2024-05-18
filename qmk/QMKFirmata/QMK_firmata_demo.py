@@ -27,8 +27,7 @@ if __name__ != "__main__":
 class WSServer(QThread):
 
     def __init__(self, msg_handler, port = 8765):
-        self.dbg = {}
-        self.dbg['DEBUG'] = DebugTracer(print=1, trace=1, obj=self)
+        self.dbg = DebugTracer(zones={"DEBUG":1}, obj=self)
 
         self.port = port
         self.loop = None
@@ -36,7 +35,7 @@ class WSServer(QThread):
         super().__init__()
 
     def run(self):
-        self.dbg['DEBUG'].tr(f"ws server start on port: {self.port}")
+        self.dbg.tr("DEBUG", f"ws server start on port: {self.port}")
         asyncio.run(self.ws_main())
 
     async def ws_main(self):
@@ -44,7 +43,7 @@ class WSServer(QThread):
         self.stop_ev = self.loop.create_future()
         async with websockets.serve(self.msg_handler, "localhost", self.port):
             await self.stop_ev
-        self.dbg['DEBUG'].tr("ws server ended")
+        self.dbg.tr("DEBUG", "ws server stopped")
 
     async def ws_close(self):
         # dummy connect to exit ws_main
@@ -55,7 +54,7 @@ class WSServer(QThread):
             pass
 
     def stop(self):
-        #self.dbg['DEBUG'].tr("ws server stop")
+        #self.dbg.tr("DEBUG", "ws server stop")
         if self.loop:
             self.stop_ev.set_result(None)
             asyncio.run(self.ws_close())
@@ -95,15 +94,14 @@ class ConsoleTab(QWidget):
                 self.clear()
 
     def __init__(self, keyboard_model):
-        self.dbg = {}
-        self.dbg['DEBUG'] = DebugTracer(print=1, trace=1, obj=self)
+        self.dbg = DebugTracer(zones={"DEBUG":0}, obj=self)
 
         self.keyboard_model = keyboard_model
         try:
             self.keyboard_config = self.keyboard_model.keyb_config()
         except:
             self.keyboard_config = None
-        self.dbg['DEBUG'].tr(f"keyboard_model: {self.keyboard_model} {self.keyboard_config}")
+        self.dbg.tr('DEBUG', f"keyboard_model: {self.keyboard_model} {self.keyboard_config}")
 
         self.max_text_length = 2000000
         self.max_console_file_size = self.max_text_length*2
@@ -115,7 +113,7 @@ class ConsoleTab(QWidget):
 
     def handle_cli_command(self):
         cmd = self.cli.text()
-        self.dbg['DEBUG'].tr(f"cli command: {cmd}")
+        self.dbg.tr('DEBUG', f"cli command: {cmd}")
         self.signal_cli_command.emit(cmd)
         self.cli.store_clear_command()
 
@@ -152,7 +150,7 @@ class ConsoleTab(QWidget):
                     os.remove(filename)
                     filesize = 0
                 except Exception as e:
-                    self.dbg['DEBUG'].tr(f"remove console log: {e}")
+                    self.dbg.tr('DEBUG', f"remove console log: {e}")
         except:
             filesize = 0
         if filesize < self.max_console_file_size:
@@ -160,7 +158,7 @@ class ConsoleTab(QWidget):
                 with open(filename, "a") as file:
                     file.write(self.console_output.toPlainText())
             except Exception as e:
-                self.dbg['DEBUG'].tr(f"save_to_file: {e}")
+                self.dbg.tr('DEBUG', f"save_to_file: {e}")
 
     def limit_text(self):
         if self.console_text_len >= self.max_text_length:
@@ -203,9 +201,7 @@ class RGBVideoTab(QWidget):
     signal_rgb_image = Signal(QImage, object)
 
     def __init__(self, rgb_matrix_tab, rgb_matrix_size):
-        self.dbg = {}
-        self.dbg['DEBUG'] = DebugTracer(print=0, trace=1, obj=self)
-        self.dbg['WS_MSG'] = DebugTracer(print=0, trace=1, obj=self)
+        self.dbg = DebugTracer(zones={"DEBUG":1, "WS_MSG":1}, obj=self)
         super().__init__()
 
         self.rgb_matrix_tab = rgb_matrix_tab
@@ -222,7 +218,7 @@ class RGBVideoTab(QWidget):
                     message = bytearray(message, 'utf-8')
                 except:
                     pass # already bytearray
-                self.dbg['WS_MSG'].tr(f"ws_handler: {message}")
+                self.dbg.tr('WS_MSG', f"ws_handler: {message}")
                 sub = b"rgb."
                 if message.startswith(sub):
                     message = message[len(sub):]
@@ -242,21 +238,21 @@ class RGBVideoTab(QWidget):
                                             r, g, b = data[index], data[index + 1], data[index + 2]
                                             img.setPixelColor(x, y, QColor(r, g, b))
                                         except Exception as e:
-                                            #self.dbg['WS_MSG'].tr(f"ws_handler: {e}")
+                                            #self.dbg.tr('WS_MSG', f"ws_handler: {e}")
                                             pass
 
                                 self.signal_rgb_image.emit(img, self.rgb_multiplier)
-                                self.dbg['WS_MSG'].tr(f"ws_handler:emit(img) done")
-                self.dbg['WS_MSG'].tr(f"ws_handler: message handled")
+                                self.dbg.tr('WS_MSG', f"ws_handler:emit(img) done")
+                self.dbg.tr('WS_MSG', f"ws_handler: message handled")
                 await asyncio.sleep(0)  # Ensures control is yielded back to the event loop
 
         except Exception as e:
-            self.dbg['WS_MSG'].tr(f"ws_handler: {e}")
-        self.dbg['WS_MSG'].tr(f"ws_handler: done")
+            self.dbg.tr('WS_MSG', f"ws_handler: {e}")
+        self.dbg.tr('WS_MSG', f"ws_handler: done")
         self.signal_rgb_image.emit(None, self.rgb_multiplier)
 
     def ws_server_startstop(self, state):
-        #self.dbg['DEBUG'].tr(f"{state}")
+        #self.dbg.tr('DEBUG', f"{state}")
         if Qt.CheckState(state) == Qt.CheckState.Checked:
             self.ws_server = WSServer(self.ws_handler, int(self.ws_server_port.text()))
             self.ws_server.start()
@@ -266,7 +262,7 @@ class RGBVideoTab(QWidget):
                 self.ws_server.wait()
                 self.ws_server = None
             except Exception as e:
-                self.dbg['DEBUG'].tr(f"{e}")
+                self.dbg.tr('DEBUG', f"{e}")
 
     def init_gui(self):
         layout = QVBoxLayout()
@@ -416,8 +412,7 @@ class RGBVideoTab(QWidget):
 class AudioCaptureThread(QThread):
 
     def __init__(self, freq_bands, interval):
-        self.dbg = {}
-        self.dbg['DEBUG']   = DebugTracer(print=1, trace=1)
+        self.dbg = DebugTracer(zones={"DEBUG":0}, obj=self)
 
         super().__init__()
         self.running = False
@@ -432,14 +427,14 @@ class AudioCaptureThread(QThread):
         self.freq_bands = freq_bands
 
     def run(self):
-        dbg = self.dbg['DEBUG']
+        dbg_zone = 'DEBUG'
 
         self.paudio = pyaudio.PyAudio()
         default_speakers = None
         try:
             # see https://github.com/s0d3s/PyAudioWPatch/blob/master/examples/pawp_record_wasapi_loopback.py
             wasapi_info = self.paudio.get_host_api_info_by_type(pyaudio.paWASAPI)
-            dbg.tr(f"wasapi: {wasapi_info}")
+            self.dbg.tr(dbg_zone, f"wasapi: {wasapi_info}")
 
             default_speakers = self.paudio.get_device_info_by_index(wasapi_info["defaultOutputDevice"])
             if not default_speakers["isLoopbackDevice"]:
@@ -448,9 +443,9 @@ class AudioCaptureThread(QThread):
                         default_speakers = loopback
                         break
 
-            dbg.tr(f"loopback device: {default_speakers}")
+            self.dbg.tr(dbg_zone, f"loopback device: {default_speakers}")
         except Exception as e:
-            dbg.tr(f"wasapi not supported: {e}")
+            self.dbg.tr(dbg_zone, f"wasapi not supported: {e}")
             return
 
         FORMAT = pyaudio.paFloat32
@@ -466,7 +461,7 @@ class AudioCaptureThread(QThread):
                         input=True,
                         frames_per_buffer=CHUNK,
                         input_device_index=INPUT_INDEX)
-        dbg.tr(f"audio stream {self.stream} opened")
+        self.dbg.tr(dbg_zone, f"audio stream {self.stream} opened")
 
         while self.running:
             frames = []
@@ -474,7 +469,7 @@ class AudioCaptureThread(QThread):
                 data = self.stream.read(CHUNK)
                 frames = np.frombuffer(data, dtype=np.float32)
             except Exception as e:
-                dbg.tr(f"audio stream read error: {e}")
+                self.dbg.tr(dbg_zone, f"audio stream read error: {e}")
                 self.running = False
                 break
 
@@ -496,7 +491,7 @@ class AudioCaptureThread(QThread):
 
         self.stream.stop_stream()
         self.stream.close()
-        dbg.tr(f"audio stream {self.stream} closed")
+        self.dbg.tr(dbg_zone, f"audio stream {self.stream} closed")
         self.paudio.terminate()
         self.callback(None)
 
@@ -537,11 +532,7 @@ class RGBAudioTab(QWidget):
 
     def __init__(self, rgb_matrix_size):
         #-----------------------------------------------------------
-        self.dbg = {}
-        self.dbg['DEBUG']       = DebugTracer(print=1, trace=1, obj=self)
-        self.dbg['FREQ_BAND']   = DebugTracer(print=0, trace=1, obj=self)
-        self.dbg['PEAK_LEVEL']  = DebugTracer(print=0, trace=1, obj=self)
-        self.dbg['MAX_PEAK']    = DebugTracer(print=0, trace=1, obj=self)
+        self.dbg = DebugTracer(zones={"DEBUG":0, "FREQ_BAND":0, "PEAK_LEVEL":0, "MAX_PEAK":0}, obj=self)
         #-----------------------------------------------------------
         self.freq_bands = []
         super().__init__()
@@ -565,7 +556,7 @@ class RGBAudioTab(QWidget):
         self.load_freq_bands_colors(filename)
         # update freq bands rgb ui
         for i, (band, color) in enumerate(zip(self.freq_bands, self.freq_rgb)):
-            self.dbg['FREQ_BAND'].tr(f"settext:[{i}]{band} {color}")
+            self.dbg.tr('FREQ_BAND', f"settext:[{i}]{band} {color}")
             self.freqbands_input[i][0].blockSignals(True)
             self.freqbands_input[i][1].blockSignals(True)
             self.freqbands_input[i][0].setText(format(band[0], '.2f'))
@@ -616,7 +607,7 @@ class RGBAudioTab(QWidget):
         self.max_level = [] # max level used for rgb intensity
         self.max_level_running = []  # max level updated every sample
         for i, (band, color) in enumerate(zip(self.freq_bands, self.freq_rgb)):
-            self.dbg['FREQ_BAND'].tr(f"{band} {color}")
+            self.dbg.tr('FREQ_BAND', f"{band} {color}")
             self.max_level.append(15)
             self.max_level_running.append(0)
             low = QLineEdit()
@@ -684,13 +675,13 @@ class RGBAudioTab(QWidget):
                     raise Exception("too many freq bands")
                 if len(self.freq_bands) != len(self.freq_rgb):
                     raise Exception("freq_bands and colors have different lengths")
-                self.dbg['FREQ_BAND'].tr(f"freq_bands:{self.freq_bands}")
-                self.dbg['FREQ_BAND'].tr(f"freq_rgb:{self.freq_rgb}")
-                self.dbg['FREQ_BAND'].tr(f"min_max_level:{self.min_max_level}")
+                self.dbg.tr('FREQ_BAND', f"freq_bands:{self.freq_bands}")
+                self.dbg.tr('FREQ_BAND', f"freq_rgb:{self.freq_rgb}")
+                self.dbg.tr('FREQ_BAND', f"min_max_level:{self.min_max_level}")
                 if self.min_max_level is None or len(self.min_max_level) != len(self.freq_bands):
                     self.min_max_level = [(0,0) for _ in range(len(self.freq_bands))]
         except Exception as e:
-            self.dbg['DEBUG'].tr(f"error loading file: {e}")
+            self.dbg.tr('DEBUG', f"error loading file: {e}")
             self.freq_bands = []
             self.freq_rgb = []
             self.min_max_level = []
@@ -709,14 +700,14 @@ class RGBAudioTab(QWidget):
         for i in range(n_ranges):
             self.freq_rgb.append([float(self.freqbands_rgb_input[i][0].text()), float(self.freqbands_rgb_input[i][1].text()), float(self.freqbands_rgb_input[i][2].text())])
 
-        self.dbg['FREQ_BAND'].tr(f"freq band colors {self.freq_rgb}")
+        self.dbg.tr('FREQ_BAND', f"freq band colors {self.freq_rgb}")
 
     def update_freq_bands(self):
         n_ranges = len(self.freq_bands)
         for i in range(n_ranges):
             self.freq_bands[i] = (float(self.freqbands_input[i][0].text()), float(self.freqbands_input[i][1].text()))
 
-        self.dbg['FREQ_BAND'].tr(f"freq bands {self.freq_bands}")
+        self.dbg.tr('FREQ_BAND', f"freq bands {self.freq_bands}")
         if self.audio_thread:
             self.audio_thread.set_freq_bands(self.freq_bands)
 
@@ -754,7 +745,7 @@ class RGBAudioTab(QWidget):
                     g += peak_levels[i]/max_level[i] * self.freq_rgb[i][1] * MAX_RGB
                     b += peak_levels[i]/max_level[i] * self.freq_rgb[i][2] * MAX_RGB
             except Exception as e:
-                self.dbg['DEBUG'].tr(f"ppeak_level_to_rgb:{e}")
+                self.dbg.tr('DEBUG', f"ppeak_level_to_rgb:{e}")
                 pass # #bands updated in ui
 
         # rgb values are added for all bands, normalize with a factor
@@ -773,8 +764,8 @@ class RGBAudioTab(QWidget):
             return
 
         self.sample_count += 1
-        if self.dbg['PEAK_LEVEL'].print:
-            self.dbg['PEAK_LEVEL'].tr(f"peak {self.sample_count}: {peak_levels}")
+        if self.dbg.enabled('PEAK_LEVEL'):
+            self.dbg.tr('PEAK_LEVEL', f"peak {self.sample_count}: {peak_levels}")
 
         # update "running max level", after N samples "max level" is adjusted with this
         peak_level = 0 # current sample peak level
@@ -804,11 +795,9 @@ class RGBAudioTab(QWidget):
                 else:
                     self.max_level[i] += (self.max_level_running[i] - self.max_level[i])/2
 
-            if self.dbg['MAX_PEAK'].print:
-                #self.dbg['MAX_PEAK'].tr(f"{time.monotonic()}:max level:{self.max_level_running} ({self.max_level}), db_min: {self.db_min}")
+            if self.dbg.enabled('MAX_PEAK'):
                 try:
-                    self.dbg['MAX_PEAK'].tr(f"{time.monotonic()}:max level[{max_level_running_band}] {max_level_running}")
-                    #i = 15; self.dbg['MAX_PEAK'].tr(f"{time.monotonic()}:max level {max_level_running}:[{i}]:{self.max_level_running[i]} ({self.max_level[i]}), db_min: {self.db_min[i]}")
+                    self.dbg.tr('MAX_PEAK', f"{time.monotonic()}:max level[{max_level_running_band}] {max_level_running}")
                 except:
                     pass
 
@@ -823,7 +812,7 @@ class RGBAudioTab(QWidget):
         self.keyb_rgb.fill(QColor(r,g,b))
         #-----------------------------------------------------------
         if self.running:
-            #self.dbg['DEBUG'].tr(f"send rgb {self.keyb_rgb}")
+            #self.dbg.tr('DEBUG', f"send rgb {self.keyb_rgb}")
             self.signal_rgb_image.emit(self.keyb_rgb, self.rgb_multiplier)
 
     # todo: add effects
@@ -971,8 +960,7 @@ class RGBDynLDAnimationTab(QWidget):
     signal_dynld_function = Signal(int, bytearray)
 
     def __init__(self):
-        self.dbg = {}
-        self.dbg['DEBUG']       = DebugTracer(print=1, trace=1)
+        self.dbg = DebugTracer(zones={"DEBUG":1}, obj=self)
         #---------------------------------------
         super().__init__()
         self.init_gui()
@@ -1012,7 +1000,7 @@ class RGBDynLDAnimationTab(QWidget):
                 self.dynld_funtext_edit.setText(hexbuf)
                 self.dynld_funtext_edit.formatText()
         except Exception as e:
-            self.dbg['DEBUG'].tr(f"error: {e}")
+            self.dbg.tr('DEBUG', f"error: {e}")
 
     def send_dynld_animation_func(self):
         fundata = self.dynld_funtext_edit.getBinaryContent()
@@ -1049,8 +1037,7 @@ class LayerAutoSwitchTab(QWidget):
     num_program_selectors = 4
 
     def __init__(self, num_keyb_layers=8):
-        self.dbg = {}
-        self.dbg['DEBUG'] = DebugTracer(print=1, trace=1, obj=self)
+        self.dbg = DebugTracer(zones={"DEBUG":0}, obj=self)
 
         self.current_layer = 0
         self.num_keyb_layers = num_keyb_layers
@@ -1061,16 +1048,16 @@ class LayerAutoSwitchTab(QWidget):
 
     async def ws_handler(self, websocket, path):
         async for message in websocket:
-            self.dbg['DEBUG'].tr(f"ws_handler: {message}")
+            self.dbg.tr('DEBUG', f"ws_handler: {message}")
             if message.startswith("layer:"):
                 try:
                     layer = int(message.split(":")[1])
                     self.signal_keyb_set_layer.emit(layer)
                 except Exception as e:
-                    self.dbg['DEBUG'].tr(f"ws_handler: {e}")
+                    self.dbg.tr('DEBUG', f"ws_handler: {e}")
 
     def ws_server_startstop(self, state):
-        #self.dbg['DEBUG'].tr(f"{state}")
+        #self.dbg.tr('DEBUG', f"{state}")
         if Qt.CheckState(state) == Qt.CheckState.Checked:
             self.ws_server = WSServer(self.ws_handler, int(self.layer_switch_server_port.text()))
             self.ws_server.start()
@@ -1080,17 +1067,17 @@ class LayerAutoSwitchTab(QWidget):
                 self.ws_server.wait()
                 self.ws_server = None
             except Exception as e:
-                self.dbg['DEBUG'].tr(f"{e}")
+                self.dbg.tr('DEBUG', f"{e}")
 
     async def ws_handler(self, websocket, path):
         async for message in websocket:
-            self.dbg['DEBUG'].tr(f"ws_handler: {message}")
+            self.dbg.tr('DEBUG', f"ws_handler: {message}")
             if message.startswith("layer:"):
                 try:
                     layer = int(message.split(":")[1])
                     self.signal_keyb_set_layer.emit(layer)
                 except Exception as e:
-                    self.dbg['DEBUG'].tr(f"ws_handler: {e}")
+                    self.dbg.tr('DEBUG', f"ws_handler: {e}")
 
     def init_gui(self):
         layout = QVBoxLayout()
@@ -1157,7 +1144,7 @@ class LayerAutoSwitchTab(QWidget):
         self.setLayout(layout)
 
     def update_default_layer(self, layer):
-        self.dbg['DEBUG'].tr(f"default layer update: {layer}")
+        self.dbg.tr('DEBUG', f"default layer update: {layer}")
         self.deflayer_selector.setCurrentIndex(layer)
 
     def on_winfocus(self, line):
@@ -1165,23 +1152,23 @@ class LayerAutoSwitchTab(QWidget):
         self.current_focus = line
         # foreground focus window info
         focus_win = line.split("\t")
-        #self.dbg['DEBUG'].tr(f"on_winfocus {focus_win}")
+        #self.dbg.tr('DEBUG', f"on_winfocus {focus_win}")
         for i, ps in enumerate(self.program_selector):
             compare_win = self.program_selector[i].currentText().split("\t")
-            #self.dbg['DEBUG'].tr(f"on_winfocus compare: {compare_win}")
+            #self.dbg.tr('DEBUG', f"on_winfocus compare: {compare_win}")
             if focus_win[0].strip() == compare_win[0].strip() and \
                focus_win[1].strip() == compare_win[1].strip():
                 layer = int(self.layer_selector[i].currentText())
                 self.signal_keyb_set_layer.emit(layer)
                 self.current_layer = layer
-                self.dbg['DEBUG'].tr(f"layer set: {layer}")
+                self.dbg.tr('DEBUG', f"layer set: {layer}")
                 return
 
         defaultLayer = self.deflayer_selector.currentIndex()
         if self.current_layer != defaultLayer:
             self.signal_keyb_set_layer.emit(defaultLayer)
             self.current_layer = defaultLayer
-            self.dbg['DEBUG'].tr(f"layer set: {defaultLayer}")
+            self.dbg.tr('DEBUG', f"layer set: {defaultLayer}")
 
     def update_winfocus_text(self, line):
         self.winfocus_textedit.append(line)
@@ -1217,24 +1204,24 @@ class TreeviewWidget(QWidget):
         self.setLayout(self.layout)
 
     def update_view_model(self, view_model):
-        self.dbg['DEBUG'].tr(f"update_view_model: {view_model}")
+        self.dbg.tr('DEBUG', f"update_view_model: {view_model}")
         self.tree_view.setModel(view_model)
         if view_model:
             try:
                 view_model.dataChanged.connect(self.update_keyb_data)
             except Exception as e:
-                self.dbg['DEBUG'].tr(f"update_view_model: {e}")
+                self.dbg.tr('DEBUG', f"update_view_model: {e}")
 
     def update_view(self, item_data): # update from firmata keyboard
         try:
             item_id = item_data[0]
         except Exception as e:
-            self.dbg['DEBUG'].tr(f"update_view: {e}, {item_data}")
+            self.dbg.tr('DEBUG', f"update_view: {e}, {item_data}")
             return
         field_values = item_data[1]
         model = self.tree_view.model()
         item = model.item(item_id-1, 0)
-        self.dbg['DEBUG'].tr(f"update_view: {item.text()} {item_data}")
+        self.dbg.tr('DEBUG', f"update_view: {item.text()} {item_data}")
         for i in range(item.rowCount()): # todo: row number may not match field id
             try:
                 value_item = item.child(i, 3)
@@ -1242,7 +1229,7 @@ class TreeviewWidget(QWidget):
                 field_value = field_values[i+1]
                 if type(field_value) == bytearray:
                     value_item.setFont(QFont("Courier New", 7)) # todo move this to update_view_model
-                    #self.dbg['DEBUG'].tr(f"update_view: {type_item.text()}")
+                    #self.dbg.tr('DEBUG', f"update_view: {type_item.text()}")
                     hex_string = ''
                     if type_item.text().endswith("uint8"):
                         item_size = 1
@@ -1276,7 +1263,7 @@ class TreeviewWidget(QWidget):
                     #field_value = field_value.hex(' ')
                 value_item.setText(f"{field_value}")
             except Exception as e:
-                self.dbg['DEBUG'].tr(f"update_view: {e}")
+                self.dbg.tr('DEBUG', f"update_view: {e}")
 
 #-------------------------------------------------------------------------------
 class KeybConfigTab(TreeviewWidget):
@@ -1285,15 +1272,14 @@ class KeybConfigTab(TreeviewWidget):
     signal_macwin_mode = Signal(str)
 
     def __init__(self, keyboard_model):
-        self.dbg = {}
-        self.dbg['DEBUG'] = DebugTracer(print=0, trace=1, obj=self)
+        self.dbg = DebugTracer(zones={"DEBUG":0}, obj=self)
 
         self.keyboard_model = keyboard_model
         super().__init__(keyboard_model)
         self.init_gui()
 
     def update_keyb_data(self, tl, br, roles):
-        #self.dbg['DEBUG'].tr(f"update_keyb_data: topleft:{tl}, roles:{roles}")
+        #self.dbg.tr('DEBUG', f"update_keyb_data: topleft:{tl}, roles:{roles}")
         update = False
         if roles:
             for role in roles:
@@ -1317,10 +1303,10 @@ class KeybConfigTab(TreeviewWidget):
                         return
                     field_values[i+1] = value.text()
             except Exception as e:
-                self.dbg['DEBUG'].tr(f"update_keyb_config: {e}")
+                self.dbg.tr('DEBUG', f"update_keyb_config: {e}")
                 return
             config = (config_id, field_values)
-            self.dbg['DEBUG'].tr(f"update_keyb_config:signal emit {config}")
+            self.dbg.tr('DEBUG', f"update_keyb_config:signal emit {config}")
             self.signal_keyb_set_config.emit(config)
 
     def update_keyb_macwin_mode(self):
@@ -1361,8 +1347,7 @@ class KeybStatusTab(TreeviewWidget):
     signal_keyb_get_status = Signal(int, int)
 
     def __init__(self, keyboard_model):
-        self.dbg = {}
-        self.dbg['DEBUG'] = DebugTracer(print=0, trace=1, obj=self)
+        self.dbg = DebugTracer(zones={"DEBUG":0}, obj=self)
 
         self.keyboard_model = keyboard_model
         super().__init__(keyboard_model)
@@ -1394,8 +1379,7 @@ class KeybScriptTab(QWidget):
     signal_script_output = Signal(str)
 
     def __init__(self, keyboard_model):
-        self.dbg = {}
-        self.dbg['DEBUG'] = DebugTracer(print=1, trace=1, obj=self)
+        self.dbg = DebugTracer(zones={"DEBUG":0}, obj=self)
         #---------------------------------------
         self.keyboard_model = keyboard_model
 
@@ -1479,15 +1463,12 @@ class RGBAnimationTab(QWidget):
     signal_rgb_image = Signal(QImage, object)
 
     def __init__(self, rgb_matrix_size):
-        self.dbg = {}
-        self.dbg['DEBUG']   = DebugTracer(print=1, trace=1, obj=self)
-
+        self.dbg = DebugTracer(zones={'DEBUG': 0}, obj=self)
         self.rgb_matrix_size = rgb_matrix_size
         super().__init__()
         self.init_gui()
 
     def init_gui(self):
-        dbg = self.dbg['DEBUG']
         # Create a figure for plotting
         self.figure = Figure(facecolor='black')
         self.figure.subplots_adjust(left=0, right=1, bottom=0, top=1)  # Adjust margins
@@ -1515,9 +1496,9 @@ class RGBAnimationTab(QWidget):
         h_inch = height/dpi
         self.figure.set_size_inches((w_inch, h_inch))
         self.figure.set_dpi(dpi)
-        if dbg.print:
-            width, height = self.figure.get_size_inches() * self.figure.get_dpi()
-            dbg.tr(f"figure size:{width}x{height} dpi:{self.figure.get_dpi()}")
+
+        width, height = self.figure.get_size_inches() * self.figure.get_dpi()
+        self.dbg.tr('DEBUG', f"figure size:{width}x{height} dpi:{self.figure.get_dpi()}")
 
         # Parameters for the animation
         self.x_size = 20
@@ -1558,7 +1539,7 @@ class RGBAnimationTab(QWidget):
         rgba_buffer = np.frombuffer(self.figure.canvas.buffer_rgba(), dtype=np.uint8)
         width, height = self.figure.get_size_inches() * self.figure.get_dpi()
         #if rgba_buffer.nbytes != width * height * 4:
-            #self.dbg['DEBUG'].tr(f"buffer size mismatch: {rgba_buffer.nbytes} != {width}x{height}x4")
+            #self.dbg.tr('DEBUG', f"buffer size mismatch: {rgba_buffer.nbytes} != {width}x{height}x4")
         rgba_array = rgba_buffer.reshape(int(height), int(width), 4, order='C')
         rgba_qimg = QImage(rgba_array.data, width, height, QImage.Format_RGBA8888)
         keyb_rgb = rgba_qimg.scaled(self.rgb_matrix_size[0], self.rgb_matrix_size[1], Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.FastTransformation)
