@@ -66,8 +66,10 @@ class GccToolchain:
             result = subprocess.run(objcopy_command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             if self.debug:
                 print(f"objcopy ok")
+            return True
         except subprocess.CalledProcessError as e:
             print(f"E: objcopy nok: {e.stderr.decode()}")
+        return False
 
     def load_elf(self, elf_file):
         return GccElfFile(elf_file)

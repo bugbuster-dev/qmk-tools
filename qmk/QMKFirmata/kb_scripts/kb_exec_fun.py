@@ -1,4 +1,22 @@
+def compile_and_exec(c_file):
+    toolchain = kb.toolchain
+    if not toolchain.compile(c_file, "exec.elf"):
+        print("compile failed")
+        exit()
+    if not toolchain.elf2bin("exec.elf"):
+        print("elf2bin failed")
+        exit()
+    code = None
+    with open("exec.bin", "rb") as f:
+        code = f.read()
+        print(code.hex(' '))
+    if code:
+        rc = kb.exec(code)
+        print(f"rc: {hex(rc)}")
+    else:
+        print("no code")
 
+#----------------------------------------------
 printf_func = kb.fun["printf"]
 printf_addr = printf_func["address"]
 print(f"printf: {hex(printf_addr)}")
@@ -16,11 +34,9 @@ int hello_world(int a) {{
     uint32_t qmk_builddate_addr = {builddate_addr};
     funptr_printf printf = (funptr_printf) (printf_addr | 1);
     printf((const char*) qmk_builddate_addr);
-    return 0x5a;
+    return 0x5adcbaa5;
 }}
 '''
-toolchain = kb.toolchain
-
 hello_world_c_file = hello_world_c.format(printf_addr=hex(printf_addr), builddate_addr=hex(builddate_addr))
 print("-"*40)
 print(hello_world_c_file)
@@ -28,20 +44,8 @@ print("-"*40)
 with open("exec.c", "w") as f:
     f.write(hello_world_c_file)
 
-if not toolchain.compile("exec.c", "exec.elf"):
-    print("compile failed")
-    exit()
+compile_and_exec("exec.c")
 
-#exit()
-toolchain.elf2bin("exec.elf")
-code = None
-with open("exec.bin", "rb") as f:
-    code = f.read()
-    print(code.hex(' '))
-if code:
-    rc = kb.exec(code)
-    print(f"rc: {hex(rc)}")
-#exit()
 #----------------------------------------------
 putchar_fun = kb.fun["putchar_"]
 putchar_addr = putchar_fun["address"]
@@ -58,7 +62,7 @@ int putchar_test(int a) {{
         putchar('A' + i);
     }}
     putchar('\\n');
-    return 0xa5;
+    return 0xa5abcd5a;
 }}
 '''
 putchar_c_file = putchar_c.format(putchar_addr=hex(putchar_addr))
@@ -69,16 +73,4 @@ with open("exec.c", "w") as f:
     #c_file = c_function.format(printf_addr=hex(printf_addr))
     f.write(putchar_c_file)
 
-toolchain = kb.toolchain
-if not toolchain.compile("exec.c", "exec.elf"):
-    print("compile failed")
-    exit()
-
-toolchain.elf2bin("exec.elf")
-code = None
-with open("exec.bin", "rb") as f:
-    code = f.read()
-    print(code.hex(' '))
-if code:
-    rc = kb.exec(code)
-    print(f"rc: {hex(rc)}")
+compile_and_exec("exec.c")
