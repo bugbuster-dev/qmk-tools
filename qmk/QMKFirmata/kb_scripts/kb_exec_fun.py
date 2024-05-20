@@ -1,3 +1,7 @@
+# todo: load all relevant elf sections into keyboard memory
+# for now only text is loaded and no relocation support.
+# below example of loading text section into keyboard memory and executing it.
+# function and variable symbol addresses are loaded from the map file.
 def compile_and_exec(c_file):
     toolchain = kb.toolchain
     if not toolchain.compile(c_file, "exec.elf"):

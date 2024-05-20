@@ -1,4 +1,6 @@
 
+kb.rgb["duration"] = 200
+
 max_led_index = 87
 delay = 0.1
 i = 0

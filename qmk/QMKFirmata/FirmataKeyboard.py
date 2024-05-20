@@ -119,7 +119,7 @@ class FirmataKeybCmd_v0_3(FirmataKeybCmd_v0_2):
     ID_CONTROL              = 11 # todo
     ID_EVENT                = 10 # todo
 
-# todo: dictionary with version as key
+# todo: dictionary with version as key when supporting older firmata versions, for now always use latest
 FirmataKeybCmd = FirmataKeybCmd_v0_3
 
 class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
@@ -437,7 +437,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         from KeyMachine import KeyMachine
 
         def to_two_bytes(byte_val):
-            # byte to two 7 bit bytes
+            # byte to 2x 7 bit bytes
             return bytearray([byte_val % 128, byte_val >> 7])
         self.lookup_table_sysex_byte = {}
         for i in range(256):
@@ -540,7 +540,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             self.dbg.tr('ERROR', f"sysex_pub_handler: invalid data length {len(data)}")
             return buf
         for off in range(0, len(data), 2):
-            # Combine two bytes
+            # 2x 7 bit bytes to 1 byte
             buf.append(data[off+1] << 7 | data[off])
         return buf
 
@@ -796,7 +796,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         data.extend(cmd_ba)
         self.send_sysex(FirmataKeybCmd.SET, data)
 
-        # todo: wait for response
+        # wait for response
         wait_for_response = True
         response = None
         if wait_for_response:
@@ -830,7 +830,15 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             #todo: qimage from rgb_data
             #rgb_image = ...
             #self.keyb_set_rgb_image(rgb_image, 1.0)
+            print("todo: full rgb image")
             return
+
+        if rgb_index == "duration":
+            self.rgb_pixel_duration = rgb_data
+        try:
+            pixel_duration = self.rgb_pixel_duration
+        except:
+            pixel_duration = 100
 
         data = bytearray()
         data.append(FirmataKeybCmd.ID_RGB_MATRIX_BUF)
@@ -842,7 +850,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             except:
                 pass
 
-            rgb_pixel = self.pixel_to_rgb_index_duration(pixel, QImage.Format_RGB888, rgb_index[i], 200) # todo duration
+            rgb_pixel = self.pixel_to_rgb_index_duration(pixel, QImage.Format_RGB888, rgb_index[i], pixel_duration)
             if rgb_pixel:
                 #self.dbg.tr('RGB_BUF', f"pixel: {rgb_pixel.hex(' ')}")
                 data.extend(rgb_pixel)
@@ -1025,7 +1033,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.dbg.tr('SYSEX_COMMAND', f"keyb_set_dynld_function: {fun_id} {buf.hex(' ')}")
         data = bytearray()
         data.append(FirmataKeybCmd.ID_DYNLD_FUNCTION)
-        id = [fun_id & 0xff, (fun_id >> 8) & 0xff] # todo: use struct.pack
+        id = struct.pack(self.pack_endian+'H', fun_id)
         offset = [0, 0]
         data.extend(id)
         data.extend(offset)
@@ -1042,7 +1050,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
                 data = bytearray()
                 data.append(FirmataKeybCmd.ID_DYNLD_FUNCTION)
-                offset = [i & 0xff, (i >> 8) & 0xff]
+                offset = struct.pack(self.pack_endian+'H', i)
                 data.extend(id)
                 data.extend(offset)
 
