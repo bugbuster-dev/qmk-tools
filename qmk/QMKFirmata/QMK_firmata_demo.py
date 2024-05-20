@@ -781,19 +781,23 @@ class RGBAudioTab(QWidget):
             max_level_running = 0
             max_level_running_band = 0
             for i in range(len(peak_levels)):
-                if self.max_level_running[i] > max_level_running:
-                    max_level_running = self.max_level_running[i]
-                    max_level_running_band = i
+                try:
+                    if self.max_level_running[i] > max_level_running:
+                        max_level_running = self.max_level_running[i]
+                        max_level_running_band = i
 
-                if self.min_max_level[i][0] == 0:
-                    self.db_min[i] = -27
-                else: # user defined min level
-                    self.db_min[i] = 20 * np.log10(self.min_max_level[i][0]/self.max_level[i])
+                    if self.min_max_level[i][0] == 0:
+                        self.db_min[i] = -27
+                    else: # user defined min level
+                        self.db_min[i] = 20 * np.log10(self.min_max_level[i][0]/self.max_level[i])
 
-                if self.min_max_level[i][1] > 0: # user defined max level
-                    self.max_level[i] = self.min_max_level[i][1]
-                else:
-                    self.max_level[i] += (self.max_level_running[i] - self.max_level[i])/2
+                    if self.min_max_level[i][1] > 0: # user defined max level
+                        self.max_level[i] = self.min_max_level[i][1]
+                    else:
+                        self.max_level[i] += (self.max_level_running[i] - self.max_level[i])/2
+                except Exception as e:
+                    self.dbg.tr('DEBUG', f"process_audiopeak_levels:{e}")
+                    pass
 
             if self.dbg.enabled('MAX_PEAK'):
                 try:
@@ -1188,6 +1192,12 @@ class TreeviewWidget(QWidget):
 
     def __init__(self, keyboard_model):
         self.keyboard_model = keyboard_model
+        self.endian = 'little'
+        try:
+            if self.keyboard_model.MCU[2].startswith("be"):
+                self.endian = 'big'
+        except:
+            pass
         super().__init__()
 
     def init_gui(self):
@@ -1252,7 +1262,7 @@ class TreeviewWidget(QWidget):
                         items_per_line = self.keyboard_model.matrix_size()[0]
 
                     for i in range(0, len(field_value), item_size):
-                        val = int.from_bytes(field_value[i:i+item_size], 'little') # todo endianess from keyboard mcu
+                        val = int.from_bytes(field_value[i:i+item_size], self.endian)
                         hex_string += format_str % val
                         #hex_string += f"{val:02x} "
                         if i % (items_per_line*item_size) == (items_per_line*item_size) - item_size:
@@ -1443,6 +1453,14 @@ class CodeTextEdit(QTextEdit):
         self.setFont(QFont("Courier New", 9))
         if filepath:
             self.load_text_file(filepath)
+
+    def insertFromMimeData(self, source):
+        if source.hasText():
+            # only plain text
+            plain_text = source.text()
+            self.insertPlainText(plain_text)
+        else:
+            super().insertFromMimeData(source)
 
     def load_text_file(self, filepath):
         try:

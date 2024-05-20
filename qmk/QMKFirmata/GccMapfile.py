@@ -1,8 +1,8 @@
 import re, io
 
 class GccMapfile:
-    def __init__(self, map_file_path):
-        if map_file_path is None:
+    def __init__(self, map_file_path = ""):
+        if not map_file_path:
             map_file_path = 'V:\shared\keychron\keychron_q3_max_ansi_encoder_via.map'
         self.functions, self.variables = self.parse_file(map_file_path)
 
@@ -12,12 +12,10 @@ class GccMapfile:
     def parse_file(self, file_path):
         def symbol_entry_pattern(section):
             return re.compile(r'''
-                \s*\.(%s)\.\w+\s*       # section name
+                \s*\.%s\.(\w+)\s*       # symbol name
                 \s*(0x[\da-fA-F]+)\s*   # address
                 \s*(0x[\da-fA-F]+)\s*   # size
                 \s*(\S+)\s*             # object file path
-                \s*(0x[\da-fA-F]+)\s*   # second address (same as the first address)
-                \s*(.*)                 # symbol name
             ''' % section, re.VERBOSE)
 
         def symbol_entry_match(section, symbol_entry):
@@ -25,8 +23,8 @@ class GccMapfile:
                 return
 
             # bss COMMON section
-            if section == 'bss':
-                if symbol_entry.strip().startswith('COMMON'):
+            if symbol_entry.strip().startswith('COMMON'):
+                if section == 'bss':
                     #print(f"{symbol_entry}")
                     buf = io.StringIO(symbol_entry)
                     common = {}
@@ -75,12 +73,12 @@ class GccMapfile:
             matches = symbol_pattern.findall(symbol_entry)
             for match in matches:
                 entry = {
-                    "section": match[0],
+                    "section": section,
                     "address": int(match[1], 16),
                     "size": int(match[2], 16),
                     "object_file": match[3],
-                    "symbol_address": int(match[4], 16),
-                    "symbol_name": match[5],
+                    #"symbol_address": int(match[4], 16),
+                    "symbol_name": match[0],
                 }
                 if section == 'text':
                     functions[entry["symbol_name"]] = entry
@@ -138,6 +136,10 @@ if __name__ == '__main__':
     print("================================== variables ==================================")
     #print(mapfile.variables)
     print("===============================================================================")
-    vars = [ "keymaps", "g_rgb_matrix_host_buf" ]
+    funs = [ "matrix_init", "debug_led_on", "printf" ]
+    for fun in funs:
+        print(f"{fun}: {mapfile.functions[fun]['section']} {hex(mapfile.functions[fun]['address'])},{mapfile.functions[fun]['size']} {mapfile.functions[fun]['object_file']}")
+
+    vars = [ "keymaps", "g_rgb_matrix_host_buf", "dynld_func_buf" ]
     for var in vars:
-        print(f"var: {var} {mapfile.variables[var]}")
+        print(f"{var}: {mapfile.variables[var]['section']} {hex(mapfile.variables[var]['address'])},{mapfile.variables[var]['size']} {mapfile.variables[var]['object_file']}")
