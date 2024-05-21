@@ -204,6 +204,9 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                     return -1
 
         def __init__(self, keyboard):
+            self.dbg = DebugTracer(zones={'D':1}
+                                   , obj=self)
+
             self.keyboard = keyboard
             self.pack_endian = '<'
             try:
@@ -221,14 +224,14 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 self.fun = self.mapfile.functions
                 self.var = self.mapfile.variables
             except Exception as e:
-                #print(f"mapfile: {e}")
+                self.dbg.tr('D', f"mapfile: {e}")
                 self.mapfile = None
 
             try:
                 import GccToolchain
                 self.toolchain = GccToolchain.GccToolchain()
             except Exception as e:
-                #print(f"toolchain: {e}")
+                self.dbg.tr('D', f"toolchain: {e}")
                 self.toolchain = None
 
         def on_mem_read(self, key):
@@ -238,7 +241,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             except:
                 addr = key
                 size = 1
-            #print(f"on_mem_read: key={key}, addr={addr}, size={size}")
+            self.dbg.tr('D', f"on_mem_read: key={key}, addr={addr}, size={size}")
             resp = self.keyboard.keyb_set_cli_command(f"mr {hex(addr)} {size}")
             if size == 1:
                 return resp[0]
@@ -255,7 +258,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             except:
                 addr = key
                 size = 1
-            #print(f"on_mem_write: key={key}, addr={addr}, size={size}")
+            self.dbg.tr('D', f"on_mem_write: key={key}, addr={addr}, size={size}")
             resp = self.keyboard.keyb_set_cli_command(f"mw {hex(addr)} {size} {hex(val)}")
 
         def on_eeprom_read(self, key):
@@ -268,7 +271,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             except:
                 addr = key
                 size = 1
-            #print(f"on_eeprom_read: key={key}, addr={addr}, size={size}")
+            self.dbg.tr('D', f"on_eeprom_read: key={key}, addr={addr}, size={size}")
             resp = self.keyboard.keyb_set_cli_command(f"er {hex(addr)} {size}")
             if size == 1:
                 return resp[0]
@@ -285,14 +288,14 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             except:
                 addr = key
                 size = 1
-            #print(f"on_eeprom_write: key={key}, addr={addr}, size={size}")
+            self.dbg.tr('D', f"on_eeprom_write: key={key}, addr={addr}, size={size}")
             resp = self.keyboard.keyb_set_cli_command(f"ew {hex(addr)} {size} {hex(val)}")
 
         def on_rgb_read(self, key):
             return None
 
         def on_rgb_write(self, key, val):
-            #print(f"on_rgb_write: key={key}, val={val}")
+            self.dbg.tr('D', f"on_rgb_write: key={key}, val={val}")
             rgb_index = key
             rgb_data = val
             # rgb matrix image or pixel(s)
@@ -302,36 +305,67 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
         # call function at address
         def call(self, addr):
-            #print(f"call: {addr}")
+            self.dbg.tr('D', f"call: {addr}")
             resp = self.keyboard.keyb_set_cli_command(f"c {hex(addr)}")
             return resp
 
-        # load and exec function
+        def compile(self, c_file):
+            if self.toolchain:
+                elf_file = c_file.replace(".c", ".elf")
+                bin_file = elf_file.replace(".elf", ".bin")
+                if self.toolchain.compile(c_file, elf_file):
+                    elf_data = None
+                    bin_data = None
+                    with open(elf_file, "rb") as f:
+                        elf_data = f.read()
+                    if self.toolchain.elf2bin(elf_file, bin_file):
+                        with open(bin_file, "rb") as f:
+                            bin_data = f.read()
+                    return { 'elf': elf_data, 'bin': bin_data }
+            return None
+
+        # exec function
         def exec(self, code):
-            DYNLD_FUN_ID_EXEC = 1
-            self.keyboard.keyb_set_dynld_function(DYNLD_FUN_ID_EXEC, code)
-            resp = self.keyboard.keyb_set_dynld_funexec(DYNLD_FUN_ID_EXEC)
-            return resp
+            if type(code) == str:
+                # compile file
+                c_file = code
+                if not self.compile(c_file):
+                    self.dbg.tr('D', "compile failed")
+                    return None
+                with open("exec.bin", "rb") as f:
+                    code = f.read()
+                    self.dbg.tr('D', code.hex(' '))
+
+            if type(code) == bytes:
+                # load function
+                DYNLD_FUN_ID_EXEC = 1
+                self.load_fun(DYNLD_FUN_ID_EXEC, code)
+                resp = self.keyboard.keyb_set_dynld_funexec(DYNLD_FUN_ID_EXEC)
+                return resp
+
+        # load function
+        def load_fun(self, fun_id, code):
+            self.keyboard.keyb_set_dynld_function(fun_id, code)
 
         def set(self, key, val):
-            print("todo")
+            self.dbg.tr('E', "todo")
 
         def get(self, key):
-            print("todo")
+            self.dbg.tr('E', "todo")
 
     def __init__(self, *args, **kwargs):
         QtCore.QObject.__init__(self)
         #----------------------------------------------------
         #region debug tracers
         self.dbg_rgb_buf = 0
-        self.dbg = DebugTracer(zones={"DEBUG":0,
-                                      "ERROR":0,
-                                      "CONSOLE":0,
-                                      "CLI":0,
-                                      "SYSEX_COMMAND":0,
-                                      "SYSEX_RESPONSE":0,
-                                      "SYSEX_PUB":0,
-                                      "RGB_BUF":self.dbg_rgb_buf}
+        self.dbg = DebugTracer(zones={'D':0,
+                                      'E':0,
+                                      'CONSOLE':0,
+                                      'CLI':0,
+                                      'SYSEX_COMMAND':0,
+                                      'SYSEX_RESPONSE':0,
+                                      'SYSEX_PUB':0,
+                                      'RGB_BUF':self.dbg_rgb_buf}
                                , obj=self)
         #endregion
 
@@ -361,7 +395,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         # load "keyboard models", keyboard model contains name, vid/pid, rgb matrix size, ...
         self.keyboardModel, self.keyboardModelVidPid = self.load_keyboard_models()
         for class_name, class_type in self.keyboardModel.items():
-            self.dbg.tr("DEBUG", f"keyboard model: {class_name} ({hex(class_type.vid_pid()[0])}:{hex(class_type.vid_pid()[1])}), {class_type}")
+            self.dbg.tr('D', f"keyboard model: {class_name} ({hex(class_type.vid_pid()[0])}:{hex(class_type.vid_pid()[1])}), {class_type}")
         #for vid_pid, class_type in self.keyboardModelVidPid.items():
             #dbg.tr(f"vid pid: {vid_pid}, Class Type: {class_type}")
 
@@ -375,7 +409,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 pass
 
             self.port = find_com_port(self.vid_pid[0], self.vid_pid[1])
-            self.dbg.tr("DEBUG", f"using keyboard: {self.keyboardModel} on port {self.port}")
+            self.dbg.tr('D', f"using keyboard: {self.keyboardModel} on port {self.port}")
             self.name = self.keyboardModel.name()
             self._rgb_max_refresh = self.rgb_max_refresh()
 
@@ -519,7 +553,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         try:
             self.sp.close()
         except Exception as e:
-            self.dbg.tr('ERROR', f"{e}")
+            self.dbg.tr('E', f"{e}")
         self.samplingOff()
 
     #-------------------------------------------------------------------------------
@@ -531,13 +565,13 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         #print(f"sysex_cmd:{sysex_cmd}, encoded len:{len(data_7bits_encoded)}")
         #print(f"encoded data:{data_7bits_encoded.hex(' ')}")
         if len(data) > self.MAX_LEN_SYSEX_DATA:
-            self.dbg.tr('ERROR', f"send_sysex: data len too large {len(data_7bits_encoded)}")
+            self.dbg.tr('E', f"send_sysex: data len too large {len(data_7bits_encoded)}")
         super().send_sysex(sysex_cmd, data_7bits_encoded)
 
     def _sysex_data_to_bytearray(self, data):
         buf = bytearray()
         if len(data) % 2 != 0:
-            self.dbg.tr('ERROR', f"sysex_pub_handler: invalid data length {len(data)}")
+            self.dbg.tr('E', f"sysex_pub_handler: invalid data length {len(data)}")
             return buf
         for off in range(0, len(data), 2):
             # 2x 7 bit bytes to 1 byte
@@ -741,6 +775,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.script_thread = threading.Thread(target=run_script_on_thread, name="run_script_on_thread",args=(script, signal_output))
         self.script_thread.start()
 
+    # stopped() called from script to check if script should stop
     def script_stopped(self):
         return self.script_stop
 
@@ -1026,7 +1061,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             data = data[:off+1]
             self.send_sysex(FirmataKeybCmd.SET, data)
         except Exception as e:
-            self.dbg.tr('ERROR', f"keyb_set_config: {e}")
+            self.dbg.tr('E', f"keyb_set_config: {e}")
             return
 
     def keyb_set_dynld_function(self, fun_id, buf):

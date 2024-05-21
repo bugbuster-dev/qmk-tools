@@ -23,22 +23,25 @@ class DebugTracer:
         return DebugTracerRegistry.registry()
 
     def __init__(self, *args, **kwargs):
-        # set flags to print, trace, ...
-        attributes = ["zones", "print", "trace", "obj"]
+        attributes = ["zones", "obj"]
         for attr in attributes:
             setattr(self, attr, None)
+            if attr == "zones":
+                setattr(self, attr, {"E":1,"W":1,"I":0,"D":0}) # error, warning, info, debug
         for attr, value in kwargs.items():
             if attr in attributes:
                 setattr(self, attr, value)
                 if attr == "obj":
                     if value:
-                        DebugTracerRegistry.register_tracer(value.__class__.__name__, self)
+                        try:
+                            DebugTracerRegistry.register_tracer(value.__class__.__name__, self)
+                        except:
+                            try:
+                                DebugTracerRegistry.register_tracer(value, self)
+                            except:
+                                pass
 
-    #def tr(self, *args, **kwargs):
     def tr(self, zone, string):
-        if self.print:
-            print("DebugTracer: remove")
-
         try:
             if self.zones[zone]:
                 objstr = ""
@@ -54,7 +57,10 @@ class DebugTracer:
             pass
 
     def enable(self, attr, flag=True):
-        setattr(self, attr, flag)
+        try:
+            setattr(self, attr, flag)
+        except:
+            pass
 
     def enabled(self, attr):
         try:

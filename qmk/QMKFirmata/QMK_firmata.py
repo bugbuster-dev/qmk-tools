@@ -60,7 +60,7 @@ class WSServer(QThread):
             asyncio.run(self.ws_close())
 
 #-------------------------------------------------------------------------------
-class ConsoleTab(QWidget):
+class ConsoleTab(QWidget): # todo: move to separate file
     signal_cli_command = Signal(str)
 
     class CommandLineEdit(QLineEdit):
@@ -168,7 +168,7 @@ class ConsoleTab(QWidget):
             self.console_text_len = 0
 
 #-------------------------------------------------------------------------------
-class RGBMatrixTab(QWidget):
+class RGBMatrixTab(QWidget): # todo: move to separate file
     def __init__(self, keyboard_model):
         self.keyboard_model = keyboard_model
         try:
@@ -384,7 +384,6 @@ class RGBVideoTab(QWidget):
         ret, frame = self.cap.read()
         if ret:
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            #self.printRGBData(rgbFrame)  # Print RGB data of the frame
             h, w, ch = rgb_frame.shape
             bytes_per_line = ch * w
             rgb_img = QImage(rgb_frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
@@ -392,16 +391,12 @@ class RGBVideoTab(QWidget):
             self.video_label.setPixmap(QPixmap.fromImage(scaled_img))
 
             keyb_rgb = scaled_img.scaled(self.rgb_matrix_size[0], self.rgb_matrix_size[1])
-            #self.videoLabel.setPixmap(QPixmap.fromImage(keyb_rgb))
             self.signal_rgb_image.emit(keyb_rgb, self.rgb_multiplier)
         else:
-            #print("Reached the end of the video, restarting...")
-            self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Rewind the video
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # restart
 
     def print_rgb_data(self, frame):
-        # Example function to print RGB data of a frame
-        # You might want to process or analyze this data instead of printing
-        print(frame[0,0])  # Print RGB values of the top-left pixel as an example
+        print(frame[0,0])
 
     def closeEvent(self, event):
         if self.cap is not None and self.cap.isOpened():
@@ -409,7 +404,7 @@ class RGBVideoTab(QWidget):
         self.timer.stop()
 
 #-------------------------------------------------------------------------------
-class AudioCaptureThread(QThread):
+class AudioCaptureThread(QThread): # todo: move to separate file
 
     def __init__(self, freq_bands, interval):
         self.dbg = DebugTracer(zones={"DEBUG":0}, obj=self)

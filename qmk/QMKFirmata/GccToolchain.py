@@ -55,13 +55,15 @@ class GccToolchain:
             print(f"E: compilation nok: {e.stderr.decode()}")
             return False
 
-    def elf2bin(self, elf_file):
+    def elf2bin(self, elf_file, bin_file=""):
+        if not bin_file:
+            bin_file = elf_file.replace(".elf", ".bin")
         objcopy = self.tool["objcopy"]
         objcopy_options = "-O binary"
         objcopy_command = [ objcopy ]
         objcopy_command.extend(objcopy_options.split())
         objcopy_command.append(elf_file)
-        objcopy_command.append(f"{elf_file.split('.')[0]}.bin")
+        objcopy_command.append(bin_file)
         try:
             result = subprocess.run(objcopy_command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             if self.debug:
@@ -90,7 +92,7 @@ class GccToolchain:
 class QmkFirmwareCompilerOptions:
     def __init__(self, qmk_firmware_path="", options="", includes=""):
         if not qmk_firmware_path:
-            qmk_firmware_path = 'V:\\qmk_firmware\\'
+            qmk_firmware_path = 'V:\\shared\\qmk_firmware\\'
         self.qmk_firmware_path = qmk_firmware_path
 
         self.compiler_options = includes
@@ -98,7 +100,7 @@ class QmkFirmwareCompilerOptions:
         if not options:
             self.options("-c", "-mcpu=cortex-m4", "-mthumb", "-DTHUMB_PRESENT", "-mno-thumb-interwork", "-DTHUMB_NO_INTERWORKING", "-mno-unaligned-access", "-mfloat-abi=hard", "-mfpu=fpv4-sp-d16", "-fsingle-precision-constant", "-fomit-frame-pointer", "-ffunction-sections", "-fdata-sections", "-fno-common", "-fshort-wchar", "-fno-builtin-printf", "-ggdb", "-Os", "-Wall", "-Wstrict-prototypes", "-Werror", "-std=gnu11", "-fcommon", "-fPIC")
         if not includes:
-            self.includes("quantum\\rgb_matrix\\animations", "quantum\\rgb_matrix\\", "quantum\\", "platforms\\", ".build\\obj_keychron_q3_max_ansi_encoder_via\\src\\")
+            self.includes("quantum\\rgb_matrix\\animations", "quantum\\rgb_matrix\\", "quantum\\", "platforms\\", ".build\\obj_keychron_q3_max_ansi_encoder_via\\src\\", "keyboards\\keychron\\q3_max\\")
 
     def includes(self, *args):
         for arg in args:

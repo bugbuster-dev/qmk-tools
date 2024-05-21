@@ -1,24 +1,19 @@
 # todo: load all relevant elf sections into keyboard memory
 # for now only text is loaded and no relocation support.
-# below example of loading text section into keyboard memory and executing it.
-# function and variable symbol addresses are loaded from the map file.
+# below example of compiling a c function and loading its code (elf text section)
+# into keyboard memory and executing it.
+# function and variable symbol addresses of running firmware can be loaded from
+# the map file and used in the c code as constants so it is included in the text section.
+# printf function and __QMK_BUILDDATE__ variable are used in the example.
+
 def compile_and_exec(c_file):
-    toolchain = kb.toolchain
-    if not toolchain.compile(c_file, "exec.elf"):
-        print("compile failed")
+    code = kb.compile(c_file)
+    if not code:
+        print("compile nok")
         exit()
-    if not toolchain.elf2bin("exec.elf"):
-        print("elf2bin failed")
-        exit()
-    code = None
-    with open("exec.bin", "rb") as f:
-        code = f.read()
-        print(code.hex(' '))
-    if code:
-        rc = kb.exec(code)
-        print(f"rc: {hex(rc)}")
-    else:
-        print("no code")
+    #rc = kb.exec(code['elf']) # todo: load relevant elf sections into kb memory
+    rc = kb.exec(code['bin'])
+    print(f"rc: {hex(rc)}")
 
 #----------------------------------------------
 printf_func = kb.fun["printf"]
@@ -74,7 +69,6 @@ print("-"*40)
 print(putchar_c_file)
 print("-"*40)
 with open("exec.c", "w") as f:
-    #c_file = c_function.format(printf_addr=hex(printf_addr))
     f.write(putchar_c_file)
 
 compile_and_exec("exec.c")

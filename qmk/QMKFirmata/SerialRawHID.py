@@ -1,8 +1,6 @@
 import serial, hid, time
-
 from DebugTracer import DebugTracer
 
-# todo move to separate file
 class SerialRawHID(serial.SerialBase):
     FIRMATA_MSG         = 0xFA
     QMK_RAW_USAGE_PAGE  = 0xFF60
@@ -98,8 +96,8 @@ class SerialRawHID(serial.SerialBase):
         # todo: span sysex data over multiple epsized packets
         total_sent = 0
         while len(data) > 0:
-            chunk = bytearray([0x00, self.FIRMATA_MSG]) + data[:self.epsize]
-            data = data[self.epsize:]
+            chunk = bytearray([0x00, self.FIRMATA_MSG]) + data[:self.epsize-2]
+            data = data[self.epsize-2:]
             self.hid_device.write(chunk)
             total_sent += len(chunk)
             if self.dbg_write: self.dbg_write.tr("WRITE", f"write: {chunk.hex(' ')}")
