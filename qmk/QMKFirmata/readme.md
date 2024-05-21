@@ -6,9 +6,10 @@ proof of concept demo (windows) of arduino firmata support in qmk firmware
 - set rgb matrix from video/gif playback, matplotlib animation, audio peak level
 - set default layer depending on application in focus
 - set mac/win mode
+- set debug config, rgb mode/hsv/speed, keymap flags, debounce, ...
 - set dynamically loaded user animation binary
+- "keyboard scripting" ("development build" only), access keyboard mcu memory/eeprom and compile/execute c function from host python.
 - show console output
-- set debug config mask (enable/matrix/keyboard/...)
 - websocket server to set default layer from other apps
 - websocket server to set rgb matrix from other apps
 
@@ -19,7 +20,7 @@ supported keyboards
 -------------------
 
 * keychron q3 max (https://github.com/bugbuster-dev/keychron_qmk_firmware)
-* nuphy air96 v2 (https://github.com/bugbuster-dev/qmk_firmware/tree/air96v2_virtser)
+* todo: nuphy air96 v2 (https://github.com/bugbuster-dev/qmk_firmware/tree/air96v2_virtser)
 
 install
 -------
@@ -34,7 +35,7 @@ run
 ---
 
 ~~~
-python QMK_firmata_demo.py
+python QMK_firmata.py
 ~~~
 
 websocket client examples
