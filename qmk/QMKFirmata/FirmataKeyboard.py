@@ -184,7 +184,6 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
     #-------------------------------------------------------------------------------
     # kb object in "keyboard script" tab
-    # sb = kb.m[(0x0, 4)] # read 4 bytes from memory address 0x0
     class KeybScriptEnv:
         class DictOnReadWrite(dict):
             def __init__(self, on_read, on_write):
@@ -229,7 +228,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
             try:
                 import GccToolchain
-                self.toolchain = GccToolchain.GccToolchain()
+                self.toolchain = GccToolchain.GccToolchain(self.keyboard.keyboardModel.TOOLCHAIN)
             except Exception as e:
                 self.dbg.tr('D', f"toolchain: {e}")
                 self.toolchain = None
@@ -369,7 +368,6 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                                , obj=self)
         #endregion
 
-        self.kb_script_env = self.KeybScriptEnv(self)
         #----------------------------------------------------
         self.samplerThread = None
 
@@ -412,9 +410,9 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             self.dbg.tr('D', f"using keyboard: {self.keyboardModel} on port {self.port}")
             self.name = self.keyboardModel.name()
             self._rgb_max_refresh = self.rgb_max_refresh()
+        self.kb_script_env = self.KeybScriptEnv(self)
 
         self.samplerThread = pyfirmata2.util.Iterator(self)
-
         if self.port_type == "rawhid":
             self.sp = SerialRawHID(self.vid_pid[0], self.vid_pid[1], self.RAW_EPSIZE_FIRMATA)
             sysex_encoding_byte_size = 2

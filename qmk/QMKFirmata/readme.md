@@ -11,7 +11,7 @@ proof of concept demo (windows) of arduino firmata support in qmk firmware
 - "keyboard scripting" ("development build" only), access keyboard mcu memory/eeprom and compile/execute c function from host python.
 - show console output
 - websocket server to set default layer from other apps
-- websocket server to set rgb matrix from other apps
+- websocket server to set rgb matrix from other apps (screen capture ws client example)
 
 **WARNING: depending on audio/video content the lights may flash frequently, which can trigger a seizure!**
 **do not use it when you are photosensitive!**
@@ -52,6 +52,14 @@ screen capture and send rgb image:
 ~~~
 python screen_capture_rgb_stream.py --display 0 --fps 25 --width 17 --height 6 --port 8787
 ~~~
+
+keyboard script
+---------------
+
+see kb_scripts dir for examples.
+
+for compile and execute function example install "GNU Arm Embedded Toolchain",
+see: https://developer.arm.com/downloads/-/gnu-rm and modify KeychronQ3Max.TOOLCHAIN to change path, includes/options, ...
 
 demo videos
 -----------

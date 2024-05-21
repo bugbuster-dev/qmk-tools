@@ -27,7 +27,7 @@ if __name__ != "__main__":
 class WSServer(QThread):
 
     def __init__(self, msg_handler, port = 8765):
-        self.dbg = DebugTracer(zones={"DEBUG":1}, obj=self)
+        self.dbg = DebugTracer(zones={'D':1}, obj=self)
 
         self.port = port
         self.loop = None
@@ -35,7 +35,7 @@ class WSServer(QThread):
         super().__init__()
 
     def run(self):
-        self.dbg.tr("DEBUG", f"ws server start on port: {self.port}")
+        self.dbg.tr('D', f"ws server start on port: {self.port}")
         asyncio.run(self.ws_main())
 
     async def ws_main(self):
@@ -43,7 +43,7 @@ class WSServer(QThread):
         self.stop_ev = self.loop.create_future()
         async with websockets.serve(self.msg_handler, "localhost", self.port):
             await self.stop_ev
-        self.dbg.tr("DEBUG", "ws server stopped")
+        self.dbg.tr('D', "ws server stopped")
 
     async def ws_close(self):
         # dummy connect to exit ws_main
@@ -54,7 +54,7 @@ class WSServer(QThread):
             pass
 
     def stop(self):
-        #self.dbg.tr("DEBUG", "ws server stop")
+        #self.dbg.tr('D', "ws server stop")
         if self.loop:
             self.stop_ev.set_result(None)
             asyncio.run(self.ws_close())
@@ -94,7 +94,7 @@ class ConsoleTab(QWidget): # todo: move to separate file
                 self.clear()
 
     def __init__(self, keyboard_model):
-        self.dbg = DebugTracer(zones={"DEBUG":0}, obj=self)
+        self.dbg = DebugTracer(zones={'D':0}, obj=self)
 
         self.keyboard_model = keyboard_model
         try:
@@ -201,7 +201,7 @@ class RGBVideoTab(QWidget):
     signal_rgb_image = Signal(QImage, object)
 
     def __init__(self, rgb_matrix_tab, rgb_matrix_size):
-        self.dbg = DebugTracer(zones={"DEBUG":1, "WS_MSG":1}, obj=self)
+        self.dbg = DebugTracer(zones={'D':1, 'WS_MSG':0}, obj=self)
         super().__init__()
 
         self.rgb_matrix_tab = rgb_matrix_tab
@@ -407,7 +407,7 @@ class RGBVideoTab(QWidget):
 class AudioCaptureThread(QThread): # todo: move to separate file
 
     def __init__(self, freq_bands, interval):
-        self.dbg = DebugTracer(zones={"DEBUG":0}, obj=self)
+        self.dbg = DebugTracer(zones={'D':0}, obj=self)
 
         super().__init__()
         self.running = False
@@ -527,7 +527,7 @@ class RGBAudioTab(QWidget):
 
     def __init__(self, rgb_matrix_size):
         #-----------------------------------------------------------
-        self.dbg = DebugTracer(zones={"DEBUG":0, "FREQ_BAND":0, "PEAK_LEVEL":0, "MAX_PEAK":0}, obj=self)
+        self.dbg = DebugTracer(zones={'D':0, "FREQ_BAND":0, "PEAK_LEVEL":0, "MAX_PEAK":0}, obj=self)
         #-----------------------------------------------------------
         self.freq_bands = []
         super().__init__()
@@ -959,7 +959,7 @@ class RGBDynLDAnimationTab(QWidget):
     signal_dynld_function = Signal(int, bytearray)
 
     def __init__(self):
-        self.dbg = DebugTracer(zones={"DEBUG":1}, obj=self)
+        self.dbg = DebugTracer(zones={'D':1}, obj=self)
         #---------------------------------------
         super().__init__()
         self.init_gui()
@@ -1036,7 +1036,7 @@ class LayerAutoSwitchTab(QWidget):
     num_program_selectors = 4
 
     def __init__(self, num_keyb_layers=8):
-        self.dbg = DebugTracer(zones={"DEBUG":0}, obj=self)
+        self.dbg = DebugTracer(zones={'D':0}, obj=self)
 
         self.current_layer = 0
         self.num_keyb_layers = num_keyb_layers
@@ -1277,7 +1277,7 @@ class KeybConfigTab(TreeviewWidget):
     signal_macwin_mode = Signal(str)
 
     def __init__(self, keyboard_model):
-        self.dbg = DebugTracer(zones={"DEBUG":0}, obj=self)
+        self.dbg = DebugTracer(zones={'D':0}, obj=self)
 
         self.keyboard_model = keyboard_model
         super().__init__(keyboard_model)
@@ -1352,7 +1352,7 @@ class KeybStatusTab(TreeviewWidget):
     signal_keyb_get_status = Signal(int, int)
 
     def __init__(self, keyboard_model):
-        self.dbg = DebugTracer(zones={"DEBUG":0}, obj=self)
+        self.dbg = DebugTracer(zones={'D':0}, obj=self)
 
         self.keyboard_model = keyboard_model
         super().__init__(keyboard_model)
@@ -1384,7 +1384,7 @@ class KeybScriptTab(QWidget):
     signal_script_output = Signal(str)
 
     def __init__(self, keyboard_model):
-        self.dbg = DebugTracer(zones={"DEBUG":0}, obj=self)
+        self.dbg = DebugTracer(zones={'D':0}, obj=self)
         #---------------------------------------
         self.keyboard_model = keyboard_model
 

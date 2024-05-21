@@ -24,10 +24,14 @@ class KeychronQ3Max:
         ['left shift',   '',  'z',  'x',  'c',  'v',  'b',  'n',  'm',   ',',   '.',   '/', '', 'right shift', '', 'up', ''],
         ['left ctrl', 'left windows', 'left menu', '', '', '', 'space', '', '', '', 'right menu', 'right windows', 'fn', 'ctrl', 'left', 'down', 'right']]
     }
-
     #---------------------------------------------------------------------------
-    def __init__(self):
-        pass
+    TOOLCHAIN = {
+        'path': "V:\\toolchain\\gcc-arm-none-eabi-10.3-2021.10\\bin\\",
+        'options': [ "-c", "-mcpu=cortex-m4", "-mthumb", "-DTHUMB_PRESENT", "-mno-thumb-interwork", "-DTHUMB_NO_INTERWORKING", "-mno-unaligned-access", "-mfloat-abi=hard", "-mfpu=fpv4-sp-d16", "-fsingle-precision-constant", "-fomit-frame-pointer", "-ffunction-sections", "-fdata-sections", "-fno-common", "-fshort-wchar", "-fno-builtin-printf", "-ggdb", "-Os", "-Wall", "-Wstrict-prototypes", "-Werror", "-std=gnu11", "-fcommon", "-fPIC" ],
+        'include_base': "V:\\shared\\qmk_firmware\\",
+        'includes': [ "quantum\\rgb_matrix\\animations", "quantum\\rgb_matrix\\", "quantum\\", "platforms\\", ".build\\obj_keychron_q3_max_ansi_encoder_via\\src\\", "keyboards\\keychron\\q3_max\\" ],
+    }
+    #---------------------------------------------------------------------------
 
     @staticmethod
     def name():
