@@ -203,7 +203,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                     return -1
 
         def __init__(self, keyboard):
-            self.dbg = DebugTracer(zones={'D':1}
+            self.dbg = DebugTracer(zones={'D':0}
                                    , obj=self)
 
             self.keyboard = keyboard
@@ -415,9 +415,9 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.samplerThread = pyfirmata2.util.Iterator(self)
         if self.port_type == "rawhid":
             self.sp = SerialRawHID(self.vid_pid[0], self.vid_pid[1], self.RAW_EPSIZE_FIRMATA)
-            sysex_encoding_byte_size = 2
-            self.MAX_LEN_SYSEX_DATA = self.RAW_EPSIZE_FIRMATA - 5
-            self.MAX_LEN_SYSEX_DATA //= sysex_encoding_byte_size
+            self.MAX_LEN_SYSEX_DATA = self.RAW_EPSIZE_FIRMATA - 4
+            #sysex_encoding_byte_size = 2
+            #self.MAX_LEN_SYSEX_DATA //= sysex_encoding_byte_size
         else:
             self.sp = serial.Serial(self.port, 115200, timeout=1)
 
@@ -500,6 +500,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.struct_layout = {}
         self.struct_model = {}
 
+        self.encode_7bits_sysex = False
         self.add_cmd_handler(pyfirmata2.STRING_DATA, self.console_line_handler)
         self.add_cmd_handler(FirmataKeybCmd.RESPONSE, self.sysex_response_handler)
         self.add_cmd_handler(FirmataKeybCmd.PUB, self.sysex_pub_handler)
@@ -555,16 +556,25 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.samplingOff()
 
     #-------------------------------------------------------------------------------
-    # todo: generic handling len(data) > MAX_LEN_SYSEX_DATA (rgb matrix buffer, dynld function, ...)
     def send_sysex(self, sysex_cmd, data):
-        data_7bits_encoded = bytearray()
-        for i in range(len(data)):
-            data_7bits_encoded.extend(self.lookup_table_sysex_byte[data[i]])
-        #print(f"sysex_cmd:{sysex_cmd}, encoded len:{len(data_7bits_encoded)}")
-        #print(f"encoded data:{data_7bits_encoded.hex(' ')}")
         if len(data) > self.MAX_LEN_SYSEX_DATA:
-            self.dbg.tr('E', f"send_sysex: data len too large {len(data_7bits_encoded)}")
-        super().send_sysex(sysex_cmd, data_7bits_encoded)
+            self.dbg.tr('E', f"send_sysex: data len too large {len(data)}")
+
+        encoded_data = data
+        if self.encode_7bits_sysex: # 2x 7 bits to byte
+            encoded_data = bytearray()
+            for i in range(len(data)):
+                encoded_data.extend(self.lookup_table_sysex_byte[data[i]])
+            #print(f"sysex_cmd:{sysex_cmd}, encoded len:{len(encoded_data)}")
+            #print(f"encoded data:{encoded_data.hex(' ')}")
+            super().send_sysex(sysex_cmd, encoded_data)
+            return
+
+        # qmk firmata sysex start
+        msg = bytearray([pyfirmata2.START_SYSEX|0x1, sysex_cmd])
+        msg.extend(encoded_data)
+        msg.append(pyfirmata2.END_SYSEX)
+        self.sp.write(msg)
 
     def _sysex_data_to_bytearray(self, data):
         buf = bytearray()

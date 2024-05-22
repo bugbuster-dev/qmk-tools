@@ -24,7 +24,3 @@ while not stopped():
     time.sleep(delay)
 
 print("stopped")
-
-#todo: set pixel duration, rgb image
-#kb.rgb.duration = 100
-#kb.rgb['img'] = [ pixel*W*H ]

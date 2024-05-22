@@ -9,13 +9,13 @@ class SerialRawHID(serial.SerialBase):
     def __init__(self, vid, pid, epsize=64, timeout=100):
         #region debug tracers
         self.dbg = DebugTracer(zones={
-            "DEBUG": False,
-            "INFO": False,
-            "WRITE": False,
-            "READ": False,
+            "DEBUG": 0,
+            "INFO": 0,
+            "WRITE": 1,
+            "READ": 0,
         })
-        self.dbg_write = False
-        self.dbg_read = False
+        self.dbg_write = None # self.dbg
+        self.dbg_read = None
         #regionend
 
         self.vid = vid
@@ -72,7 +72,7 @@ class SerialRawHID(serial.SerialBase):
             self.hid_device.open_path(device['path'])
 
             self.data = bytearray()
-            self.write(bytearray([0x00, self.FIRMATA_MSG, 0xf0, 0x71, 0xf7]))
+            self.write(bytearray([0xf0, 0x71, 0xf7]))
             #self._read_msg()
             #if len(self.data) == 0:
                 #self.dbg.tr("READ", f"no response from device")
