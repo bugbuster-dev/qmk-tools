@@ -33,42 +33,42 @@ class KeychronQ3Max:
     }
     #---------------------------------------------------------------------------
 
-    @staticmethod
-    def name():
-        return KeychronQ3Max.NAME
+    @classmethod
+    def name(cls):
+        return cls.NAME
 
-    @staticmethod
-    def vid_pid():
-        return (KeychronQ3Max.VID, KeychronQ3Max.PID)
+    @classmethod
+    def vid_pid(cls):
+        return (cls.VID, cls.PID)
 
-    @staticmethod
-    def mcu():
-        return KeychronQ3Max.MCU
+    @classmethod
+    def mcu(cls):
+        return cls.MCU
 
-    @staticmethod
-    def matrix_size():
-        return (KeychronQ3Max.MAXTRIX_W, KeychronQ3Max.MAXTRIX_H)
+    @classmethod
+    def matrix_size(cls):
+        return (cls.MAXTRIX_W, cls.MAXTRIX_H)
 
-    @staticmethod
-    def rgb_matrix_size():
-        return (KeychronQ3Max.RGB_MAXTRIX_W, KeychronQ3Max.RGB_MAXTRIX_H)
+    @classmethod
+    def rgb_matrix_size(cls):
+        return (cls.RGB_MAXTRIX_W, cls.RGB_MAXTRIX_H)
 
-    @staticmethod
-    def rgb_max_refresh():
-        return KeychronQ3Max.RGB_MAX_REFRESH
+    @classmethod
+    def rgb_max_refresh(cls):
+        return cls.RGB_MAX_REFRESH
 
-    @staticmethod
-    def num_rgb_leds():
-        return KeychronQ3Max.NUM_RGB_LEDS
+    @classmethod
+    def num_rgb_leds(cls):
+        return cls.NUM_RGB_LEDS
 
-    @staticmethod
-    def default_layer(mode):
-        layer = KeychronQ3Max.DEFAULT_LAYER[mode.lower()]
+    @classmethod
+    def default_layer(cls, mode):
+        layer = cls.DEFAULT_LAYER[mode.lower()]
         return layer
 
-    @staticmethod
-    def num_layers():
-        return KeychronQ3Max.NUM_LAYERS
+    @classmethod
+    def num_layers(cls):
+        return cls.NUM_LAYERS
 
     # pixel position to (rgb) led index
     @staticmethod
@@ -82,12 +82,13 @@ class KeychronQ3Max:
         [ 63, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 74, __, 75, __ ],
         [ 76, 77, 78, 79, 79, 79, 79, 79, 79, 79, 80, 81, 82, 83, 84, 85, 86 ],
         ]
-        #print(f"xy_to_led[{y}][{x}] = {xy_to_led[y][x]}")
         try:
+            #print(f"xy_to_led[{y}][{x}] = {xy_to_led[y][x]}")
             return xy_to_led[y][x]
         except:
             return -1
 
+    # keyboard config/status/... representation for "treeview model"
     class KeybStruct:
         TYPES = {
             1: "bit",
@@ -110,37 +111,37 @@ class KeychronQ3Max:
             "readonly": 1,
         }
 
-        @staticmethod
-        def struct_name(_name_dict, _id):
+        @classmethod
+        def struct_name(cls, sid):
             try:
-                return _name_dict[_id][0]
+                return cls.STRUCTS[sid][0]
             except:
                 return "unknown"
-        @staticmethod
-        def struct_field_name(_name_dict, config_id, field_id):
+        @classmethod
+        def struct_field_name(cls, sid, fid):
             try:
-                return _name_dict[config_id][1][field_id]
+                return cls.STRUCTS[sid][1][fid]
             except:
                 return "unknown"
 
-        @staticmethod
-        def struct_field_type(field_type):
+        @classmethod
+        def struct_field_type(cls, ftype):
             try:
-                if field_type & 0x80:
-                    item_type = field_type & 0x7F
-                    return 'array:' + KeychronQ3Max.KeybStruct.TYPES[item_type]
+                if ftype & 0x80:
+                    item_type = ftype & 0x7F
+                    return 'array:' + cls.TYPES[item_type]
                 else:
-                    return KeychronQ3Max.KeybStruct.TYPES[field_type]
+                    return cls.TYPES[ftype]
             except:
                 return "unknown"
 
-        @staticmethod
-        def print_struct(derived_class, struct_id, struct_fields):
-            config_name = derived_class.struct_name(struct_id)
-            print(f"struct[{struct_id}]: {config_name}")
-            for field_id, field in struct_fields.items():
-                field_name = derived_class.struct_field_name(struct_id, field_id)
-                field_type = derived_class.struct_field_type(field[0])
+        @classmethod
+        def print_struct(cls, sid, sfields):
+            sname = cls.struct_name(sid)
+            print(f"struct[{sid}]: {sname}")
+            for fid, field in sfields.items():
+                field_name = cls.struct_field_name(sid, fid)
+                field_type = cls.struct_field_type(field[0])
                 try:
                     field_offset = field[1]
                 except:
@@ -154,8 +155,8 @@ class KeychronQ3Max:
                         f"offset:{field_offset}, "
                         f"size:{field_size}")
 
-        @staticmethod
-        def struct_model(model, derived_class, config_id, config_fields):
+        @classmethod
+        def struct_model(cls, model, sid, sfields):
             from PySide6.QtGui import Qt, QStandardItemModel, QStandardItem
 
             def create_item(text, editable=False):
@@ -164,35 +165,35 @@ class KeychronQ3Max:
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                 return item
 
-            def add_config_to_model(model, config_id, config_fields):
-                config_name = derived_class.struct_name(config_id)
-                config_item = create_item(config_name)
-                for field_id, field_info in config_fields.items():
-                    #print(f"field_id:{field_id}, field_info:{field_info}")
+            def add_struct_to_model(model, sid, sfields):
+                sname = cls.struct_name(sid)
+                _item = create_item(sname)
+                for fid, finfo in sfields.items():
+                    #print(f"field_id:{fid}, field_info:{finfo}")
                     try:
-                        field_name = create_item(derived_class.struct_field_name(config_id, field_id))
-                        field_type = create_item(derived_class.struct_field_type(field_info[0]))
-                        field_size = create_item(field_info[2])
-                        field_flags = field_info[3]
-                        if field_flags & KeychronQ3Max.KeybStruct.FLAGS["readonly"]:
+                        field_name = create_item(cls.struct_field_name(sid, fid))
+                        field_type = create_item(cls.struct_field_type(finfo[0]))
+                        field_size = create_item(finfo[2])
+                        field_flags = finfo[3]
+                        if field_flags & cls.FLAGS["readonly"]:
                             editable = False
                         else:
                             editable = True
                         field_value = create_item("", editable=editable)
                         field = [field_name, field_type, field_size, field_value]
-                        config_item.appendRow(field)
+                        _item.appendRow(field)
                     except:
                         pass
-                model.appendRow(config_item)
+                model.appendRow(_item)
 
             if model is None:
                 model = QStandardItemModel()
                 model.setHorizontalHeaderLabels(["field", "type", "size", "value"])
 
-            add_config_to_model(model, config_id, config_fields)
+            add_struct_to_model(model, sid, sfields)
             return model
 
-    class KeybConfiguration_v0_1:
+    class KeybConfiguration_v0_1(KeybStruct):
         CONFIG_DEBUG = {
             1: "enable",
             2: "matrix",
@@ -247,28 +248,9 @@ class KeychronQ3Max:
             6: ("debounce", CONFIG_DEBOUNCE),
             7: ("devel", CONFIG_DEVEL),
         }
+        STRUCTS = CONFIG
 
-        @staticmethod
-        def struct_name(config_id):
-            return KeychronQ3Max.KeybStruct.struct_name(KeychronQ3Max.KeybConfiguration_v0_1.CONFIG, config_id)
-
-        @staticmethod
-        def struct_field_name(config_id, field_id):
-            return KeychronQ3Max.KeybStruct.struct_field_name(KeychronQ3Max.KeybConfiguration_v0_1.CONFIG, config_id, field_id)
-
-        @staticmethod
-        def struct_field_type(field_type):
-            return KeychronQ3Max.KeybStruct.struct_field_type(field_type)
-
-        @staticmethod
-        def print_struct(struct_id, struct_fields):
-            KeychronQ3Max.KeybStruct.print_struct(KeychronQ3Max.KeybConfiguration_v0_1, struct_id, struct_fields)
-
-        @staticmethod
-        def struct_model(model, config_id, config_fields):
-            return KeychronQ3Max.KeybStruct.struct_model(model, KeychronQ3Max.KeybConfiguration_v0_1, config_id, config_fields)
-
-    class KeybStatus_v0_1:
+    class KeybStatus_v0_1(KeybStruct):
         STATUS_BATTERY = {
             1: "level",
             2: "voltage",
@@ -285,31 +267,12 @@ class KeychronQ3Max:
             2: ("dip switch", STATUS_DIP_SWITCH),
             3: ("matrix", STATUS_MATRIX),
         }
+        STRUCTS = STATUS
 
-        @staticmethod
-        def struct_name(config_id):
-            return KeychronQ3Max.KeybStruct.struct_name(KeychronQ3Max.KeybStatus_v0_1.STATUS, config_id)
+    @classmethod
+    def keyb_config(cls):
+        return cls.KeybConfiguration_v0_1
 
-        @staticmethod
-        def struct_field_name(config_id, field_id):
-            return KeychronQ3Max.KeybStruct.struct_field_name(KeychronQ3Max.KeybStatus_v0_1.STATUS, config_id, field_id)
-
-        @staticmethod
-        def struct_field_type(field_type):
-            return KeychronQ3Max.KeybStruct.struct_field_type(field_type)
-
-        @staticmethod
-        def print_struct(struct_id, struct_fields):
-            KeychronQ3Max.KeybStruct.print_struct(KeychronQ3Max.KeybStatus_v0_1, struct_id, struct_fields)
-
-        @staticmethod
-        def struct_model(model, config_id, config_fields):
-            return KeychronQ3Max.KeybStruct.struct_model(model, KeychronQ3Max.KeybStatus_v0_1, config_id, config_fields)
-
-    @staticmethod
-    def keyb_config():
-        return KeychronQ3Max.KeybConfiguration_v0_1
-
-    @staticmethod
-    def keyb_status():
-        return KeychronQ3Max.KeybStatus_v0_1
+    @classmethod
+    def keyb_status(cls):
+        return cls.KeybStatus_v0_1

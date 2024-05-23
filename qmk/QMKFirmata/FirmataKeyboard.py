@@ -358,7 +358,6 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         #region debug tracers
         self.dbg_rgb_buf = 0
         self.dbg = DebugTracer(zones={'D':0,
-                                      'E':0,
                                       'CONSOLE':0,
                                       'CLI':0,
                                       'SYSEX_COMMAND':0,
@@ -468,8 +467,8 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
     def start(self):
         from KeyMachine import KeyMachine
 
+        # byte to 2x 7 bit bytes
         def to_two_bytes(byte_val):
-            # byte to 2x 7 bit bytes
             return bytearray([byte_val % 128, byte_val >> 7])
         self.lookup_table_sysex_byte = {}
         for i in range(256):
@@ -494,11 +493,10 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.sysex_response[FirmataKeybCmd.ID_DYNLD_FUNEXEC] = {}
         self.keyb_cli_seq = 0
 
-        self.config_layout = {}
-        self.config_model = None # todo: replace with struct_model[config_id]
-
         self.struct_layout = {}
         self.struct_model = {}
+        self.struct_model[FirmataKeybCmd.ID_CONFIG] = None
+        self.struct_model[FirmataKeybCmd.ID_STATUS] = None
 
         self.encode_7bits_sysex = False
         self.add_cmd_handler(pyfirmata2.STRING_DATA, self.console_line_handler)
@@ -520,39 +518,37 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         print(f"qmk firmata version:{self.firmware} {self.firmware_version}, firmata={self.get_firmata_version()}")
         print(f"mcu:{self.keyboardModel.MCU} {self.pack_endian}")
         print("-"*80)
-
+        # signal config structs/values model
         try:
-            for config_id in self.config_layout:
-                self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_CONFIG, config_id])
+            self.signal_config_model.emit(self.struct_model[FirmataKeybCmd.ID_CONFIG])
         except Exception as e:
             self.dbg.tr('DEBUG', f"{e}")
-        try:
-            self.signal_config_model.emit(self.config_model)
-        except Exception as e:
-            self.dbg.tr('DEBUG', f"{e}")
-
-        time.sleep(0.5)
-        try:
-            for status_id in self.struct_layout[FirmataKeybCmd.ID_STATUS]:
-                self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_STATUS, status_id])
-        except Exception as e:
-            self.dbg.tr('DEBUG', f"{e}")
+        # signal status structs/values model
         try:
             self.signal_status_model.emit(self.struct_model[FirmataKeybCmd.ID_STATUS])
         except Exception as e:
             self.dbg.tr('DEBUG', f"{e}")
 
-        config_auto_update = False
-        if config_auto_update and len(self.config_layout) > 0:
-            self.timer_config_update = QtCore.QTimer(self)
-            self.timer_config_update.timeout.connect(self.keyb_config)
-            self.timer_config_update.start(500)
+        # get config structs/values
+        try:
+            for config_id in self.struct_layout[FirmataKeybCmd.ID_CONFIG]:
+                self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_CONFIG, config_id])
+        except Exception as e:
+            self.dbg.tr('DEBUG', f"{e}")
+        time.sleep(0.5)
+        # get status structs/values
+        try:
+            for status_id in self.struct_layout[FirmataKeybCmd.ID_STATUS]:
+                self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_STATUS, status_id])
+        except Exception as e:
+            self.dbg.tr('DEBUG', f"{e}")
+
 
     def stop(self):
         try:
             self.sp.close()
         except Exception as e:
-            self.dbg.tr('E', f"{e}")
+            self.dbg.tr('E', f"stop: {e}")
         self.samplingOff()
 
     #-------------------------------------------------------------------------------
@@ -615,133 +611,140 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             self.dbg.tr(dbg_zone, "-"*40)
             self.dbg.tr(dbg_zone, f"sysex response:\n{buf.hex(' ')}")
 
-        if buf[0] == FirmataKeybCmd.ID_CLI:
-            self.dbg.tr(dbg_zone, f"cli response: {buf}")
-            cli_seq = buf[1]
-            buf.pop(0); buf.pop(0)
-            self.sysex_response[FirmataKeybCmd.ID_CLI][cli_seq] = buf
-            return
-        if buf[0] == FirmataKeybCmd.ID_DYNLD_FUNEXEC:
-            self.dbg.tr(dbg_zone, f"dynld funexec response: {buf}")
-            return_code = struct.unpack_from(self.pack_endian+'I', buf, 1)[0]
-            self.sysex_response[FirmataKeybCmd.ID_DYNLD_FUNEXEC] = return_code
-            #buf.pop(0); buf.pop(0)
-            return
-        if buf[0] == FirmataKeybCmd.ID_MACWIN_MODE:
-            macwin_mode = chr(buf[1])
-            self.dbg.tr(dbg_zone, f"macwin mode: {macwin_mode}")
-            self.signal_macwin_mode.emit(macwin_mode)
-            self.signal_default_layer.emit(self.default_layer(macwin_mode))
-            return
-        if buf[0] == FirmataKeybCmd.ID_STRUCT_LAYOUT:
-            layout_id = buf[1]
-            off = 2
-            # struct layout used to get/set of struct field values in byte buffer
-            struct_id = buf[off]; off += 1
-            struct_size = buf[off]; off += 1
-            struct_flags = buf[off]; off += 1
-            self.dbg.tr(dbg_zone, f"layout id: {layout_id}, struct id: {struct_id}, size: {struct_size}, flags: {struct_flags}")
-            struct_fields = {}
-            struct_field = buf[off]
-            while struct_field != 0:
-                field_type = buf[off+1]
-                field_offset = buf[off+2]
-                field_size = buf[off+3]
-                struct_fields[struct_field] = (field_type, field_offset, field_size, struct_flags)
-                off += 4
-                try:
-                    struct_field = buf[off]
-                except:
-                    break
+        try:
+            if buf[0] == FirmataKeybCmd.ID_CLI:
+                self.dbg.tr(dbg_zone, f"cli response: {buf}")
+                cli_seq = buf[1]
+                buf.pop(0); buf.pop(0)
+                self.sysex_response[FirmataKeybCmd.ID_CLI][cli_seq] = buf
+                return
+            if buf[0] == FirmataKeybCmd.ID_DYNLD_FUNEXEC:
+                self.dbg.tr(dbg_zone, f"dynld funexec response: {buf}")
+                return_code = struct.unpack_from(self.pack_endian+'I', buf, 1)[0]
+                self.sysex_response[FirmataKeybCmd.ID_DYNLD_FUNEXEC] = return_code
+                #buf.pop(0); buf.pop(0)
+                return
+            if buf[0] == FirmataKeybCmd.ID_MACWIN_MODE:
+                macwin_mode = chr(buf[1])
+                self.dbg.tr(dbg_zone, f"macwin mode: {macwin_mode}")
+                self.signal_macwin_mode.emit(macwin_mode)
+                self.signal_default_layer.emit(self.default_layer(macwin_mode))
+                return
+            if buf[0] == FirmataKeybCmd.ID_STRUCT_LAYOUT:
+                layout_id = buf[1]
+                off = 2
+                # struct layout used to get/set of struct field values in byte buffer
+                struct_id = buf[off]; off += 1
+                struct_size = buf[off]; off += 1
+                struct_flags = buf[off]; off += 1
+                self.dbg.tr(dbg_zone, f"layout id: {layout_id}, struct id: {struct_id}, size: {struct_size}, flags: {struct_flags}")
+                struct_fields = {}
+                struct_field = buf[off]
+                while struct_field != 0:
+                    field_type = buf[off+1]
+                    field_offset = buf[off+2]
+                    field_size = buf[off+3]
+                    struct_fields[struct_field] = (field_type, field_offset, field_size, struct_flags)
+                    off += 4
+                    try:
+                        struct_field = buf[off]
+                    except:
+                        break
 
-            if layout_id not in self.struct_layout:
-                self.struct_layout[layout_id] = {}
-            self.struct_layout[layout_id][struct_id] = struct_fields
-            #print(f"struct layout:layout/struct id: {layout_id}/{struct_id} {self.struct_layout[layout_id][struct_id]}")
+                if layout_id not in self.struct_layout:
+                    self.struct_layout[layout_id] = {}
+                self.struct_layout[layout_id][struct_id] = struct_fields
+                #print(f"struct layout:layout/struct id: {layout_id}/{struct_id} {self.struct_layout[layout_id][struct_id]}")
 
-            if layout_id == FirmataKeybCmd.ID_CONFIG:
-                self.config_layout[struct_id] = struct_fields
-                if dbg_print:
-                    self.keyboardModel.keyb_config().print_struct(struct_id, struct_fields)
-                self.config_model = self.keyboardModel.keyb_config().struct_model(self.config_model, struct_id, struct_fields)
-            if layout_id == FirmataKeybCmd.ID_STATUS:
-                if dbg_print:
-                    self.keyboardModel.keyb_status().print_struct(struct_id, struct_fields)
                 try:
                     struct_model = self.struct_model[layout_id]
                 except:
                     struct_model = None
-                self.struct_model[layout_id] = self.keyboardModel.keyb_status().struct_model(struct_model, struct_id, struct_fields)
 
-            return
-        if buf[0] == FirmataKeybCmd.ID_STATUS or buf[0] == FirmataKeybCmd.ID_CONFIG:
-            TYPE_BIT = self.keyboardModel.KeybStruct.TYPES["bit"]
-            TYPE_UINT8 = self.keyboardModel.KeybStruct.TYPES["uint8"]
-            TYPE_UINT16 = self.keyboardModel.KeybStruct.TYPES["uint16"]
-            TYPE_UINT32 = self.keyboardModel.KeybStruct.TYPES["uint32"]
-            TYPE_UINT64 = self.keyboardModel.KeybStruct.TYPES["uint64"]
-            TYPE_FLOAT = self.keyboardModel.KeybStruct.TYPES["float"]
-            TYPE_ARRAY = self.keyboardModel.KeybStruct.TYPES["array"]
+                if layout_id == FirmataKeybCmd.ID_CONFIG:
+                    if dbg_print:
+                        self.keyboardModel.keyb_config().print_struct(struct_id, struct_fields)
+                    self.struct_model[layout_id] = self.keyboardModel.keyb_config().struct_model(struct_model, struct_id, struct_fields)
+                if layout_id == FirmataKeybCmd.ID_STATUS:
+                    if dbg_print:
+                        self.keyboardModel.keyb_status().print_struct(struct_id, struct_fields)
+                    self.struct_model[layout_id] = self.keyboardModel.keyb_status().struct_model(struct_model, struct_id, struct_fields)
 
-            struct_id = buf[1]
-            if buf[0] == FirmataKeybCmd.ID_CONFIG:
-                struct_fields = self.config_layout[struct_id]
-            if buf[0] == FirmataKeybCmd.ID_STATUS:
-                struct_fields = self.struct_layout[FirmataKeybCmd.ID_STATUS][struct_id]
+                return
+            if buf[0] == FirmataKeybCmd.ID_STATUS or buf[0] == FirmataKeybCmd.ID_CONFIG:
+                TYPE_BIT = self.keyboardModel.KeybStruct.TYPES["bit"]
+                TYPE_UINT8 = self.keyboardModel.KeybStruct.TYPES["uint8"]
+                TYPE_UINT16 = self.keyboardModel.KeybStruct.TYPES["uint16"]
+                TYPE_UINT32 = self.keyboardModel.KeybStruct.TYPES["uint32"]
+                TYPE_UINT64 = self.keyboardModel.KeybStruct.TYPES["uint64"]
+                TYPE_FLOAT = self.keyboardModel.KeybStruct.TYPES["float"]
+                TYPE_ARRAY = self.keyboardModel.KeybStruct.TYPES["array"]
 
-            off = 2
-            field_values = {}
-            for field_id, field in struct_fields.items():
-                field_type = field[0]
-                field_offset = field[1]
-                field_size = field[2]
-                off = 2 + field_offset
-                if field_type == TYPE_BIT:
-                    # todo: if msb bit order reverse bits, handle big endian, bitfield crossing byte boundary
-                    off = 2 + field_offset // 8
-                    field_offset = field_offset % 8
-                    if field_size == 1:
-                        value = 1 if buf[off] & (1 << field_offset) != 0 else 0
-                        self.dbg.tr(dbg_zone, f"struct[{struct_id}][{field_id}]:off={off}, offset={field_offset}, value={value}")
+                struct_fields = None
+                struct_id = buf[1]
+                if buf[0] == FirmataKeybCmd.ID_CONFIG:
+                    struct_fields = self.struct_layout[FirmataKeybCmd.ID_CONFIG][struct_id]
+                if buf[0] == FirmataKeybCmd.ID_STATUS:
+                    struct_fields = self.struct_layout[FirmataKeybCmd.ID_STATUS][struct_id]
+
+                if not struct_fields:
+                    return
+
+                off = 2
+                field_values = {}
+                for field_id, field in struct_fields.items():
+                    field_type = field[0]
+                    field_offset = field[1]
+                    field_size = field[2]
+                    off = 2 + field_offset
+                    if field_type == TYPE_BIT:
+                        # todo: if msb bit order reverse bits, handle big endian, bitfield crossing byte boundary
+                        off = 2 + field_offset // 8
+                        field_offset = field_offset % 8
+                        if field_size == 1:
+                            value = 1 if buf[off] & (1 << field_offset) != 0 else 0
+                            self.dbg.tr(dbg_zone, f"struct[{struct_id}][{field_id}]:off={off}, offset={field_offset}, value={value}")
+                        else:
+                            value = (buf[off] >> field_offset) & bits_mask(field_size)
+                    elif field_type == TYPE_UINT8: # todo: test all types
+                        value = buf[off]
+                    elif field_type == TYPE_UINT16:
+                        value = struct.unpack_from(self.pack_endian+'H', buf, off)[0]
+                    elif field_type == TYPE_UINT32:
+                        value = struct.unpack_from(self.pack_endian+'I', buf, off)[0]
+                    elif field_type == TYPE_UINT64:
+                        value = struct.unpack_from(self.pack_endian+'Q', buf, off)[0]
+                    elif field_type == TYPE_FLOAT:
+                        value = struct.unpack_from(self.pack_endian+'f', buf, off)[0]
+                    elif (field_type & TYPE_ARRAY) == TYPE_ARRAY:
+                        item_type = field_type & ~TYPE_ARRAY
+                        # array item size
+                        if item_type == TYPE_UINT8:
+                            item_type_size = 1
+                        elif item_type == TYPE_UINT16:
+                            item_type_size = 2
+                        elif item_type == TYPE_UINT32:
+                            item_type_size = 4
+                        elif item_type == TYPE_UINT64:
+                            item_type_size = 8
+                        elif item_type == TYPE_FLOAT:
+                            item_type_size = 4
+                        value = buf[off:off+(field_size*item_type_size)]
                     else:
-                        value = (buf[off] >> field_offset) & bits_mask(field_size)
-                elif field_type == TYPE_UINT8: # todo: test all types
-                    value = buf[off]
-                elif field_type == TYPE_UINT16:
-                    value = struct.unpack_from(self.pack_endian+'H', buf, off)[0]
-                elif field_type == TYPE_UINT32:
-                    value = struct.unpack_from(self.pack_endian+'I', buf, off)[0]
-                elif field_type == TYPE_UINT64:
-                    value = struct.unpack_from(self.pack_endian+'Q', buf, off)[0]
-                elif field_type == TYPE_FLOAT:
-                    value = struct.unpack_from(self.pack_endian+'f', buf, off)[0]
-                elif (field_type & TYPE_ARRAY) == TYPE_ARRAY:
-                    item_type = field_type & ~TYPE_ARRAY
-                    # array item size
-                    if item_type == TYPE_UINT8:
-                        item_type_size = 1
-                    elif item_type == TYPE_UINT16:
-                        item_type_size = 2
-                    elif item_type == TYPE_UINT32:
-                        item_type_size = 4
-                    elif item_type == TYPE_UINT64:
-                        item_type_size = 8
-                    elif item_type == TYPE_FLOAT:
-                        item_type_size = 4
-                    value = buf[off:off+(field_size*item_type_size)]
-                else:
-                    value = 0
-                field_values[field_id] = value
-                self.dbg.tr(dbg_zone, f"struct[{struct_id}][{field_id}]: {value}")
-                if off >= len(buf):
-                    break
+                        value = 0
+                    field_values[field_id] = value
+                    self.dbg.tr(dbg_zone, f"struct[{struct_id}][{field_id}]: {value}")
+                    if off >= len(buf):
+                        break
 
-            # signal to gui the config values
-            if buf[0] == FirmataKeybCmd.ID_CONFIG:
-                self.signal_config.emit((struct_id, field_values))
-            if buf[0] == FirmataKeybCmd.ID_STATUS:
-                self.signal_status.emit((struct_id, field_values))
-            return
+                # signal to gui the config values
+                if buf[0] == FirmataKeybCmd.ID_CONFIG:
+                    self.signal_config.emit((struct_id, field_values))
+                if buf[0] == FirmataKeybCmd.ID_STATUS:
+                    self.signal_status.emit((struct_id, field_values))
+                return
+        except Exception as e:
+            self.dbg.tr('E', f"{e}")
 
     def console_line_handler(self, *data):
         #self.dbg.tr('CONSOLE', f"console: {data}")
@@ -793,6 +796,9 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         dbg_print = self.dbg.enabled(dbg_zone)
         self.dbg.tr(dbg_zone, f"keyb_set_cli_command: {cmd}")
 
+        if cmd.strip() == "":
+            return None
+
         def cli_cmd_encode(cmd_str, endian):
             CLI_CMD_MEMORY      = 0x01
             CLI_CMD_EEPROM      = 0x02
@@ -834,10 +840,14 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         cli_seq = self.keyb_cli_seq % 256
         self.keyb_cli_seq += 1
         data = bytearray()
-        data.append(FirmataKeybCmd.ID_CLI)
-        data.append(cli_seq)
-        data.extend(cmd_ba)
-        self.send_sysex(FirmataKeybCmd.SET, data)
+        try:
+            data.append(FirmataKeybCmd.ID_CLI)
+            data.append(cli_seq)
+            data.extend(cmd_ba)
+            self.send_sysex(FirmataKeybCmd.SET, data)
+        except Exception as e:
+            self.dbg.tr(dbg_zone, f"keyb_set_cli_command: {e}")
+            return None
 
         # wait for response
         wait_for_response = True
@@ -992,7 +1002,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
     def keyb_get_config(self, config_id = 0):
         self.dbg.tr('SYSEX_COMMAND', f"keyb_get_config: {config_id}")
         if config_id == 0:
-            for config_id in self.config_layout:
+            for config_id in self.struct_layout[FirmataKeybCmd.ID_CONFIG]:
                 self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_CONFIG, config_id])
         else:
             self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_CONFIG, config_id])
@@ -1027,7 +1037,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         try:
             config_id = config[0]
             field_values = config[1]
-            config_layout = self.config_layout[config_id]
+            config_layout = self.struct_layout[FirmataKeybCmd.ID_CONFIG][config_id]
             data = bytearray(self.MAX_LEN_SYSEX_DATA)
             data[0] = FirmataKeybCmd.ID_CONFIG
             data[1] = config_id
@@ -1109,6 +1119,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         data.extend(id)
         data.extend(offset)
         self.send_sysex(FirmataKeybCmd.SET, data)
+        # todo: validate loaded code
 
     def keyb_set_dynld_funexec(self, fun_id, buf=bytearray()):
         self.dbg.tr('SYSEX_COMMAND', f"keyb_set_dynld_funexec: {fun_id} {buf.hex(' ')}")

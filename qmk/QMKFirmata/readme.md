@@ -8,13 +8,13 @@ proof of concept demo (windows) of arduino firmata support in qmk firmware
 - set mac/win mode
 - set debug config, rgb mode/hsv/speed, keymap flags, debounce, ...
 - set dynamically loaded user animation binary
+- get battery/raw matrix/dip switch status
 - "keyboard scripting" ("development build" only), access keyboard mcu memory/eeprom and compile/execute c function from host python.
 - show console output
 - websocket server to set default layer from other apps
 - websocket server to set rgb matrix from other apps (screen capture ws client example)
 
-**WARNING: depending on audio/video content the lights may flash frequently, which can trigger a seizure!**
-**do not use it when you are photosensitive!**
+**WARNING: depending on audio/video content the rgb leds may flash frequently, which can trigger a photosensitive seizure!**
 
 supported keyboards
 -------------------
@@ -59,7 +59,7 @@ keyboard script
 see kb_scripts dir for examples.
 
 for compile and execute function example install "GNU Arm Embedded Toolchain",
-see: https://developer.arm.com/downloads/-/gnu-rm and modify KeychronQ3Max.TOOLCHAIN to change path, includes/options, ...
+see: https://developer.arm.com/downloads/-/gnu-rm and modify KeychronQ3Max.TOOLCHAIN to change path, includes/options, ... as needed.
 
 demo videos
 -----------
