@@ -2,7 +2,7 @@ import numpy as np
 import time, json
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QFrame, QFileDialog
-from PySide6.QtCore import Signal, QThread
+from PySide6.QtCore import Signal, QThread, QTimer
 from PySide6.QtGui import QImage, QColor, QIntValidator, QDoubleValidator
 
 from DebugTracer import DebugTracer
@@ -11,7 +11,8 @@ try:
 except:
     print("pyaudiowpatch not installed")
 
-class AudioCaptureThread(QThread): # todo: move to separate file
+#-------------------------------------------------------------------------------
+class AudioCaptureThread(QThread):
 
     def __init__(self, freq_bands, interval):
         self.dbg = DebugTracer(zones={'D':0}, obj=self)
@@ -107,6 +108,7 @@ class AudioCaptureThread(QThread): # todo: move to separate file
 #-------------------------------------------------------------------------------
 class RGBAudioTab(QWidget):
     signal_rgb_image = Signal(QImage, object)
+    signal_peak_levels = Signal(object)
 
     @staticmethod
     def freq_bands_linear(f_min, f_max, k):
@@ -149,7 +151,7 @@ class RGBAudioTab(QWidget):
 
         self.sample_count = 0
         try:
-            self.audio_thread = AudioCaptureThread(self.freq_bands, 0.05)
+            self.audio_thread = AudioCaptureThread(self.freq_bands, 0.04)
         except:
             self.audio_thread = None
 
@@ -198,7 +200,6 @@ class RGBAudioTab(QWidget):
         hlayout.addWidget(self.peak_level)
 
         layout.addLayout(hlayout)
-
         #-----------------------------------------------------------
         # load freq bands colors and add widgets
         self.load_freq_bands_colors()
@@ -290,8 +291,9 @@ class RGBAudioTab(QWidget):
 
     def save_freq_bands_colors(self):
         freq_bands_colors = {
-            "freq_bands": self.freq_bands,
-            "colors": self.freq_rgb
+            'freq_bands': self.freq_bands,
+            'colors': self.freq_rgb,
+            'min_max_level':self.min_max_level
         }
         with open('freq_bands_colors.json', 'w') as file:
             json.dump(freq_bands_colors, file, indent=4)
@@ -364,6 +366,8 @@ class RGBAudioTab(QWidget):
         if peak_levels is None:
             self.signal_rgb_image.emit(None, self.rgb_multiplier)
             return
+
+        self.signal_peak_levels.emit(peak_levels)
 
         self.sample_count += 1
         if self.dbg.enabled('PEAK_LEVEL'):

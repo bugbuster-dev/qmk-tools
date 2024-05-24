@@ -5,7 +5,7 @@ from PySide6.QtGui import QFont, QTextCursor
 
 from DebugTracer import DebugTracer
 
-class ConsoleTab(QWidget): # todo: move to separate file
+class ConsoleTab(QWidget):
     signal_cli_command = Signal(str)
 
     class CommandLineEdit(QLineEdit):

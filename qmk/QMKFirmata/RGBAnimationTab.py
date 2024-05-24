@@ -101,6 +101,14 @@ class RGBAnimationTab(QWidget):
         # Animation placeholder
         self.ani = None
 
+        self._audio_peak_levels = None
+
+    def on_audio_peak_levels(self, peak_levels):
+        self._audio_peak_levels = peak_levels
+
+    def audio_peak_levels(self):
+        return self._audio_peak_levels
+
     def start_animation(self):
         if self.ani is None:  # Prevent multiple instances if already running
             add_method_to_class(RGBAnimationTab, self.code_editor.toPlainText())
@@ -108,10 +116,10 @@ class RGBAnimationTab(QWidget):
                 init_fn_name, animate_fn_name = self.animate_methods()
                 animate_init_method = getattr(RGBAnimationTab, init_fn_name)
                 animate_method = getattr(RGBAnimationTab, animate_fn_name)
-                setattr(RGBAnimationTab, "animate_init", animate_init_method)
-                setattr(RGBAnimationTab, "animate", animate_method)
-                self.animate_init()
-                self.ani = animation.FuncAnimation(self.figure, self._animate, frames=self.frames, #init_func=self.init,
+                setattr(RGBAnimationTab, "_animate_init", animate_init_method)
+                setattr(RGBAnimationTab, "_animate", animate_method)
+                self._animate_init()
+                self.ani = animation.FuncAnimation(self.figure, self.animate, frames=self.frames, #init_func=self.init,
                                                 blit=True, interval=self.interval, repeat=True)
             except Exception as e:
                 print(e)
@@ -142,8 +150,8 @@ class RGBAnimationTab(QWidget):
 
         self.ani.resume()
 
-    def _animate(self, i):
-        ret = self.animate(i)
+    def animate(self, i):
+        ret = self._animate(i)
         if i == self.frames:
             self.figure.clear()
 

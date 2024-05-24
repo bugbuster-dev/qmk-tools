@@ -58,12 +58,12 @@ class DebugTracer:
 
     def enable(self, attr, flag=True):
         try:
-            setattr(self, attr, flag)
+            self.zones[attr] = flag
         except:
             pass
 
     def enabled(self, attr):
         try:
-            return getattr(self, attr)
+            return self.zones[attr]
         except:
             return False

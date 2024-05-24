@@ -29,7 +29,7 @@ if __name__ != "__main__":
     exit()
 
 #-------------------------------------------------------------------------------
-class RGBMatrixTab(QWidget): # todo: move to separate file
+class RGBMatrixTab(QWidget):
     def __init__(self, keyboard_model):
         self.keyboard_model = keyboard_model
         try:
@@ -350,6 +350,7 @@ class MainWindow(QMainWindow):
         self.rgb_matrix_tab.rgb_video_tab.signal_rgb_image.connect(self.keyboard.keyb_set_rgb_image)
         self.rgb_matrix_tab.rgb_animation_tab.signal_rgb_image.connect(self.keyboard.keyb_set_rgb_image)
         self.rgb_matrix_tab.rgb_audio_tab.signal_rgb_image.connect(self.keyboard.keyb_set_rgb_image)
+        self.rgb_matrix_tab.rgb_audio_tab.signal_peak_levels.connect(self.rgb_matrix_tab.rgb_animation_tab.on_audio_peak_levels)
         self.rgb_matrix_tab.rgb_dynld_animation_tab.signal_dynld_function.connect(self.keyboard.keyb_set_dynld_function)
         self.layer_switch_tab.signal_keyb_set_layer.connect(self.keyboard.keyb_set_default_layer)
         self.keyb_config_tab.signal_keyb_set_config.connect(self.keyboard.keyb_set_config)

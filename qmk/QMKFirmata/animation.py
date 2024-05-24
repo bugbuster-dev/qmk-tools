@@ -8,6 +8,7 @@ def animate_methods(self):
     #methods = "init_rect","animate_rect"
     #methods = "init_random_colors","animate_random_colors"
     #methods = "init_spiral","animate_spiral"
+    #methods = "init_audio_anim","animate_audio"
     return methods
 
 #-------------------------------------------------------------------------------
@@ -141,3 +142,24 @@ def animate_rect(self, i):
 
     self.rect.set_xy(pos)
     return self.rect,
+
+#-------------------------------------------------------------------------------
+def init_audio_anim(self):
+    self.N_PEAKS = 31
+    self.ax.set_xlim(0, self.N_PEAKS - 1)
+    self.ax.set_ylim(0, 200)
+
+    self.x = np.arange(self.N_PEAKS)
+    self.spectrum, = self.ax.plot([], [], color='skyblue', lw=20)
+    self.spectrum.set_data(self.x, np.zeros(self.N_PEAKS))
+    #print("init_audio")
+    return self.spectrum,
+
+# Function to update the plot
+def animate_audio(self, i):
+    #print("animate_audio")
+    peak_levels = self.audio_peak_levels()
+    if peak_levels:
+        #print(peak_levels)
+        self.spectrum.set_ydata(peak_levels)
+    return self.spectrum,

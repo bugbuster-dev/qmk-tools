@@ -505,7 +505,6 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
         self.samplingOn()
         self.send_sysex(pyfirmata2.REPORT_FIRMWARE, [])
-        self.send_sysex(pyfirmata2.REPORT_VERSION, [])
         self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_STRUCT_LAYOUT, FirmataKeybCmd.ID_CONFIG])
         self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_STRUCT_LAYOUT, FirmataKeybCmd.ID_CONTROL])
         self.send_sysex(FirmataKeybCmd.GET, [FirmataKeybCmd.ID_STRUCT_LAYOUT, FirmataKeybCmd.ID_STATUS])
