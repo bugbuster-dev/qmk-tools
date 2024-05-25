@@ -4,10 +4,13 @@ class NuphyAir96V2:
     VID     = 0x19f5
     PID     = 0x3265
     MCU     = "STM32F072","cortex-m0","le32"
+    PORT_TYPE   = "rawhid"
 
-    RGB_MAXTRIX_W = 19
-    RGB_MAXTRIX_H = 6
-    NUM_RGB_LEDS = 110
+    MAXTRIX_W       = 19
+    MAXTRIX_H       = 6
+    RGB_MAXTRIX_W   = 19
+    RGB_MAXTRIX_H   = 6
+    NUM_RGB_LEDS    = 110
     RGB_MAX_REFRESH = 25
 
     DEFAULT_LAYER = { 'm':0, 'w':2 }
@@ -22,46 +25,46 @@ class NuphyAir96V2:
         ['left shift',   '',  'z',  'x',  'c',  'v',  'b',  'n',  'm',   ',',   '.',   '/', '', 'right shift', '', 'up', ''],
         ['left ctrl', 'left windows', 'left menu', '', '', '', 'space', '', '', '', 'right menu', 'right windows', 'fn', 'ctrl', 'left', 'down', 'right']]
     }
+    #---------------------------------------------------------------------------
+    TOOLCHAIN = {
+    }
 
-    def __init__(self):
-        pass
+    @classmethod
+    def name(cls):
+        return cls.NAME
 
-    @staticmethod
-    def name():
-        return NuphyAir96V2.NAME
+    @classmethod
+    def vid_pid(cls):
+        return (cls.VID, cls.PID)
 
-    @staticmethod
-    def vid_pid():
-        return (NuphyAir96V2.VID, NuphyAir96V2.PID)
+    @classmethod
+    def mcu(cls):
+        return cls.MCU
 
-    @staticmethod
-    def mcu():
-        return NuphyAir96V2.MCU
+    @classmethod
+    def matrix_size(cls):
+        return (cls.MAXTRIX_W, cls.MAXTRIX_H)
 
-    @staticmethod
-    def matrix_size():
-        return (NuphyAir96V2.MAXTRIX_W, NuphyAir96V2.MAXTRIX_H)
+    @classmethod
+    def rgb_matrix_size(cls):
+        return (cls.RGB_MAXTRIX_W, cls.RGB_MAXTRIX_H)
 
-    @staticmethod
-    def rgb_matrix_size():
-        return (NuphyAir96V2.RGB_MAXTRIX_W, NuphyAir96V2.RGB_MAXTRIX_H)
+    @classmethod
+    def rgb_max_refresh(cls):
+        return cls.RGB_MAX_REFRESH
 
-    @staticmethod
-    def rgb_max_refresh():
-        return NuphyAir96V2.RGB_MAX_REFRESH
+    @classmethod
+    def num_rgb_leds(cls):
+        return cls.NUM_RGB_LEDS
 
-    @staticmethod
-    def num_rgb_leds():
-        return NuphyAir96V2.NUM_RGB_LEDS
-
-    @staticmethod
-    def default_layer(mode):
-        layer = NuphyAir96V2.DEFAULT_LAYER[mode.lower()]
+    @classmethod
+    def default_layer(cls, mode):
+        layer = cls.DEFAULT_LAYER[mode.lower()]
         return layer
 
-    @staticmethod
-    def num_layers():
-        return NuphyAir96V2.NUM_LAYERS
+    @classmethod
+    def num_layers(cls):
+        return cls.NUM_LAYERS
 
     # pixel position to (rgb) led index
     @staticmethod
@@ -81,7 +84,112 @@ class NuphyAir96V2:
         except:
             return -1
 
-    class KeybConfiguration_v0_1:
+    # keyboard config/status/... representation for "treeview model"
+    class KeybStruct:
+        TYPES = {
+            1: "bit",
+            2: "uint8",
+            3: "uint16",
+            4: "uint32",
+            5: "uint64",
+            6: "float",
+            0x80: "array",
+            "bit":      1,
+            "uint8":    2,
+            "uint16":   3,
+            "uint32":   4,
+            "uint64":   5,
+            "float":    6,
+            "array":    0x80,
+        }
+        FLAGS = {
+            1: "readonly",
+            "readonly": 1,
+        }
+
+        @classmethod
+        def struct_name(cls, sid):
+            try:
+                return cls.STRUCTS[sid][0]
+            except:
+                return "unknown"
+        @classmethod
+        def struct_field_name(cls, sid, fid):
+            try:
+                return cls.STRUCTS[sid][1][fid]
+            except:
+                return "unknown"
+
+        @classmethod
+        def struct_field_type(cls, ftype):
+            try:
+                if ftype & 0x80:
+                    item_type = ftype & 0x7F
+                    return 'array:' + cls.TYPES[item_type]
+                else:
+                    return cls.TYPES[ftype]
+            except:
+                return "unknown"
+
+        @classmethod
+        def print_struct(cls, sid, sfields):
+            sname = cls.struct_name(sid)
+            print(f"struct[{sid}]: {sname}")
+            for fid, field in sfields.items():
+                field_name = cls.struct_field_name(sid, fid)
+                field_type = cls.struct_field_type(field[0])
+                try:
+                    field_offset = field[1]
+                except:
+                    field_offset = -1
+                try:
+                    field_size = field[2]
+                except:
+                    field_size = -1
+                print(f"  field:{field_name}, "
+                        f"type:{field_type}, "
+                        f"offset:{field_offset}, "
+                        f"size:{field_size}")
+
+        @classmethod
+        def struct_model(cls, model, sid, sfields):
+            from PySide6.QtGui import Qt, QStandardItemModel, QStandardItem
+
+            def create_item(text, editable=False):
+                item = QStandardItem(str(text))
+                if not editable:
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                return item
+
+            def add_struct_to_model(model, sid, sfields):
+                sname = cls.struct_name(sid)
+                _item = create_item(sname)
+                for fid, finfo in sfields.items():
+                    #print(f"field_id:{fid}, field_info:{finfo}")
+                    try:
+                        field_name = create_item(cls.struct_field_name(sid, fid))
+                        field_type = create_item(cls.struct_field_type(finfo[0]))
+                        field_size = create_item(finfo[2])
+                        field_flags = finfo[3]
+                        if field_flags & cls.FLAGS["readonly"]:
+                            editable = False
+                        else:
+                            editable = True
+                        field_value = create_item("", editable=editable)
+                        field = [field_name, field_type, field_size, field_value]
+                        _item.appendRow(field)
+                    except:
+                        pass
+                model.appendRow(_item)
+
+            if model is None:
+                model = QStandardItemModel()
+                model.setHorizontalHeaderLabels(["field", "type", "size", "value"])
+
+            add_struct_to_model(model, sid, sfields)
+            return model
+
+    class KeybConfiguration_v0_1(KeybStruct):
         CONFIG_DEBUG = {
             1: "enable",
             2: "matrix",
@@ -136,107 +244,31 @@ class NuphyAir96V2:
             6: ("debounce", CONFIG_DEBOUNCE),
             7: ("devel", CONFIG_DEVEL),
         }
+        STRUCTS = CONFIG
 
-        TYPES = { #todo move to keybstruct
-            1: "bit",
-            2: "uint8",
-            3: "uint16",
-            4: "uint32",
-            5: "uint64",
-            6: "float",
-            0x80: "array",
-            "bit":      1,
-            "uint8":    2,
-            "uint16":   3,
-            "uint32":   4,
-            "uint64":   5,
-            "float":    6,
-            "array":    0x80,
+    class KeybStatus_v0_1(KeybStruct):
+        STATUS_BATTERY = {
+            1: "level",
+            2: "voltage",
+            3: "charging",
         }
+        STATUS_DIP_SWITCH = {
+            1: "mac/win",
+        }
+        STATUS_MATRIX = {
+            1: "raw matrix",
+        }
+        STATUS = {
+            1: ("battery", STATUS_BATTERY),
+            2: ("dip switch", STATUS_DIP_SWITCH),
+            3: ("matrix", STATUS_MATRIX),
+        }
+        STRUCTS = STATUS
 
-        @staticmethod
-        def config_name(config_id):
-            try:
-                return NuphyAir96V2.KeybConfiguration_v0_1.CONFIG[config_id][0]
-            except:
-                return "unknown"
+    @classmethod
+    def keyb_config(cls):
+        return cls.KeybConfiguration_v0_1
 
-        @staticmethod
-        def config_field_name(config_id, field_id):
-            try:
-                return NuphyAir96V2.KeybConfiguration_v0_1.CONFIG[config_id][1][field_id]
-            except:
-                return "unknown"
-
-        @staticmethod
-        def config_field_type(field_type):
-            try:
-                if field_type & 0x80:
-                    item_type = field_type & 0x7F
-                    return 'array:' + NuphyAir96V2.KeybConfiguration_v0_1.TYPES[item_type]
-                else:
-                    return NuphyAir96V2.KeybConfiguration_v0_1.TYPES[field_type]
-            except:
-                return "unknown"
-
-        @staticmethod
-        def print_struct(config_id, config_fields):
-            config_name = NuphyAir96V2.KeybConfiguration_v0_1.config_name(config_id)
-            print(f"config[{config_id}]: {config_name}")
-            for field_id, field in config_fields.items():
-                field_name = NuphyAir96V2.KeybConfiguration_v0_1.config_field_name(config_id, field_id)
-                field_type = NuphyAir96V2.KeybConfiguration_v0_1.config_field_type(field[0])
-                try:
-                    field_offset = field[1]
-                except:
-                    field_offset = -1
-                try:
-                    field_size = field[2]
-                except:
-                    field_size = -1
-                print(f"  field:{field_name}, "
-                        f"type:{field_type}, "
-                        f"offset:{field_offset}, "
-                        f"size:{field_size}")
-
-        @staticmethod
-        def struct_model(model, config_id, config_fields):
-            from PySide6.QtGui import Qt, QStandardItemModel, QStandardItem
-
-            def create_item(text, editable=False):
-                item = QStandardItem(str(text))
-                if not editable:
-                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-                return item
-
-            def add_config_to_model(model, config_id, config_fields):
-                config_name = NuphyAir96V2.KeybConfiguration_v0_1.config_name(config_id)
-                config_item = create_item(config_name)
-                for field_id, field_info in config_fields.items():
-                    #print(f"field_id:{field_id}, field_info:{field_info}")
-                    try:
-                        field_name = create_item(NuphyAir96V2.KeybConfiguration_v0_1.config_field_name(config_id, field_id))
-                        field_type = create_item(NuphyAir96V2.KeybConfiguration_v0_1.config_field_type(field_info[0]))
-                        field_size = create_item(field_info[2])
-                        field_flags = field_info[3]
-                        if field_flags & 0x2:
-                            editable = False
-                        else:
-                            editable = True
-                        field_value = create_item("", editable=editable)
-                        field = [field_name, field_type, field_size, field_value]
-                        config_item.appendRow(field)
-                    except:
-                        pass
-                model.appendRow(config_item)
-
-            if model is None:
-                model = QStandardItemModel()
-                model.setHorizontalHeaderLabels(["field", "type", "size", "value"])
-
-            add_config_to_model(model, config_id, config_fields)
-            return model
-
-    @staticmethod
-    def keyb_config():
-        return NuphyAir96V2.KeybConfiguration_v0_1
+    @classmethod
+    def keyb_status(cls):
+        return cls.KeybStatus_v0_1
