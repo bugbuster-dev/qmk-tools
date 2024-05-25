@@ -155,7 +155,6 @@ def init_audio_anim(self):
     #print("init_audio")
     return self.spectrum,
 
-# Function to update the plot
 def animate_audio(self, i):
     #print("animate_audio")
     peak_levels = self.audio_peak_levels()

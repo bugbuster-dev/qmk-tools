@@ -112,14 +112,13 @@ class FirmataKeybCmd_v0_2(FirmataKeybCmd_v0_1):
     ID_KEYPRESS_EVENT       = 10
 
 class FirmataKeybCmd_v0_3(FirmataKeybCmd_v0_2):
-    ID_CLI                  = 3
     ID_STRUCT_LAYOUT        = 8
     ID_STATUS               = 4 # status, followed by specific id
     ID_CONFIG               = 9 # config, followed by specific id
     ID_CONTROL              = 11 # todo
     ID_EVENT                = 10 # todo
 
-# todo: dictionary with version as key when supporting older firmata versions, for now always use latest
+# use always latest, no plan for backward compatibility support for now
 FirmataKeybCmd = FirmataKeybCmd_v0_3
 
 class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
@@ -132,8 +131,8 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
     signal_macwin_mode = Signal(str)
     signal_default_layer = Signal(int)
     signal_config_model = Signal(object)
-    #signal_control_model = Signal(object) # todo
     signal_status_model = Signal(object)
+    #signal_control_model = Signal(object) # todo
     #signal_event_model = Signal(object) # todo
     signal_config = Signal(object)
     signal_status = Signal(object)
@@ -142,7 +141,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
     MAX_RGB_VAL = 255
     # format: QImage.Format_RGB888 or QImage.Format_BGR888
     @staticmethod
-    def pixel_to_rgb_index_duration(pixel, format, index, duration, brightness=(1.0,1.0,1.0)):
+    def convert_to_keyb_rgb(pixel, format, index, duration, brightness=(1.0,1.0,1.0)):
         if index < 0:
             return None
         ri = 0; gi = 1; bi = 2
@@ -414,9 +413,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.samplerThread = pyfirmata2.util.Iterator(self)
         if self.port_type == "rawhid":
             self.sp = SerialRawHID(self.vid_pid[0], self.vid_pid[1], self.RAW_EPSIZE_FIRMATA)
-            self.MAX_LEN_SYSEX_DATA = self.RAW_EPSIZE_FIRMATA - 4
-            #sysex_encoding_byte_size = 2
-            #self.MAX_LEN_SYSEX_DATA //= sysex_encoding_byte_size
+            self.MAX_LEN_SYSEX_DATA = self.RAW_EPSIZE_FIRMATA - 6 # 2 bytes for report id + firmata msg id, 2 bytes for sysex start/end, 1 byte for sysex cmd, 1 byte for seqnum
         else:
             self.sp = serial.Serial(self.port, 115200, timeout=1)
 
@@ -491,7 +488,9 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.sysex_response = {}
         self.sysex_response[FirmataKeybCmd.ID_CLI] = {}
         self.sysex_response[FirmataKeybCmd.ID_DYNLD_FUNEXEC] = {}
-        self.keyb_cli_seq = 0
+        self.sysex_response_seq = {}
+        self.sysex_seqnum = 0
+        self.keyb_cli_seqnum = 0 # todo: remove when sysex message sequence number is used
 
         self.struct_layout = {}
         self.struct_model = {}
@@ -554,6 +553,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
     def send_sysex(self, sysex_cmd, data):
         if len(data) > self.MAX_LEN_SYSEX_DATA:
             self.dbg.tr('E', f"send_sysex: data len too large {len(data)}")
+            return
 
         encoded_data = data
         if self.encode_7bits_sysex: # 2x 7 bits to byte
@@ -565,11 +565,14 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             super().send_sysex(sysex_cmd, encoded_data)
             return
 
-        # qmk firmata sysex start
-        msg = bytearray([pyfirmata2.START_SYSEX|0x1, sysex_cmd])
+        # qmk firmata sysex msg: send START_SYSEX|1 as start byte and include sequence number in payload
+        seqnum = self.sysex_seqnum
+        msg = bytearray([pyfirmata2.START_SYSEX|0x1, sysex_cmd, seqnum])
         msg.extend(encoded_data)
-        msg.append(pyfirmata2.END_SYSEX)
-        self.sp.write(msg)
+        msg.append(pyfirmata2.END_SYSEX) # todo: remove, not needed when processing directly from rawhid buffer on device, only needed when putting first in "serial buffer" and process it later
+        n_written = self.sp.write(msg)
+        self.sysex_seqnum = (self.sysex_seqnum + 1) % 256
+        return n_written, seqnum
 
     def _sysex_data_to_bytearray(self, data):
         buf = bytearray()
@@ -611,11 +614,18 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             self.dbg.tr(dbg_zone, f"sysex response:\n{buf.hex(' ')}")
 
         try:
+            seqnum = buf[0]
+            buf = buf[1:]
             if buf[0] == FirmataKeybCmd.ID_CLI:
                 self.dbg.tr(dbg_zone, f"cli response: {buf}")
                 cli_seq = buf[1]
                 buf.pop(0); buf.pop(0)
                 self.sysex_response[FirmataKeybCmd.ID_CLI][cli_seq] = buf
+                return
+            if buf[0] == FirmataKeybCmd.ID_DYNLD_FUNCTION:
+                return_code = buf[1]
+                self.sysex_response_seq[seqnum] = return_code
+                self.dbg.tr(dbg_zone, f"dynld set function response: {buf}, {return_code}")
                 return
             if buf[0] == FirmataKeybCmd.ID_DYNLD_FUNEXEC:
                 self.dbg.tr(dbg_zone, f"dynld funexec response: {buf}")
@@ -790,6 +800,32 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         return self.script_stop
 
     #-------------------------------------------------------------------------------
+    def wait_for_response(self, seqnum):
+        timed_out = False
+        start = time.monotonic()
+        while seqnum not in self.sysex_response_seq and not timed_out:
+            time.sleep(self.keyb_poll_time*2)
+            if seqnum in self.sysex_response_seq:
+                ret_val = True, self.sysex_response_seq[seqnum]
+                del self.sysex_response_seq[seqnum]
+                return ret_val
+            timed_out = time.monotonic() - start > (self.keyb_poll_time * 1000)
+        return None
+
+    # send and wait for response
+    def send_sysex_wait(self, sysex_cmd, data):
+        response_received = None
+        num_sends = 0
+        while not response_received:
+            _, seqnum = self.send_sysex(sysex_cmd, data)
+            self.dbg.tr('SYSEX_COMMAND', f"cmd:{hex(sysex_cmd)}, seqnum:{hex(seqnum)}")
+            num_sends += 1
+            response_received = self.wait_for_response(seqnum)
+            if num_sends > 10:
+                self.dbg.tr('E', f"response not received {seqnum}")
+                return False
+        return response_received
+
     def keyb_set_cli_command(self, cmd):
         dbg_zone = 'CLI'
         dbg_print = self.dbg.enabled(dbg_zone)
@@ -836,8 +872,8 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         if dbg_print:
             self.dbg.tr(dbg_zone, f"keyb_set_cli_command: cmd_ba: {cmd_ba.hex(' ')}")
 
-        cli_seq = self.keyb_cli_seq % 256
-        self.keyb_cli_seq += 1
+        cli_seq = self.keyb_cli_seqnum % 256
+        self.keyb_cli_seqnum += 1
         data = bytearray()
         try:
             data.append(FirmataKeybCmd.ID_CLI)
@@ -902,7 +938,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             except:
                 pass
 
-            rgb_pixel = self.pixel_to_rgb_index_duration(pixel, QImage.Format_RGB888, rgb_index[i], pixel_duration)
+            rgb_pixel = self.convert_to_keyb_rgb(pixel, QImage.Format_RGB888, rgb_index[i], pixel_duration)
             if rgb_pixel:
                 #self.dbg.tr('RGB_BUF', f"pixel: {rgb_pixel.hex(' ')}")
                 data.extend(rgb_pixel)
@@ -932,18 +968,19 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 if key != self.sender():
                     #self.dbg.tr('DEBUG', f"combine image from {key}")
                     combined_img = combine_qimages(combined_img, self.img[key])
+
         #if not self.sender() in self.img:
             #self.dbg.tr('DEBUG', f"new sender {self.sender()} {img}")
         self.img[self.sender()] = img
         img = combined_img
         # max refresh
         if time.monotonic() - self.img_ts_prev < 1/self._rgb_max_refresh:
-            #print("skip")
+            if self.dbg_rgb_buf: self.dbg.tr(dbg_zone, "skip")
             return
         self.img_ts_prev = time.monotonic()
 
         #-------------------------------------------------------------------------------
-        # iterate through the image pixels and convert to "keyboard rgb pixels" and send to keyboard
+        # iterate through the qimage pixels and convert to "keyboard rgb pixels" and send to keyboard
         height = img.height()
         width = img.width()
         arr = np.ndarray((height, width, 3), buffer=img.constBits(), strides=[img.bytesPerLine(), 3, 1], dtype=np.uint8)
@@ -956,7 +993,7 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         for y in range(height):
             for x in range(width):
                 pixel = arr[y, x]
-                rgb_pixel = self.pixel_to_rgb_index_duration(pixel, img_format, self.xy_to_rgb_index(x, y), 50, rgb_multiplier)
+                rgb_pixel = self.convert_to_keyb_rgb(pixel, img_format, self.xy_to_rgb_index(x, y), 50, rgb_multiplier)
                 if rgb_pixel:
                     data.extend(rgb_pixel)
 
@@ -968,13 +1005,13 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
                     self.send_sysex(FirmataKeybCmd.SET, data)
                     num_sends += 1
                     # todo sync with keyboard to avoid buffer overflow
-                    # rawhid may use smaller epsize so sleep after more sends
-                    if self.port_type == "rawhid":
+                    # depends on keyboard, put parameter in "keyboard model" class
+                    if self.port_type == "rawhid": # keychron q3 max
                         if num_sends % 10 == 0:
-                            time.sleep(0.002)
+                            time.sleep(self.keyb_poll_time*2)
                     else:
                         if num_sends % 2 == 0:
-                            time.sleep(0.002)
+                            time.sleep(self.keyb_poll_time*2)
 
                     data = bytearray()
                     data.append(FirmataKeybCmd.ID_RGB_MATRIX_BUF)
@@ -982,7 +1019,6 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         if len(data) > RGB_PIXEL_SIZE:
             self.send_sysex(FirmataKeybCmd.SET, data)
             num_sends += 1
-        #time.sleep(0.005)
 
     def keyb_set_default_layer(self, layer):
         self.dbg.tr('SYSEX_COMMAND', f"keyb_set_default_layer: {layer}")
@@ -1089,16 +1125,17 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
         offset = [0, 0]
         data.extend(id)
         data.extend(offset)
+        data_hdr_len = len(data)
 
-        num_sends = 0
         i = 0
         while i < len(buf):
             if len(data) >= self.MAX_LEN_SYSEX_DATA:
-                self.send_sysex(FirmataKeybCmd.SET, data)
-                num_sends += 1
-                # todo: sync with keyboard to avoid firmata buffer overflow
-                if num_sends % 2 == 0:
-                    time.sleep(0.002)
+                if not (response := self.send_sysex_wait(FirmataKeybCmd.SET, data)):
+                    self.dbg.tr('E', f"keyb_set_dynld_function: send failed")
+                    return
+                if response[1] != 0:
+                    self.dbg.tr('E', f"keyb_set_dynld_function: error returned {response[1]}")
+                    return
 
                 data = bytearray()
                 data.append(FirmataKeybCmd.ID_DYNLD_FUNCTION)
@@ -1109,16 +1146,21 @@ class FirmataKeyboard(pyfirmata2.Board, QtCore.QObject):
             data.append(buf[i])
             i += 1
 
-        if len(data) > 0:
-            self.send_sysex(FirmataKeybCmd.SET, data)
+        if len(data) > data_hdr_len:
+            if not (response := self.send_sysex_wait(FirmataKeybCmd.SET, data)):
+                self.dbg.tr('E', f"keyb_set_dynld_function: send failed")
+                return
+            if response[1] != 0:
+                self.dbg.tr('E', f"keyb_set_dynld_function: error returned {response[1]}")
+                return
 
+        # last send for end of data, set function ptr
         data = bytearray()
         data.append(FirmataKeybCmd.ID_DYNLD_FUNCTION)
         offset = [0xff, 0xff]
         data.extend(id)
         data.extend(offset)
         self.send_sysex(FirmataKeybCmd.SET, data)
-        # todo: validate loaded code
 
     def keyb_set_dynld_funexec(self, fun_id, buf=bytearray()):
         self.dbg.tr('SYSEX_COMMAND', f"keyb_set_dynld_funexec: {fun_id} {buf.hex(' ')}")

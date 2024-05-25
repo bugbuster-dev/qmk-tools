@@ -1,3 +1,5 @@
+import random
+
 dynld_animation_c = '''
 
 #include "info_config.h" // include generated config file in .build/...
@@ -15,7 +17,8 @@ static inline uint8_t _scale16by8(uint16_t i, uint8_t scale ) {{
 
 static inline HSV BAND_SPIRAL_SAT_math(dynld_custom_animation_env_t *anim_env, HSV hsv, int16_t dx, int16_t dy, uint8_t dist, uint8_t time) {{
     hsv.s = _scale8(hsv.s + dist - time - anim_env->math_funs->atan2_8(dy, dx), hsv.s);
-    hsv.h = time%256;
+    //hsv.h = time%256;
+    hsv.h = {hsv_h};
     hsv.v = hsv.s;
     return hsv;
 }}
@@ -41,15 +44,21 @@ bool effect_runner_dx_dy_dist(dynld_custom_animation_env_t *anim_env, effect_par
 }}
 '''
 
-dynld_animation_c_file = dynld_animation_c.format()
-print("-"*40)
-print(dynld_animation_c_file)
-print("-"*40)
-with open("exec.c", "w") as f:
-    f.write(dynld_animation_c_file)
+while not stopped():
+    hsv_h = random.randint(0, 255)
+    dynld_animation_c_file = dynld_animation_c.format(hsv_h=hsv_h)
+    print("-"*40)
+    print(dynld_animation_c_file)
+    print("-"*40)
+    with open("exec.c", "w") as f:
+        f.write(dynld_animation_c_file)
 
-code = kb.compile("exec.c")
-if code:
-    #print(f"code:\n{code['elf']}\n{code['bin']}")
-    print(f"{code['bin'].hex(' ')}")
-    kb.load_fun(0, code['bin'])
+    code = kb.compile("exec.c")
+    if code:
+        #print(f"code:\n{code['elf']}\n{code['bin']}")
+        print(f"{code['bin'].hex(' ')}")
+        kb.load_fun(0, code['bin'])
+
+    time.sleep(3)
+
+print("stopped")

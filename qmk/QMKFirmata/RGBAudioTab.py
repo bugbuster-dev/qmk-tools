@@ -30,14 +30,12 @@ class AudioCaptureThread(QThread):
         self.freq_bands = freq_bands
 
     def run(self):
-        dbg_zone = 'DEBUG'
-
         self.paudio = pyaudio.PyAudio()
         default_speakers = None
         try:
             # see https://github.com/s0d3s/PyAudioWPatch/blob/master/examples/pawp_record_wasapi_loopback.py
             wasapi_info = self.paudio.get_host_api_info_by_type(pyaudio.paWASAPI)
-            self.dbg.tr(dbg_zone, f"wasapi: {wasapi_info}")
+            self.dbg.tr('D', f"wasapi: {wasapi_info}")
 
             default_speakers = self.paudio.get_device_info_by_index(wasapi_info["defaultOutputDevice"])
             if not default_speakers["isLoopbackDevice"]:
@@ -46,9 +44,9 @@ class AudioCaptureThread(QThread):
                         default_speakers = loopback
                         break
 
-            self.dbg.tr(dbg_zone, f"loopback device: {default_speakers}")
+            self.dbg.tr('D', f"loopback device: {default_speakers}")
         except Exception as e:
-            self.dbg.tr(dbg_zone, f"wasapi not supported: {e}")
+            self.dbg.tr('D', f"wasapi not supported: {e}")
             return
 
         FORMAT = pyaudio.paFloat32
@@ -64,7 +62,7 @@ class AudioCaptureThread(QThread):
                         input=True,
                         frames_per_buffer=CHUNK,
                         input_device_index=INPUT_INDEX)
-        self.dbg.tr(dbg_zone, f"audio stream {self.stream} opened")
+        self.dbg.tr('D', f"audio stream {self.stream} opened")
 
         while self.running:
             frames = []
@@ -72,7 +70,7 @@ class AudioCaptureThread(QThread):
                 data = self.stream.read(CHUNK)
                 frames = np.frombuffer(data, dtype=np.float32)
             except Exception as e:
-                self.dbg.tr(dbg_zone, f"audio stream read error: {e}")
+                self.dbg.tr('D', f"audio stream read error: {e}")
                 self.running = False
                 break
 
@@ -94,7 +92,7 @@ class AudioCaptureThread(QThread):
 
         self.stream.stop_stream()
         self.stream.close()
-        self.dbg.tr(dbg_zone, f"audio stream {self.stream} closed")
+        self.dbg.tr('D', f"audio stream {self.stream} closed")
         self.paudio.terminate()
         self.callback(None)
 

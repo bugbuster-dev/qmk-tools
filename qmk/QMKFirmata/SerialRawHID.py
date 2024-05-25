@@ -9,11 +9,12 @@ class SerialRawHID(serial.SerialBase):
     def __init__(self, vid, pid, epsize=64, timeout=100):
         #region debug tracers
         self.dbg = DebugTracer(zones={
-            "DEBUG": 0,
-            "INFO": 0,
-            "WRITE": 1,
-            "READ": 0,
-        })
+            'E': 1,
+            'D': 0,
+            'I': 0,
+            'WRITE': 1,
+            'READ': 0,
+        }, obj=self)
         self.dbg_write = None # self.dbg
         self.dbg_read = None
         #regionend
@@ -24,6 +25,7 @@ class SerialRawHID(serial.SerialBase):
         self.timeout = timeout
         self.hid_device = None
         self._port = "{:04x}:{:04x}".format(vid, pid)
+        self.MAX_DATA_SIZE = epsize-2
         self.open()
 
     def _reconfigure_port(self):
@@ -38,7 +40,7 @@ class SerialRawHID(serial.SerialBase):
             # todo may strip trailing zeroes after END_SYSEX
             #data = data.rstrip(bytearray([0])) # remove trailing zeros
             #if len(data) > 0:
-                #self.dbg.tr("READ", f"rawhid read:{data.hex(' ')}")
+                #self.dbg.tr('READ', f"rawhid read:{data.hex(' ')}")
         except Exception as e:
             data = bytearray()
 
@@ -61,7 +63,7 @@ class SerialRawHID(serial.SerialBase):
             device_list = hid.enumerate(self.vid, self.pid)
             for _device in device_list:
                 if _device['usage_page'] == self.QMK_RAW_USAGE_PAGE: # 'usage' should be QMK_RAW_USAGE_ID
-                    self.dbg.tr("INFO", f"found qmk raw hid device: {_device}")
+                    self.dbg.tr('I', f"found qmk raw hid device: {_device}")
                     device = _device
                     break
 
@@ -75,12 +77,12 @@ class SerialRawHID(serial.SerialBase):
             self.write(bytearray([0xf0, 0x71, 0xf7]))
             #self._read_msg()
             #if len(self.data) == 0:
-                #self.dbg.tr("READ", f"no response from device")
+                #self.dbg.tr('READ', f"no response from device")
         except Exception as e:
             self.hid_device = None
             raise serial.SerialException(f"Could not open HID device: {e}")
 
-        self.dbg.tr("INFO", f"opened HID device: {self.hid_device}")
+        self.dbg.tr('I', f"opened HID device: {self.hid_device}")
 
     def is_open(self):
         return self.hid_device != None
@@ -93,16 +95,21 @@ class SerialRawHID(serial.SerialBase):
     def write(self, data):
         if not self.hid_device:
             raise serial.SerialException("device not open")
+
         # todo: span sysex data over multiple epsized packets
+        if len(data) > self.MAX_DATA_SIZE:
+            self.dbg.tr('E', f"data too large: {len(data)}")
+            raise serial.SerialException("data too large")
+
         total_sent = 0
         while len(data) > 0:
-            chunk = bytearray([0x00, self.FIRMATA_MSG]) + data[:self.epsize-2]
-            data = data[self.epsize-2:]
+            chunk = bytearray([0x00, self.FIRMATA_MSG]) + data[:self.MAX_DATA_SIZE]
+            data = data[self.MAX_DATA_SIZE:]
             self.hid_device.write(chunk)
             total_sent += len(chunk)
-            if self.dbg_write: self.dbg_write.tr("WRITE", f"write: {chunk.hex(' ')}")
+            if self.dbg_write: self.dbg_write.tr('WRITE', f"write: {chunk.hex(' ')}")
         if self.dbg_write:
-            self.dbg_write.tr("WRITE", f"total sent: {total_sent}")
+            self.dbg_write.tr('WRITE', f"total sent: {total_sent}")
         return total_sent
 
     def read(self):
@@ -112,10 +119,10 @@ class SerialRawHID(serial.SerialBase):
         if len(self.data) == 0:
             self._read_msg()
         if len(self.data) > 0:
-            if self.dbg_read: self.dbg_read.tr("READ", f"read:{self.data[0]}")
+            if self.dbg_read: self.dbg_read.tr('READ', f"read:{self.data[0]}")
             return chr(self.data.pop(0))
 
-        if self.dbg_read: self.dbg_read.tr("READ", f"read: no data")
+        if self.dbg_read: self.dbg_read.tr('READ', f"read: no data")
         return chr(0)
 
     def read_all(self):

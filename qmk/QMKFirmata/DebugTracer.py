@@ -5,6 +5,8 @@ tracer.zones['SYSEX_COMMAND'] = 0
 print(tracer.zones)
 '''
 
+import time, threading
+
 class DebugTracerRegistry:
     _registry = {}
 
@@ -26,11 +28,11 @@ class DebugTracer:
         attributes = ["zones", "obj"]
         for attr in attributes:
             setattr(self, attr, None)
-            if attr == "zones":
-                setattr(self, attr, {"E":1,"W":1,"I":0,"D":0}) # error, warning, info, debug
         for attr, value in kwargs.items():
             if attr in attributes:
                 setattr(self, attr, value)
+                if attr == "zones":
+                    self.zones.update({"E":1,"W":1})
                 if attr == "obj":
                     if value:
                         try:
@@ -51,16 +53,15 @@ class DebugTracer:
                     except Exception as e:
                         pass
 
-                msg = objstr + f"[{zone}]" + string
+                curr_time = f"{time.time():.3f}:"
+                tid = threading.get_ident()
+                msg = curr_time + objstr + f"[{zone}]" + f":{tid}:" + string
                 print(msg)
         except:
             pass
 
     def enable(self, attr, flag=True):
-        try:
-            self.zones[attr] = flag
-        except:
-            pass
+        self.zones[attr] = flag
 
     def enabled(self, attr):
         try:
