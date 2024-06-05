@@ -1,4 +1,4 @@
-import numpy as np
+import numpy as np, random
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
 import matplotlib.pyplot as plt
@@ -57,51 +57,58 @@ class RGBAnimationTab(QWidget):
     signal_rgb_image = Signal(QImage, object)
 
     def __init__(self, rgb_matrix_size):
-        self.dbg = DebugTracer(zones={'DEBUG': 0}, obj=self)
+        self.dbg = DebugTracer(zones={'D': 0}, obj=self)
         self.rgb_matrix_size = rgb_matrix_size
         super().__init__()
         self.init_gui()
 
     def init_gui(self):
-        # Create a figure for plotting
-        self.figure = Figure(facecolor='black')
-        self.figure.subplots_adjust(left=0, right=1, bottom=0, top=1)  # Adjust margins
-        self.canvas = FigureCanvas(self.figure)
-        self.ax = self.figure.add_subplot(111)
-        self.ax.set_facecolor('black')
-        self.ax.axis('off')
+        DPI = 100
+        width = 800
+        height = int((self.rgb_matrix_size[1]/self.rgb_matrix_size[0]) * width)
+        w_inch = width/DPI
+        h_inch = height/DPI
 
+        # matplotlib figure for plotting
+        self.figure = Figure(facecolor='black')
+        self.figure.set_size_inches((w_inch, h_inch))
+        self.figure.set_dpi(DPI)
+        self.figure.subplots_adjust(left=0, right=1, top=1, bottom=0)
+
+        self.ax = self.figure.add_subplot(111) # 1 1x1 subplot
+        self.ax.set_facecolor('black')
+        plt.axes().set_aspect('equal', 'datalim')
+        # todo: aspect ratio
+
+        if self.dbg.enabled('D'):
+            _w, _h = self.figure.get_size_inches() * self.figure.get_dpi()
+            self.dbg.tr('D', f"figure size:{_w}x{_h} dpi:{self.figure.get_dpi()}")
+
+        #-------------------------------------------------------
+        # text editor
+        self.code_editor = CodeTextEdit("animation.py")
         # start animation button
         self.start_button = QPushButton("start")
         self.start_button.clicked.connect(self.start_animation)
-
-        # Layout to hold the canvas and buttons
+        # canvas
+        self.canvas = FigureCanvas(self.figure)
+        #-------------------------------------------------------
+        # add widgets to layout
         layout = QVBoxLayout()
-        self.code_editor = CodeTextEdit("animation.py")
         layout.addWidget(self.code_editor)
         layout.addWidget(self.canvas)
         layout.addWidget(self.start_button)
         self.setLayout(layout)
 
-        dpi = 100
-        width = 800
-        height = int((self.rgb_matrix_size[1]/self.rgb_matrix_size[0]) * width)
-        w_inch = width/dpi
-        h_inch = height/dpi
-        self.figure.set_size_inches((w_inch, h_inch))
-        self.figure.set_dpi(dpi)
-
-        width, height = self.figure.get_size_inches() * self.figure.get_dpi()
-        self.dbg.tr('DEBUG', f"figure size:{width}x{height} dpi:{self.figure.get_dpi()}")
-
-        # Parameters for the animation
-        self.x_size = 20
-        self.frames = 500
+        # func animation parameters
+        self.n_frames = 1000
         self.interval = 40
-        # Animation placeholder
         self.ani = None
 
         self._audio_peak_levels = None
+
+    def on_keypress(self, keypress_event):
+        print("on_keypress: {} todo", keypress_event)
 
     def on_audio_peak_levels(self, peak_levels):
         self._audio_peak_levels = peak_levels
@@ -119,7 +126,7 @@ class RGBAnimationTab(QWidget):
                 setattr(RGBAnimationTab, "_animate_init", animate_init_method)
                 setattr(RGBAnimationTab, "_animate", animate_method)
                 self._animate_init()
-                self.ani = animation.FuncAnimation(self.figure, self.animate, frames=self.frames, #init_func=self.init,
+                self.ani = animation.FuncAnimation(self.figure, self.animate, frames=self.n_frames, #init_func=self.init,
                                                 blit=True, interval=self.interval, repeat=True)
             except Exception as e:
                 print(e)
@@ -135,24 +142,27 @@ class RGBAnimationTab(QWidget):
     def capture_animation_frame(self):
         if self.ani == None:
             return
-        self.ani.pause()
 
-        # capture the current frame from the canvas
-        rgba_buffer = np.frombuffer(self.figure.canvas.buffer_rgba(), dtype=np.uint8)
-        width, height = self.figure.get_size_inches() * self.figure.get_dpi()
-        #if rgba_buffer.nbytes != width * height * 4:
-            #self.dbg.tr('DEBUG', f"buffer size mismatch: {rgba_buffer.nbytes} != {width}x{height}x4")
-        rgba_array = rgba_buffer.reshape(int(height), int(width), 4, order='C')
-        rgba_qimg = QImage(rgba_array.data, width, height, QImage.Format_RGBA8888)
-        keyb_rgb = rgba_qimg.scaled(self.rgb_matrix_size[0], self.rgb_matrix_size[1], Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.FastTransformation)
-        keyb_rgb = keyb_rgb.convertToFormat(QImage.Format_RGB888)
-        self.signal_rgb_image.emit(keyb_rgb, (1.0,1.0,1.0))
+        self.ani.pause()
+        try:
+            # capture the current frame from the canvas
+            rgba_buffer = np.frombuffer(self.figure.canvas.buffer_rgba(), dtype=np.uint8)
+            width, height = self.figure.get_size_inches() * self.figure.get_dpi()
+            #if rgba_buffer.nbytes != width * height * 4:
+                #self.dbg.tr('D', f"buffer size mismatch: {rgba_buffer.nbytes} != {width}x{height}x4")
+            rgba_array = rgba_buffer.reshape(int(height), int(width), 4, order='C')
+            rgba_qimg = QImage(rgba_array.data, width, height, QImage.Format_RGBA8888)
+            keyb_rgb = rgba_qimg.scaled(self.rgb_matrix_size[0], self.rgb_matrix_size[1], Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.FastTransformation)
+            keyb_rgb = keyb_rgb.convertToFormat(QImage.Format_RGB888)
+            self.signal_rgb_image.emit(keyb_rgb, (1.0,1.0,1.0))
+        except Exception as e:
+            self.dbg.tr('E', f"capture_animation_frame: {e}")
 
         self.ani.resume()
 
     def animate(self, i):
         ret = self._animate(i)
-        if i == self.frames:
+        if i == self.n_frames:
             self.figure.clear()
 
         QTimer.singleShot(0, self.capture_animation_frame)

@@ -44,21 +44,26 @@ bool effect_runner_dx_dy_dist(dynld_custom_animation_env_t *anim_env, effect_par
 }}
 '''
 
+hsv_h = 0
 while not stopped():
-    hsv_h = random.randint(0, 255)
+    new_h = random.randint(0, 255)
+    if abs(new_h - hsv_h) < 50:
+        new_h = (hsv_h + 50) % 256
+    hsv_h = new_h
+    print(f"hsv_h={hsv_h}")
     dynld_animation_c_file = dynld_animation_c.format(hsv_h=hsv_h)
-    print("-"*40)
-    print(dynld_animation_c_file)
-    print("-"*40)
+    #print("-"*40)
+    #print(dynld_animation_c_file)
+    #print("-"*40)
     with open("exec.c", "w") as f:
         f.write(dynld_animation_c_file)
 
     code = kb.compile("exec.c")
     if code:
         #print(f"code:\n{code['elf']}\n{code['bin']}")
-        print(f"{code['bin'].hex(' ')}")
+        #print(f"{code['bin'].hex(' ')}")
         kb.load_fun(0, code['bin'])
 
-    time.sleep(3)
+    time.sleep(1)
 
 print("stopped")

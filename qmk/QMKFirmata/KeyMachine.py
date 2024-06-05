@@ -6,14 +6,14 @@ class KeyMachine:
 
     def __init__(self, keyb):
         self.dbg = DebugTracer(zones={
-            "DEBUG": 0,
+            "D": 0,
             "REPEAT": 0,
             "COMBO": 0,
             "SEQ": 0,
             "MORSE": 0,
         }, obj=self)
 
-        self.dbg.tr('DEBUG', f"KeyMachine: {keyb}")
+        self.dbg.tr('D', "KeyMachine: {}", keyb)
         self.keyb = keyb
         try:
             self.key_layout = keyb.keyboardModel.KEY_LAYOUT['win']
@@ -111,14 +111,14 @@ class KeyMachine:
     def register_combo(self, keys, handler):
         combo_keys = "+".join(keys)
         self.combos[combo_keys] = (keys, handler)
-        self.dbg.tr('COMBO', f"register_combo: {combo_keys}, {keys}, {handler}")
+        self.dbg.tr('COMBO', "register_combo: {combo_keys}, {keys}, {handler}", combo_keys=combo_keys, keys=keys, handler=handler)
 
     # todo: flags/options[] to define behavior for different "sequence types" (leader key, tap dance, ...)
     # - can define state change on key press/hold/release on each "sequence step"
     def register_sequence(self, keys, timeout, handler, flags=[]):
         sequence_keys = "+".join(keys)
         self.sequences[sequence_keys] = (keys, timeout, (0, 0), handler, flags) # sequence state: (index, time)
-        self.dbg.tr('SEQ', f"register_sequence: {sequence_keys}, {keys}, {timeout}, {handler}, {flags}")
+        self.dbg.tr('SEQ', "register_sequence: {sequence_keys}, {keys}, {timeout}, {handler}, {flags}", sequence_keys=sequence_keys, keys=keys, timeout=timeout, handler=handler, flags=flags)
 
     @staticmethod
     def time_elapsed(time_begin, time_end):
@@ -139,11 +139,11 @@ class KeyMachine:
                 state_time = state[1]
                 try:
                     if key == sequence_keys[state_index]:
-                        self.dbg.tr('SEQ', f"process_sequences: {key}, {sequence_keys}, {state}")
+                        self.dbg.tr('SEQ', "process_sequences: {key}, {sequence_keys}, {state}", key=key, sequence_keys=sequence_keys, state=state)
                         if state_index > 0:
                             time_diff = self.time_elapsed(state_time, time)
                             if time_diff > timeout[state_index-1][1] or time_diff < timeout[state_index-1][0]:
-                                self.dbg.tr('SEQ', f"process_sequences: keypress time: {time_diff} out of range {timeout[state_index-1]}")
+                                self.dbg.tr('SEQ', "process_sequences: keypress time: {time_diff} out of range {timeout}", time_diff=time_diff, timeout=timeout[state_index-1])
                                 break
 
                         try:
@@ -162,7 +162,7 @@ class KeyMachine:
                         state_index += 1
                         state = (state_index, time)
                         if state_index == len(sequence_keys):
-                            self.dbg.tr('SEQ', f"sequence! call handler: {handler_fn}")
+                            self.dbg.tr('SEQ', "sequence! call handler: {}", handler_fn)
                             self.sequences[_key] = (sequence_keys, timeout, (0, 0), handler)
                             handler_fn()
                             return True
@@ -185,12 +185,12 @@ class KeyMachine:
             for _, combo_handler in self.combos.items():
                 combo_keys = combo_handler[0]
                 handler = combo_handler[1]
-                self.dbg.tr('COMBO', f"process_combos: {combo_handler}")
+                self.dbg.tr('COMBO', "process_combos: {}", combo_handler)
                 try:
                     if combo_keys[-1] == key:
-                        self.dbg.tr('COMBO', f"process_combos: {combo_keys}")
+                        self.dbg.tr('COMBO', "process_combos: {}", combo_keys)
                         if all([self.key_pressed.get(k, 0) for k in combo_keys[:-1]]):
-                            self.dbg.tr('COMBO', f"combo!")
+                            self.dbg.tr('COMBO', "combo!")
                             handler()
                             return True
                 except:
@@ -205,13 +205,13 @@ class KeyMachine:
         return True
 
     def key_repeat_sched_fn(self, key):
-        self.dbg.tr('REPEAT', f"key_repeat_sched_fn: {key}")
+        self.dbg.tr('REPEAT', "key_repeat_sched_fn: {}", key)
         if key in self.key_pressed: # may race with key_event, only read dict no lock needed
             keyboard.press(key)
             self.run_repeat(key, self.key_repeat_time)
 
     def sequence_handle_sched_fn(self, handler):
-        self.dbg.tr('SEQ', f"sequence_handle_sched_fn: {handler}")
+        self.dbg.tr('SEQ', "sequence_handle_sched_fn: {}", handler)
         handler()
 
     def process_workarounds(self, press_keys):
@@ -229,7 +229,7 @@ class KeyMachine:
         return press_keys
 
     def morse_handle_timeout(self):
-        #self.dbg.tr('MORSE', f"morse_handle_timeout")
+        #self.dbg.tr('MORSE', "morse_handle_timeout")
         def morse_get_char(tap_stack):
             morse_code = {
                 '.-': 'A', '-...': 'B', '-.-.': 'C', '-..': 'D', '.': 'E', '..-.': 'F',
@@ -250,7 +250,7 @@ class KeyMachine:
         if len(self.morse_tap_stack) > 0:
             char = morse_get_char(self.morse_tap_stack)
             self.morse_tap_stack = []
-        self.dbg.tr('MORSE', f"morse: {char}")
+        self.dbg.tr('MORSE', "morse: {}", char)
         keyboard.write(' ')
 
     def handle_morse_key(self, key, time, pressed):
@@ -289,7 +289,7 @@ class KeyMachine:
                 last_tap_release_time = 0
 
             space_time_didah = self.time_elapsed(last_tap_release_time, self.key_pressed[key])
-            self.dbg.tr('MORSE', f"morse: {dit_dah} ({space_time_didah}, {press_duration} ms)")
+            self.dbg.tr('MORSE', "morse: {dit_dah} ({space_time_didah}, {press_duration} ms)", dit_dah=dit_dah, space_time_didah=space_time_didah, press_duration=press_duration)
             self.morse_tap_stack.append((dit_dah, self.key_pressed[key], time))
             try:
                 keyboard.write(dit_dah)
@@ -304,9 +304,9 @@ class KeyMachine:
     def key_event(self, row, col, time, pressed):
         try:
             key = self.key_layout[row][col]
-            self.dbg.tr('DEBUG', f"key_event: {row}, {col}, {time}, {pressed} -> {key}")
+            self.dbg.tr('D', "key_event: {row}, {col}, {time}, {pressed} -> {key}", row=row, col=col, time=time, pressed=pressed, key=key)
         except:
-            self.dbg.tr('DEBUG', f"key_event: {row}, {col}, {time}, {pressed} -> not mapped")
+            self.dbg.tr('E', "key_event: {row}, {col}, {time}, {pressed} -> not mapped", row=row, col=col, time=time, pressed=pressed)
             return
 
         if key == 'morse':
@@ -317,13 +317,13 @@ class KeyMachine:
             press_keys = []
             pressed_mods = self.mod_keys_pressed()
             for mod in pressed_mods:
-                self.dbg.tr('DEBUG', f"mod key: {mod}")
+                self.dbg.tr('D', "mod key: {}", mod)
                 press_keys.append(mod)
             press_keys.append(key)
             press_keys = self.process_workarounds(press_keys)
             for key in press_keys:
                 try:
-                    self.dbg.tr('DEBUG', f"press key: {key}")
+                    self.dbg.tr('D', "press key: {}", key)
                     keyboard.press(key)
                 except:
                     pass
@@ -333,10 +333,10 @@ class KeyMachine:
 
         if pressed:
             self.key_pressed[key] = time
-            self.dbg.tr('DEBUG', f"key pressed: {self.key_pressed}")
+            self.dbg.tr('D', "key pressed: {}", self.key_pressed)
             if len(self.key_pressed) == 1:
                 if self.repeat_needed(key):
-                    self.dbg.tr('DEBUG', f"schedule repeat: {key}")
+                    self.dbg.tr('D', "schedule repeat: {}", key)
                     self.run_repeat(key, self.key_repeat_delay)
         else:
             if key in self.key_pressed:
@@ -345,7 +345,7 @@ class KeyMachine:
                     try:
                         self.key_repeat_scheduler.cancel(self.key_repeat_sched_event)
                         self.key_repeat_sched_event = None
-                        self.dbg.tr('DEBUG', f"schedule repeat canceled: {key}")
+                        self.dbg.tr('D', "schedule repeat canceled: {}", key)
                     except:
                         pass
             try:
@@ -359,21 +359,21 @@ class KeyMachine:
             self.key_event_stack.pop(0)
 
     def run_repeat(self, key, time):
-        self.dbg.tr('REPEAT', f"run_repeat: {key}, {time}")
+        self.dbg.tr('REPEAT', "run_repeat: {}, {}", key, time)
         def run_repeat_schedule_fn(key):
             self.key_repeat_sched_event = self.key_repeat_scheduler.enter(time, 1, self.key_repeat_sched_fn, (key,))
             self.key_repeat_scheduler.run()
         threading.Thread(target=run_repeat_schedule_fn, args=(key,)).start()
 
     def run_sequence_handler(self, handler, time):
-        self.dbg.tr('SEQ', f"run_sequence_handler: {time}")
+        self.dbg.tr('SEQ', "run_sequence_handler: {}", time)
         def run_sequence_handle_schedule_fn(handler):
             self.sequence_handler_sched_event = self.sequence_handler_scheduler.enter(time, 1, self.sequence_handle_sched_fn, (handler,))
             self.sequence_handler_scheduler.run()
         threading.Thread(target=run_sequence_handle_schedule_fn, args=(handler,)).start()
 
     def run_morse_timeout(self, time):
-        #self.dbg.tr('MORSE', f"run_morse_timeout: {time}")
+        #self.dbg.tr('MORSE', "run_morse_timeout: {}", time)
         def run_morse_timeout_schedule_fn():
             self.morse_handler_sched_event = self.morse_handler_scheduler.enter(time, 1, self.morse_handle_timeout)
             self.morse_handler_scheduler.run()

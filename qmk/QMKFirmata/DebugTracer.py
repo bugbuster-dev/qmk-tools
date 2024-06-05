@@ -1,6 +1,6 @@
 '''
 tracers = DebugTracer.registry()
-tracer = tracers["FirmataKeyboard"]
+tracer = tracers["QMKataKeyboard"]
 tracer.zones['SYSEX_COMMAND'] = 0
 print(tracer.zones)
 '''
@@ -43,7 +43,7 @@ class DebugTracer:
                             except:
                                 pass
 
-    def tr(self, zone, string):
+    def tr(self, zone, msg_format, *args, **kwargs):
         try:
             if self.zones[zone]:
                 objstr = ""
@@ -53,14 +53,15 @@ class DebugTracer:
                     except Exception as e:
                         pass
 
-                curr_time = f"{time.time():.3f}:"
+                curr_time = f"{time.time():.3f}"
                 tid = threading.get_ident()
-                msg = curr_time + objstr + f"[{zone}]" + f":{tid}:" + string
+                msg = f"{curr_time}:{tid}:" + objstr + f"[{zone}]" + msg_format.format(*args, **kwargs)
+
                 print(msg)
         except:
             pass
 
-    def enable(self, attr, flag=True):
+    def enable(self, attr, flag=1):
         self.zones[attr] = flag
 
     def enabled(self, attr):

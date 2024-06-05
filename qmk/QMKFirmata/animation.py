@@ -1,20 +1,27 @@
-from matplotlib.patches import Rectangle
-import numpy as np
+# import necessary libraries in RGBAnimationTab.py
 
 #-------------------------------------------------------------------------------
-# the "init", "animate" methods to be used with "matplotlib animation"
+# matplotlib animation examples
+# return the "init" and "animate" methods to be used with "matplotlib animation"
+# in animate_methods() here below
+#
+# self.figure, self.ax are already defined
+#-------------------------------------------------------------------------------
+
+# return the init, animate methods pair
 def animate_methods(self):
     methods = "init_wave","animate_wave"
     #methods = "init_rect","animate_rect"
     #methods = "init_random_colors","animate_random_colors"
     #methods = "init_spiral","animate_spiral"
     #methods = "init_audio_anim","animate_audio"
+    #methods = "init_circle_wave","animate_circle_wave"
     return methods
 
 #-------------------------------------------------------------------------------
-
+# self.figure, self.ax are already defined
 def init_random_colors(self):
-    rows, cols = 6, 19  # Grid size
+    rows, cols = 6, 17  # Grid size
     rect_width, rect_height = 6, 1  # Rectangle dimensions
     xlim, ylim = cols * rect_width, rows * rect_height  # Plot area limits, accommodating all rectangles
 
@@ -41,9 +48,8 @@ def animate_random_colors(self, i):
     return self.rectangles
 
 #-------------------------------------------------------------------------------
-
 def init_spiral(self):
-    rows, cols = 6, 19  # Grid size
+    rows, cols = 6, 17  # Grid size
     rect_width, rect_height = 6, 1  # Rectangle dimensions
     xlim, ylim = cols * rect_width, rows * rect_height  # Plot area limits, accommodating all rectangles
 
@@ -63,9 +69,7 @@ def init_spiral(self):
             rectangles.append(rect)
 
     self.rectangles = rectangles
-
     self.angle = 0
-
 
 def animate_spiral(self, i):
     for rect in self.rectangles:
@@ -89,32 +93,60 @@ def animate_spiral(self, i):
     return self.rectangles
 
 #-------------------------------------------------------------------------------
-
 def init_wave(self):
-    self.ax.set_xlim(-0.05, 0.05)
-    self.ax.set_ylim(-0.05, 0.05)
+    self.ax.set_xlim(-5, 5)
+    self.ax.set_ylim(-1, 1)
 
     self.figure.set_facecolor('black')
     # Line object for the standing wave
     self.standing_wave_line = self.ax.plot([], [], color='red', lw=40)
     self.standing_wave_line[0].set_data([], [])
 
-    #self.frames = 1000
     return self.standing_wave_line
 
-
 def animate_wave(self, i):
-    x = np.linspace(0, self.x_size, 1000)
-    #x = np.linspace(0, 2 * np.pi, 1000)
+    #print("animate_wave")
+    x_max = 20
+    n_waves = 3
+    x = np.linspace(0, x_max, 100)
 
-    amplitude = np.sin(np.pi * i / self.frames) * 1
-    y = amplitude * np.sin(2 * 2 * np.pi * 2 * (x - self.x_size / 2) / self.x_size) * np.cos(2 * np.pi * i / 50)
-    self.standing_wave_line[0].set_data((x - self.x_size / 2)/100, y/30)
+    amplitude = np.sin(np.pi * i / self.n_frames) * 1.1
+    y = amplitude * np.sin(n_waves * 2 * np.pi * (x - x_max / 2) / x_max) * np.cos(2 * np.pi * i / 50)
+    self.standing_wave_line[0].set_data((x - x_max / 2), y)
 
     return self.standing_wave_line
 
 #-------------------------------------------------------------------------------
+def init_circle_wave(self):
+    self.ax.set_xlim(0, 2)
+    self.ax.set_ylim(0, 2)
+    #self.ax.set_aspect('equal', adjustable='box')
+    self.waves = []
 
+def animate_circle_wave(self, i):
+    #print("animate_raindrops")
+    def random_color():
+        return (random.random(), random.random(), random.random())
+
+    self.ax.clear()
+    # new wave every N frames
+    if i % 20 == 0:
+        x, y = random.uniform(0.5, 1.5), random.uniform(0.5, 1.5)
+        wave_color = random_color()
+        self.waves.append((x, y, 0, wave_color))
+
+    # update the radius
+    new_waves = []
+    for x, y, r, color in self.waves:
+        if r < 1.2:
+            alpha = 1 - r/1.2
+            circle = plt.Circle((x, y), r, color=color, fill=False, linewidth=100, alpha=alpha)
+            self.ax.add_patch(circle)
+            new_waves.append((x, y, r + 0.05, color))
+    self.waves[:] = new_waves
+    return []
+
+#-------------------------------------------------------------------------------
 def init_rect(self):
     self.figure.set_facecolor('black')
 
@@ -123,10 +155,8 @@ def init_rect(self):
     self.ax.set_xlim(0, 1)
     self.ax.set_ylim(0, 1)
 
-    # Initialize velocity and direction
+    # velocity and direction
     self.velocity = np.array([0.01, 0.007])
-
-    self.frames = 1000
     self.rect.set_xy((0.45, 0.45))
     return self.rect,
 
@@ -162,3 +192,4 @@ def animate_audio(self, i):
         #print(peak_levels)
         self.spectrum.set_ydata(peak_levels)
     return self.spectrum,
+

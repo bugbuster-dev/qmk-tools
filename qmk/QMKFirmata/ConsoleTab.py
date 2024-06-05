@@ -46,7 +46,7 @@ class ConsoleTab(QWidget):
             self.keyboard_config = self.keyboard_model.keyb_config()
         except:
             self.keyboard_config = None
-        self.dbg.tr('DEBUG', f"keyboard_model: {self.keyboard_model} {self.keyboard_config}")
+        self.dbg.tr('D', "keyboard_model: {} {}", self.keyboard_model, self.keyboard_config)
 
         self.max_text_length = 2000000
         self.max_console_file_size = self.max_text_length*2
@@ -58,7 +58,7 @@ class ConsoleTab(QWidget):
 
     def handle_cli_command(self):
         cmd = self.cli.text()
-        self.dbg.tr('DEBUG', f"cli command: {cmd}")
+        self.dbg.tr('D', "cli command: {}", cmd)
         self.signal_cli_command.emit(cmd)
         self.cli.store_clear_command()
 
@@ -95,7 +95,7 @@ class ConsoleTab(QWidget):
                     os.remove(filename)
                     filesize = 0
                 except Exception as e:
-                    self.dbg.tr('DEBUG', f"remove console log: {e}")
+                    self.dbg.tr('E', "remove console log: {}", e)
         except:
             filesize = 0
         if filesize < self.max_console_file_size:
@@ -103,7 +103,7 @@ class ConsoleTab(QWidget):
                 with open(filename, "a") as file:
                     file.write(self.console_output.toPlainText())
             except Exception as e:
-                self.dbg.tr('DEBUG', f"save_to_file: {e}")
+                self.dbg.tr('E', "save_to_file: {}", e)
 
     def limit_text(self):
         if self.console_text_len >= self.max_text_length:

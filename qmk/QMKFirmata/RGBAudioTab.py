@@ -35,8 +35,7 @@ class AudioCaptureThread(QThread):
         try:
             # see https://github.com/s0d3s/PyAudioWPatch/blob/master/examples/pawp_record_wasapi_loopback.py
             wasapi_info = self.paudio.get_host_api_info_by_type(pyaudio.paWASAPI)
-            self.dbg.tr('D', f"wasapi: {wasapi_info}")
-
+            self.dbg.tr('D', "wasapi: {}", wasapi_info)
             default_speakers = self.paudio.get_device_info_by_index(wasapi_info["defaultOutputDevice"])
             if not default_speakers["isLoopbackDevice"]:
                 for loopback in self.paudio.get_loopback_device_info_generator():
@@ -44,33 +43,37 @@ class AudioCaptureThread(QThread):
                         default_speakers = loopback
                         break
 
-            self.dbg.tr('D', f"loopback device: {default_speakers}")
+            self.dbg.tr('D', "loopback device: {}", default_speakers)
         except Exception as e:
-            self.dbg.tr('D', f"wasapi not supported: {e}")
+            self.dbg.tr('D', "wasapi not supported: {}", e)
             return
 
+        #-------------------------------------------------------------------------------
         FORMAT = pyaudio.paFloat32
         CHANNELS = default_speakers["maxInputChannels"]
         RATE = int(default_speakers["defaultSampleRate"])
         INPUT_INDEX = default_speakers["index"]
         CHUNK = int(RATE * self.interval)
 
-        self.running = True
         self.stream = self.paudio.open(format=FORMAT,
                         channels=CHANNELS,
                         rate=RATE,
                         input=True,
                         frames_per_buffer=CHUNK,
                         input_device_index=INPUT_INDEX)
-        self.dbg.tr('D', f"audio stream {self.stream} opened")
+        self.dbg.tr('D', "audio stream opened: rate={RATE}, chunk size={CHUNK}, channels={CHANNELS}, input device={INPUT_INDEX}", RATE=RATE, CHUNK=CHUNK, CHANNELS=CHANNELS, INPUT_INDEX=INPUT_INDEX)
 
+        self.running = True
         while self.running:
-            frames = []
+            frames = None
             try:
                 data = self.stream.read(CHUNK)
                 frames = np.frombuffer(data, dtype=np.float32)
+                if CHANNELS > 1:
+                    frames = frames.reshape(-1, CHANNELS)
+                    frames = np.mean(frames, axis=1)
             except Exception as e:
-                self.dbg.tr('D', f"audio stream read error: {e}")
+                self.dbg.tr('E', "audio stream read error: {}", e)
                 self.running = False
                 break
 
@@ -80,19 +83,21 @@ class AudioCaptureThread(QThread):
 
             # Calculate frequency bins
             freq_bins = np.fft.rfftfreq(len(audio_data), d=1./RATE)
+            #print(f"freq bins: {len(freq_bins)}, {len(audio_data)}")
             peak_levels = []
             for f_min, f_max in self.freq_bands:
                 # Find the bin indices corresponding to the frequency range
                 idx = np.where((freq_bins >= f_min) & (freq_bins <= f_max))
+                peak_level = 0
                 if len(freq_magnitude[idx]) > 0:
                     peak_level = np.max(freq_magnitude[idx])
-                    peak_levels.append(peak_level)
+                peak_levels.append(peak_level)
 
             self.callback(peak_levels)
 
         self.stream.stop_stream()
         self.stream.close()
-        self.dbg.tr('D', f"audio stream {self.stream} closed")
+        self.dbg.tr('D', "audio stream closed")
         self.paudio.terminate()
         self.callback(None)
 
@@ -158,7 +163,7 @@ class RGBAudioTab(QWidget):
         self.load_freq_bands_colors(filename)
         # update freq bands rgb ui
         for i, (band, color) in enumerate(zip(self.freq_bands, self.freq_rgb)):
-            self.dbg.tr('FREQ_BAND', f"settext:[{i}]{band} {color}")
+            self.dbg.tr('FREQ_BAND', "settext:[{i}]{band} {color}", i=i, band=band, color=color)
             self.freqbands_input[i][0].blockSignals(True)
             self.freqbands_input[i][1].blockSignals(True)
             self.freqbands_input[i][0].setText(format(band[0], '.2f'))
@@ -208,7 +213,7 @@ class RGBAudioTab(QWidget):
         self.max_level = [] # max level used for rgb intensity
         self.max_level_running = []  # max level updated every sample
         for i, (band, color) in enumerate(zip(self.freq_bands, self.freq_rgb)):
-            self.dbg.tr('FREQ_BAND', f"{band} {color}")
+            self.dbg.tr('FREQ_BAND', "band, color:{band}, {color}", band=band, color=color)
             self.max_level.append(15)
             self.max_level_running.append(0)
             low = QLineEdit()
@@ -276,13 +281,13 @@ class RGBAudioTab(QWidget):
                     raise Exception("too many freq bands")
                 if len(self.freq_bands) != len(self.freq_rgb):
                     raise Exception("freq_bands and colors have different lengths")
-                self.dbg.tr('FREQ_BAND', f"freq_bands:{self.freq_bands}")
-                self.dbg.tr('FREQ_BAND', f"freq_rgb:{self.freq_rgb}")
-                self.dbg.tr('FREQ_BAND', f"min_max_level:{self.min_max_level}")
+                self.dbg.tr('FREQ_BAND', "freq_bands:{}", self.freq_bands)
+                self.dbg.tr('FREQ_BAND', "freq_rgb:{}", self.freq_rgb)
+                self.dbg.tr('FREQ_BAND', "min_max_level:{}", self.min_max_level)
                 if self.min_max_level is None or len(self.min_max_level) != len(self.freq_bands):
                     self.min_max_level = [(0,0) for _ in range(len(self.freq_bands))]
         except Exception as e:
-            self.dbg.tr('DEBUG', f"error loading file: {e}")
+            self.dbg.tr('D', "error loading file: {}", e)
             self.freq_bands = []
             self.freq_rgb = []
             self.min_max_level = []
@@ -302,14 +307,14 @@ class RGBAudioTab(QWidget):
         for i in range(n_ranges):
             self.freq_rgb.append([float(self.freqbands_rgb_input[i][0].text()), float(self.freqbands_rgb_input[i][1].text()), float(self.freqbands_rgb_input[i][2].text())])
 
-        self.dbg.tr('FREQ_BAND', f"freq band colors {self.freq_rgb}")
+        self.dbg.tr('FREQ_BAND', "freq band colors {}", self.freq_rgb)
 
     def update_freq_bands(self):
         n_ranges = len(self.freq_bands)
         for i in range(n_ranges):
             self.freq_bands[i] = (float(self.freqbands_input[i][0].text()), float(self.freqbands_input[i][1].text()))
 
-        self.dbg.tr('FREQ_BAND', f"freq bands {self.freq_bands}")
+        self.dbg.tr('FREQ_BAND', "freq bands {}", self.freq_bands)
         if self.audio_thread:
             self.audio_thread.set_freq_bands(self.freq_bands)
 
@@ -335,6 +340,8 @@ class RGBAudioTab(QWidget):
         MAX_RGB = 255
         for i in range(len(peak_levels)):
             try:
+                if peak_levels[i]/max_level[i] == 0:
+                    continue
                 peak_db = 20 * np.log10(peak_levels[i]/max_level[i])
                 peak_db_rgb = self.db_to_255(peak_db, db_min[i], 0)
                 #print(f"peak {i}: {peak_levels[i]} {peak_db} {peak_db_rgb}")
@@ -347,7 +354,7 @@ class RGBAudioTab(QWidget):
                     g += peak_levels[i]/max_level[i] * self.freq_rgb[i][1] * MAX_RGB
                     b += peak_levels[i]/max_level[i] * self.freq_rgb[i][2] * MAX_RGB
             except Exception as e:
-                self.dbg.tr('DEBUG', f"ppeak_level_to_rgb:{e}")
+                self.dbg.tr('D', "peak_level_to_rgb:{}", e)
                 pass # #bands updated in ui
 
         # rgb values are added for all bands, normalize with a factor
@@ -369,7 +376,7 @@ class RGBAudioTab(QWidget):
 
         self.sample_count += 1
         if self.dbg.enabled('PEAK_LEVEL'):
-            self.dbg.tr('PEAK_LEVEL', f"peak {self.sample_count}: {peak_levels}")
+            self.dbg.tr('PEAK_LEVEL', "peak {}: {}", self.sample_count, peak_levels)
 
         # update "running max level", after N samples "max level" is adjusted with this
         peak_level = 0 # current sample peak level
@@ -400,12 +407,12 @@ class RGBAudioTab(QWidget):
                     else:
                         self.max_level[i] += (self.max_level_running[i] - self.max_level[i])/2
                 except Exception as e:
-                    self.dbg.tr('DEBUG', f"process_audiopeak_levels:{e}")
+                    self.dbg.tr('D', "process_audiopeak_levels:{}", e)
                     pass
 
             if self.dbg.enabled('MAX_PEAK'):
                 try:
-                    self.dbg.tr('MAX_PEAK', f"{time.monotonic()}:max level[{max_level_running_band}] {max_level_running}")
+                    self.dbg.tr('MAX_PEAK', "{}:max level[{}] {}", time.monotonic(), max_level_running_band, max_level_running)
                 except:
                     pass
 
@@ -420,10 +427,9 @@ class RGBAudioTab(QWidget):
         self.keyb_rgb.fill(QColor(r,g,b))
         #-----------------------------------------------------------
         if self.running:
-            #self.dbg.tr('DEBUG', f"send rgb {self.keyb_rgb}")
             self.signal_rgb_image.emit(self.keyb_rgb, self.rgb_multiplier)
 
-    # todo: add effects
+    # todo: apply effects
     # - mask leds per freq band/peak level
     # - trigger wave animation on freq band/peak level
     # - ...

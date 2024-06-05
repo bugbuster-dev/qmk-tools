@@ -31,7 +31,7 @@ class RGBVideoTab(QWidget):
                     message = bytearray(message, 'utf-8')
                 except:
                     pass # already bytearray
-                self.dbg.tr('WS_MSG', f"ws_handler: {message}")
+                self.dbg.tr('WS_MSG', "ws_handler: {}", message)
                 sub = b"rgb."
                 if message.startswith(sub):
                     message = message[len(sub):]
@@ -51,21 +51,21 @@ class RGBVideoTab(QWidget):
                                             r, g, b = data[index], data[index + 1], data[index + 2]
                                             img.setPixelColor(x, y, QColor(r, g, b))
                                         except Exception as e:
-                                            #self.dbg.tr('WS_MSG', f"ws_handler: {e}")
+                                            #self.dbg.tr('WS_MSG', "ws_handler: {}" ,e)
                                             pass
 
                                 self.signal_rgb_image.emit(img, self.rgb_multiplier)
-                                self.dbg.tr('WS_MSG', f"ws_handler:emit(img) done")
-                self.dbg.tr('WS_MSG', f"ws_handler: message handled")
+                                #self.dbg.tr('WS_MSG', "ws_handler:emit(img) done")
+                self.dbg.tr('WS_MSG', "ws_handler: message handled")
                 await asyncio.sleep(0)  # Ensures control is yielded back to the event loop
 
         except Exception as e:
-            self.dbg.tr('WS_MSG', f"ws_handler: {e}")
-        self.dbg.tr('WS_MSG', f"ws_handler: done")
+            self.dbg.tr('WS_MSG', "ws_handler: {}", e)
+        self.dbg.tr('WS_MSG', "ws_handler: done")
         self.signal_rgb_image.emit(None, self.rgb_multiplier)
 
     def ws_server_startstop(self, state):
-        #self.dbg.tr('DEBUG', f"{state}")
+        #self.dbg.tr('DEBUG', "state:{}", state)
         if Qt.CheckState(state) == Qt.CheckState.Checked:
             self.ws_server = WSServer(self.ws_handler, int(self.ws_server_port.text()))
             self.ws_server.start()
@@ -75,7 +75,7 @@ class RGBVideoTab(QWidget):
                 self.ws_server.wait()
                 self.ws_server = None
             except Exception as e:
-                self.dbg.tr('DEBUG', f"{e}")
+                self.dbg.tr('DEBUG', "{}", e)
 
     def init_gui(self):
         layout = QVBoxLayout()

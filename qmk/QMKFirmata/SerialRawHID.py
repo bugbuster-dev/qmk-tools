@@ -9,9 +9,7 @@ class SerialRawHID(serial.SerialBase):
     def __init__(self, vid, pid, epsize=64, timeout=100):
         #region debug tracers
         self.dbg = DebugTracer(zones={
-            'E': 1,
             'D': 0,
-            'I': 0,
             'WRITE': 1,
             'READ': 0,
         }, obj=self)
@@ -27,6 +25,8 @@ class SerialRawHID(serial.SerialBase):
         self._port = "{:04x}:{:04x}".format(vid, pid)
         self.MAX_DATA_SIZE = epsize-2
         self.open()
+        self.num_read_errors = 0 # device detached if too many read errors
+        self.try_reopen = False
 
     def _reconfigure_port(self):
         pass
@@ -35,17 +35,27 @@ class SerialRawHID(serial.SerialBase):
         return "RAWHID: vid={:04x}, pid={:04x}".format(self.vid, self.pid)
 
     def _read_msg(self):
+        if not self.hid_device:
+            return
         try:
             data = bytearray(self.hid_device.read(self.epsize, self.timeout))
+            self.num_read_errors = 0
             # todo may strip trailing zeroes after END_SYSEX
             #data = data.rstrip(bytearray([0])) # remove trailing zeros
             #if len(data) > 0:
                 #self.dbg.tr('READ', f"rawhid read:{data.hex(' ')}")
         except Exception as e:
-            data = bytearray()
+            #self.dbg.tr('E', "{}", e)
+            data = None
+            self.num_read_errors += 1
+            time.sleep(0.1)
 
-        if len(data) == 0:
-            #self.data.append(0) # dummy data to feed firmata
+        if self.num_read_errors > 10:
+            self.dbg.tr('E', "too many read errors, closing device")
+            self.close()
+            self.try_reopen = True
+
+        if not data or len(data) == 0:
             return
 
         if data[0] == self.FIRMATA_MSG:
@@ -56,6 +66,18 @@ class SerialRawHID(serial.SerialBase):
         if len(self.data) == 0:
             self._read_msg()
         return len(self.data)
+
+    def _reopen(self):
+        if self.try_reopen:
+            try:
+                self.open()
+            except Exception as e:
+                pass
+            if self.hid_device:
+                self.num_read_errors = 0
+                self.try_reopen = False
+            else:
+                time.sleep(0.2)
 
     def open(self):
         try:
@@ -94,6 +116,9 @@ class SerialRawHID(serial.SerialBase):
 
     def write(self, data):
         if not self.hid_device:
+            self._reopen()
+
+        if not self.hid_device:
             raise serial.SerialException("device not open")
 
         # todo: span sysex data over multiple epsized packets
@@ -113,6 +138,9 @@ class SerialRawHID(serial.SerialBase):
         return total_sent
 
     def read(self):
+        if not self.hid_device:
+            self._reopen()
+
         if not self.hid_device:
             raise serial.SerialException("device not open")
 

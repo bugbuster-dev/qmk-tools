@@ -1,5 +1,4 @@
-import os, sys, time, hid, argparse
-import cv2, numpy as np
+import os, sys, argparse
 
 from PySide6 import QtCore
 from PySide6.QtCore import Qt, Signal
@@ -16,7 +15,7 @@ try:
 except:
     pass
 
-from FirmataKeyboard import FirmataKeyboard
+from QMKataKeyboard import QMKataKeyboard
 from ConsoleTab import ConsoleTab
 from WSServer import WSServer
 from RGBVideoTab import RGBVideoTab
@@ -84,24 +83,25 @@ class TreeviewWidget(QWidget):
         self.setLayout(self.layout)
 
     def update_view_model(self, view_model):
-        self.dbg.tr('DEBUG', f"update_view_model: {view_model}")
+        self.dbg.tr('D', "update_view_model: {}", view_model)
         self.tree_view.setModel(view_model)
         if view_model:
             try:
                 view_model.dataChanged.connect(self.update_keyb_data)
             except Exception as e:
-                self.dbg.tr('DEBUG', f"update_view_model: {e}")
+                self.dbg.tr('D', "update_view_model: {}", e)
 
-    def update_view(self, item_data): # update from firmata keyboard
+    def update_view(self, item_data): # update from keyboard
         try:
             item_id = item_data[0]
         except Exception as e:
-            self.dbg.tr('DEBUG', f"update_view: {e}, {item_data}")
+            self.dbg.tr('D', "update_view: {}", e)
             return
         field_values = item_data[1]
         model = self.tree_view.model()
         item = model.item(item_id-1, 0)
-        self.dbg.tr('DEBUG', f"update_view: {item.text()} {item_data}")
+        if self.dbg.enabled('D'):
+            self.dbg.tr('D', "update_view: {} {}", item.text(), item_data)
         for i in range(item.rowCount()): # todo: row number may not match field id
             try:
                 value_item = item.child(i, 3)
@@ -109,7 +109,6 @@ class TreeviewWidget(QWidget):
                 field_value = field_values[i+1]
                 if type(field_value) == bytearray:
                     value_item.setFont(QFont("Courier New", 7)) # todo move this to update_view_model
-                    #self.dbg.tr('DEBUG', f"update_view: {type_item.text()}")
                     hex_string = ''
                     if type_item.text().endswith("uint8"):
                         item_size = 1
@@ -134,7 +133,6 @@ class TreeviewWidget(QWidget):
                     for i in range(0, len(field_value), item_size):
                         val = int.from_bytes(field_value[i:i+item_size], self.endian)
                         hex_string += format_str % val
-                        #hex_string += f"{val:02x} "
                         if i % (items_per_line*item_size) == (items_per_line*item_size) - item_size:
                             hex_string += '\n'
 
@@ -143,7 +141,7 @@ class TreeviewWidget(QWidget):
                     #field_value = field_value.hex(' ')
                 value_item.setText(f"{field_value}")
             except Exception as e:
-                self.dbg.tr('DEBUG', f"update_view: {e}")
+                self.dbg.tr('D', "update_view: {}", e)
 
 #-------------------------------------------------------------------------------
 class KeybConfigTab(TreeviewWidget):
@@ -159,7 +157,7 @@ class KeybConfigTab(TreeviewWidget):
         self.init_gui()
 
     def update_keyb_data(self, tl, br, roles):
-        #self.dbg.tr('DEBUG', f"update_keyb_data: topleft:{tl}, roles:{roles}")
+        #self.dbg.tr('D', "update_keyb_data: topleft:{tl}, roles:{roles}", tl=tl, roles=roles)
         update = False
         if roles:
             for role in roles:
@@ -183,10 +181,10 @@ class KeybConfigTab(TreeviewWidget):
                         return
                     field_values[i+1] = value.text()
             except Exception as e:
-                self.dbg.tr('DEBUG', f"update_keyb_config: {e}")
+                self.dbg.tr('D', "update_keyb_config: {}", e)
                 return
             config = (config_id, field_values)
-            self.dbg.tr('DEBUG', f"update_keyb_config:signal emit {config}")
+            self.dbg.tr('D', "update_keyb_config:signal emit {}", config)
             self.signal_keyb_set_config.emit(config)
 
     def update_keyb_macwin_mode(self):
@@ -310,12 +308,12 @@ class MainWindow(QMainWindow):
         self.init_gui()
 
     def init_gui(self):
-        self.setWindowTitle('QMK Firmata')
+        self.setWindowTitle('QMKata')
         self.setGeometry(100, 100, app_width, app_height)
         self.setFixedSize(app_width, app_height)
 
-        # instantiate firmata keyboard
-        self.keyboard = FirmataKeyboard(port=None, vid_pid=self.keyboard_vid_pid)
+        # instantiate qmkata keyboard
+        self.keyboard = QMKataKeyboard(port=None, vid_pid=self.keyboard_vid_pid)
         num_keyb_layers = self.keyboard.num_layers()
 
         #-----------------------------------------------------------
@@ -406,24 +404,6 @@ class KeyboardSelectionPopup(QMessageBox):
     def selected_keyboard(self):
         return self.comboBox.currentText()
 
-def detect_keyboards():
-    hid_devices = hid.enumerate()
-    def device_attached(vendor_id, product_id):
-        for device in hid_devices:
-            if device['vendor_id'] == vendor_id and device['product_id'] == product_id:
-                return True
-        return False
-
-    keyboard_models = FirmataKeyboard.load_keyboard_models()
-    keyboards = []
-    print (f"keyboards: {keyboard_models[0]}")
-    for model in keyboard_models[0].values():
-        if device_attached(model.VID, model.PID):
-            print (f"keyboard found: {model.NAME} ({hex(model.VID)}:{hex(model.PID)})")
-            keyboards.append(model.NAME)
-
-    return keyboards, keyboard_models[0]
-
 #-------------------------------------------------------------------------------
 def main(keyboard_vid_pid):
     from PySide6.QtCore import QLocale
@@ -435,7 +415,7 @@ def main(keyboard_vid_pid):
 
     selected_keyboard = ""
     if keyboard_vid_pid[0] == None:
-        keyboards, keyb_models = detect_keyboards()
+        keyboards, keyb_models = QMKataKeyboard.attached_keyboards()
         if len(keyboards):
             selection_popup = KeyboardSelectionPopup(keyboards)
             if selection_popup.exec():

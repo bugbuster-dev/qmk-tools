@@ -1,5 +1,5 @@
-QMK Firmata demo
-================
+QMKata demo
+===========
 
 proof of concept demo (windows) of arduino firmata support in qmk firmware
 
@@ -35,7 +35,7 @@ run
 ---
 
 ~~~
-python QMK_firmata.py
+python QMKata.py
 ~~~
 
 websocket client examples
