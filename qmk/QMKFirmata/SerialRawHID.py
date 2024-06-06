@@ -11,7 +11,7 @@ class SerialRawHID(serial.SerialBase):
         self.dbg = DebugTracer(zones={
             'D': 0,
             'WRITE': 1,
-            'READ': 0,
+            'READ': 1,
         }, obj=self)
         self.dbg_write = None # self.dbg
         self.dbg_read = None
@@ -42,25 +42,24 @@ class SerialRawHID(serial.SerialBase):
             self.num_read_errors = 0
             # todo may strip trailing zeroes after END_SYSEX
             #data = data.rstrip(bytearray([0])) # remove trailing zeros
-            #if len(data) > 0:
-                #self.dbg.tr('READ', f"rawhid read:{data.hex(' ')}")
+            if self.dbg_read and len(data) > 0: self.dbg_read.tr('READ', f"read:{data.hex(' ')}")
         except Exception as e:
             #self.dbg.tr('E', "{}", e)
             data = None
             self.num_read_errors += 1
+            if self.num_read_errors > 10:
+                self.dbg.tr('E', "too many read errors, closing device")
+                self.close()
+                self.try_reopen = True
+                return
             time.sleep(0.1)
-
-        if self.num_read_errors > 10:
-            self.dbg.tr('E', "too many read errors, closing device")
-            self.close()
-            self.try_reopen = True
 
         if not data or len(data) == 0:
             return
 
         if data[0] == self.FIRMATA_MSG:
             data.pop(0)
-        self.data.extend(data)
+            self.data.extend(data)
 
     def inWaiting(self):
         if len(self.data) == 0:
@@ -147,7 +146,7 @@ class SerialRawHID(serial.SerialBase):
         if len(self.data) == 0:
             self._read_msg()
         if len(self.data) > 0:
-            if self.dbg_read: self.dbg_read.tr('READ', f"read:{self.data[0]}")
+            if self.dbg_read: self.dbg_read.tr('READ', f"read:{hex(self.data[0])}")
             return chr(self.data.pop(0))
 
         if self.dbg_read: self.dbg_read.tr('READ', f"read: no data")

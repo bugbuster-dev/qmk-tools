@@ -596,7 +596,8 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
         buf = bytearray()
         if len(data) % 2 != 0:
             self.dbg.tr('E', "sysex data: invalid data length {}", len(data))
-            return buf
+            return None
+
         for off in range(0, len(data), 2):
             # 2x 7 bit bytes to 1 byte
             buf.append(data[off+1] << 7 | data[off])
@@ -605,7 +606,8 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
     def sysex_pub_handler(self, *data):
         dbg_zone = 'SYSEX_PUB'
         dbg_print = self.dbg.enabled(dbg_zone)
-        buf = self._sysex_data_to_bytearray(data)
+        if not (buf := self._sysex_data_to_bytearray(data)):
+            return
         if dbg_print:
             self.dbg.tr(dbg_zone, "-"*40)
             self.dbg.tr(dbg_zone, "sysex pub:\n{}", buf.hex(' '))
@@ -628,7 +630,8 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
             if self.dbg.enabled(dbg_zone):
                 self.dbg.tr(dbg_zone, *args, **kwargs)
 
-        buf = self._sysex_data_to_bytearray(data)
+        if not (buf := self._sysex_data_to_bytearray(data)):
+            return
         if dbg_print:
             dbg("-"*40)
             dbg("sysex response:\n{}", buf.hex(' '))
