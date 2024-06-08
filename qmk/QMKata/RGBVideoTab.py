@@ -1,4 +1,4 @@
-import cv2, numpy as np
+import cv2, numpy as np, time
 import asyncio, websockets
 
 from PySide6 import QtCore
@@ -13,7 +13,7 @@ class RGBVideoTab(QWidget):
     signal_rgb_image = Signal(QImage, object)
 
     def __init__(self, size, rgb_matrix_tab, rgb_matrix_size):
-        self.dbg = DebugTracer(zones={'D':1, 'WS_MSG':0}, obj=self)
+        self.dbg = DebugTracer(zones={'D':0, 'WS_MSG':0}, obj=self)
         super().__init__()
 
         self.size_w, self.size_h = size
@@ -65,7 +65,7 @@ class RGBVideoTab(QWidget):
         self.signal_rgb_image.emit(None, self.rgb_multiplier)
 
     def ws_server_startstop(self, state):
-        #self.dbg.tr('DEBUG', "state:{}", state)
+        #self.dbg.tr('D', "state:{}", state)
         if Qt.CheckState(state) == Qt.CheckState.Checked:
             self.ws_server = WSServer(self.ws_handler, int(self.ws_server_port.text()))
             self.ws_server.start()
@@ -75,7 +75,7 @@ class RGBVideoTab(QWidget):
                 self.ws_server.wait()
                 self.ws_server = None
             except Exception as e:
-                self.dbg.tr('DEBUG', "{}", e)
+                self.dbg.tr('D', "{}", e)
 
     def init_gui(self):
         layout = QVBoxLayout()
@@ -162,10 +162,18 @@ class RGBVideoTab(QWidget):
         self.timer = QTimer()
         self.timer.timeout.connect(self.display_video_frame)
 
+    def timer_interval(self):
+        try:
+            process_time = self.process_time
+        except:
+            process_time = 10
+        interval = 1000 / self.framerate - process_time # around 10ms for processing
+        return interval if interval > 0 else 1
+
     def adjust_framerate(self, value):
         self.framerate = value
         if self.cap is not None and self.cap.isOpened():
-            self.timer.start(1000 / self.framerate)
+            self.timer.start(self.timer_interval())
 
     def adjust_rgb_multiplier(self, value):
         if self.sender() == self.rgb_r_slider:
@@ -190,10 +198,13 @@ class RGBVideoTab(QWidget):
             fps = self.cap.get(cv2.CAP_PROP_FPS)  # Get the video's frame rate
             self.framerate = fps if fps > 0 else 25
             self.framerate_slider.setValue(int(self.framerate))
-            self.timer.start(1000 / self.framerate)
+            self.timer.start(self.timer_interval())
+            self.dbg.tr('D', "frame rate:{}", self.framerate)
             self.open_button.setText("stop")
 
     def display_video_frame(self):
+        #self.dbg.tr('D', "capture image:")
+        #start = cv2.getTickCount()
         ret, frame = self.cap.read()
         if ret:
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -205,6 +216,8 @@ class RGBVideoTab(QWidget):
 
             keyb_rgb = scaled_img.scaled(self.rgb_matrix_size[0], self.rgb_matrix_size[1])
             self.signal_rgb_image.emit(keyb_rgb, self.rgb_multiplier)
+            #self.process_time = cv2.getTickCount() - start
+            #self.dbg.tr('D', "image emitted {}", self.process_time)
         else:
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # restart
 
