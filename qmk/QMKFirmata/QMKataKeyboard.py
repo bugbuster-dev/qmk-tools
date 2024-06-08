@@ -588,7 +588,11 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
         msg = bytearray([pyfirmata2.START_SYSEX+1, sysex_cmd, seqnum])
         msg.extend(encoded_data)
         msg.append(pyfirmata2.END_SYSEX) # todo: remove, not needed when processing directly from rawhid buffer on device, only needed when putting first in "serial buffer" and process it later
-        n_written = self.sp.write(msg)
+        try:
+            n_written = self.sp.write(msg)
+        except Exception as e:
+            self.dbg.tr('E', "send_sysex: {}", e)
+            return 0
         self.sysex_seqnum = (self.sysex_seqnum + 1) % 256
         return n_written, seqnum
 
