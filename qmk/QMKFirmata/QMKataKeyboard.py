@@ -1,3 +1,20 @@
+# Copyright (C) 2024 bugbuster
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or (at
+# your option) any later version.
+#
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+# General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
+# USA.
+
 from PySide6 import QtCore
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QImage, QColor, QPainter
@@ -9,8 +26,6 @@ from pathlib import Path
 from SerialRawHID import SerialRawHID
 from DebugTracer import DebugTracer
 
-#todo: add license
-# this code is like a box of bugs, you never know what you're gonna get
 
 #-------------------------------------------------------------------------------
 #region list com ports
