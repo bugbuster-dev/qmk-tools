@@ -48,9 +48,12 @@ set default layer:
 python layer_switch.py <layer>
 ~~~
 
+**NOTE: screen capture uses d3dshot which fails to install with python 3.11 so install python 3.8 for sceeen capture example**
+**and the packages in requirements_screen_capture.txt**
+
 screen capture and send rgb image:
 ~~~
-python screen_capture_rgb_stream.py --display 0 --fps 25 --width 17 --height 6 --port 8787
+<python 3.8 path>/python screen_capture_rgb_stream.py --display 0 --fps 25 --width 17 --height 6 --port 8787
 ~~~
 
 keyboard script

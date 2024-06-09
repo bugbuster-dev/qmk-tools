@@ -159,21 +159,18 @@ class RGBVideoTab(QWidget):
         layout.addLayout(rgb_multiply_layout)
         self.setLayout(layout)
 
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.display_video_frame)
-
     def timer_interval(self):
         try:
             process_time = self.process_time
         except:
             process_time = 10
-        interval = 1000 / self.framerate - process_time # around 10ms for processing
+
+        interval = 1000 / self.framerate - process_time
         return interval if interval > 0 else 1
 
     def adjust_framerate(self, value):
         self.framerate = value
-        if self.cap is not None and self.cap.isOpened():
-            self.timer.start(self.timer_interval())
+        self._timer_interval = self.timer_interval()
 
     def adjust_rgb_multiplier(self, value):
         if self.sender() == self.rgb_r_slider:
@@ -185,9 +182,9 @@ class RGBVideoTab(QWidget):
         #print(self.RGB_multiplier)
 
     def open_file(self):
-        if self.cap is not None and self.cap.isOpened():
+        if self.cap and self.cap.isOpened():
             self.cap.release()
-            self.timer.stop()
+            self.cap = None
             self.signal_rgb_image.emit(None, self.rgb_multiplier)
             self.open_button.setText("open file")
             return
@@ -198,11 +195,17 @@ class RGBVideoTab(QWidget):
             fps = self.cap.get(cv2.CAP_PROP_FPS)  # Get the video's frame rate
             self.framerate = fps if fps > 0 else 25
             self.framerate_slider.setValue(int(self.framerate))
-            self.timer.start(self.timer_interval())
+
+            QTimer.singleShot(self.timer_interval(), self.display_video_frame)
+
             self.dbg.tr('D', "frame rate:{}", self.framerate)
             self.open_button.setText("stop")
 
     def display_video_frame(self):
+        if not self.cap:
+            return
+
+        QTimer.singleShot(self._timer_interval, self.display_video_frame)
         #self.dbg.tr('D', "capture image:")
         #start = cv2.getTickCount()
         ret, frame = self.cap.read()
@@ -227,4 +230,3 @@ class RGBVideoTab(QWidget):
     def closeEvent(self, event):
         if self.cap is not None and self.cap.isOpened():
             self.cap.release()
-        self.timer.stop()

@@ -201,7 +201,7 @@ class KeychronQ3Max:
             4: "mouse",
         }
         CONFIG_DEBUG_USER = {
-            1: "firmata",
+            1: "qmkata",
             2: "stats",
             3: "user animation",
         }
