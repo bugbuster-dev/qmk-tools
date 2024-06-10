@@ -195,7 +195,7 @@ class RGBVideoTab(QWidget):
             fps = self.cap.get(cv2.CAP_PROP_FPS)  # Get the video's frame rate
             self.framerate = fps if fps > 0 else 25
             self.framerate_slider.setValue(int(self.framerate))
-
+            self.adjust_framerate(self.framerate)
             QTimer.singleShot(self.timer_interval(), self.display_video_frame)
 
             self.dbg.tr('D', "frame rate:{}", self.framerate)
