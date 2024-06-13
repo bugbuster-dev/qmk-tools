@@ -2,7 +2,7 @@ import subprocess, os, fnmatch
 try:
     from elftools.elf.elffile import ELFFile
 except ImportError:
-    print("E: elftools not installed, run: pip install pyelftools")
+    print("I: elftools not installed, run: pip install pyelftools")
 
 class GccToolchain:
     def __init__(self, toolchain_config=None):
@@ -34,11 +34,11 @@ class GccToolchain:
                             self.triplet["os"] = triplet[2]
                         self.tool[tool_name] = self.toolchain_path + file
         except:
-            print(f"E: {toolchain_path} invalid")
+            print(f"I: {toolchain_path} invalid")
             raise Exception("invalid toolchain path")
 
         if not all(tool in self.tool for tool in self.tool_names):
-            print(f"E: toolchain incomplete")
+            print(f"I: toolchain incomplete")
             raise Exception("invalid toolchain path")
 
         if self.debug:
