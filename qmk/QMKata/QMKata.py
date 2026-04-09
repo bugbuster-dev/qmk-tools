@@ -271,12 +271,6 @@ class KeybConfigTab(TreeviewWidget):
 
 
 # -------------------------------------------------------------------------------
-class KeybScriptTab(QWidget):
-    signal_run_script = Signal(str, object)
-    signal_script_output = Signal(str)
-
-
-# -------------------------------------------------------------------------------
 class ComboConfigTab(QWidget):
     signal_keyb_get_combo = Signal(int)
     signal_keyb_set_combo = Signal(int, list, int)
@@ -334,7 +328,7 @@ class ComboConfigTab(QWidget):
         code_edit.setFixedWidth(150)
 
         save_btn = QPushButton("Save")
-        save_btn.clicked.connect(lambda: self.save_combo(slot))
+        save_btn.clicked.connect(lambda checked=False, s=slot: self.save_combo(s))
 
         layout.addWidget(label)
         layout.addWidget(QLabel("Keys:"))
@@ -550,13 +544,12 @@ class MainWindow(QMainWindow):
             self.keyboard.keyb_get_status
         )
         self.combo_config_tab.signal_keyb_get_combo.connect(
-            lambda slot: self.combo_config_tab.update_slot(
-                self.keyboard.keyb_get_combo(slot)
-            )
+            self.keyboard.keyb_get_combo
         )
         self.combo_config_tab.signal_keyb_set_combo.connect(
             self.keyboard.keyb_set_combo
         )
+        self.keyboard.signal_combo.connect(self.combo_config_tab.update_slot)
 
         # -----------------------------------------------------------
         # window focus listener

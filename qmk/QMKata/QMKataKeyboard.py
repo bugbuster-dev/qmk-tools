@@ -166,6 +166,7 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
     # signal_event_model = Signal(object) # todo
     signal_config = Signal(object)
     signal_status = Signal(object)
+    signal_combo = Signal(object)
 
     # -------------------------------------------------------------------------------
     MAX_RGB_VAL = 255
@@ -775,6 +776,21 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 dbg("macwin mode: {}", macwin_mode)
                 self.signal_macwin_mode.emit(macwin_mode)
                 self.signal_default_layer.emit(self.default_layer(macwin_mode))
+                return
+            if buf[0] == QMKataKeybCmd.ID_COMBO:
+                slot_back = buf[1]
+                keys_raw = buf[2:18]
+                keycode_raw = buf[18:20]
+                keys = []
+                for i in range(0, 16, 2):
+                    keys.append(
+                        struct.unpack_from(self.pack_endian + "H", keys_raw, i)[0]
+                    )
+                keycode = struct.unpack_from(self.pack_endian + "H", keycode_raw, 0)[0]
+                dbg("combo slot:{}, keys:{}, keycode:{}", slot_back, keys, keycode)
+                self.signal_combo.emit(
+                    {"slot": slot_back, "keys": keys, "keycode": keycode}
+                )
                 return
             if buf[0] == QMKataKeybCmd.ID_STRUCT_LAYOUT:
                 layout_id = buf[1]
@@ -1438,29 +1454,4 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
     def keyb_get_combo(self, slot):
         self.dbg.tr("SYSEX_COMMAND", "keyb_get_combo: slot={}", slot)
         data = bytearray([QMKataKeybCmd.ID_COMBO, slot & 0xFF])
-        res = self.send_sysex_wait(QMKataKeybCmd.GET, data)
-
-        if res:
-            # res is the raw response from sysex_response_seq
-            # Response format: [seqnum, ID_COMBO, slot, keys(16 bytes), keycode(2 bytes)]
-            try:
-                # we only care about the data after seqnum
-                buf = res[1:]
-                if buf[0] == QMKataKeybCmd.ID_COMBO:
-                    slot_back = buf[1]
-                    keys_raw = buf[2:18]
-                    keycode_raw = buf[18:20]
-
-                    keys = []
-                    for i in range(0, 16, 2):
-                        keys.append(
-                            struct.unpack_from(self.pack_endian + "H", keys_raw, i)[0]
-                        )
-                    keycode = struct.unpack_from(
-                        self.pack_endian + "H", keycode_raw, 0
-                    )[0]
-
-                    return {"slot": slot_back, "keys": keys, "keycode": keycode}
-            except Exception as e:
-                self.dbg.tr("E", "keyb_get_combo unpack failed: {}", e)
-        return None
+        self.send_sysex(QMKataKeybCmd.GET, data)
