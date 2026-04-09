@@ -20,14 +20,30 @@ import os, sys, argparse
 
 from PySide6 import QtCore
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QFrame
-from PySide6.QtWidgets import QTextEdit, QPushButton,  QLabel, QLineEdit, QTreeView
-from PySide6.QtWidgets import  QComboBox, QMessageBox
+from PySide6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QTabWidget,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QFrame,
+)
+from PySide6.QtWidgets import (
+    QTextEdit,
+    QPushButton,
+    QLabel,
+    QLineEdit,
+    QTreeView,
+    QScrollArea,
+)
+from PySide6.QtWidgets import QComboBox, QMessageBox
 from PySide6.QtGui import QFont, QTextCursor
 from PySide6.QtGui import QIntValidator, QDoubleValidator
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 
 from DebugTracer import DebugTracer
+
 try:
     from WinFocusListener import WinFocusListener
 except:
@@ -45,7 +61,8 @@ from LayerAutoSwitchTab import LayerAutoSwitchTab
 if __name__ != "__main__":
     exit()
 
-#-------------------------------------------------------------------------------
+
+# -------------------------------------------------------------------------------
 class RGBMatrixTab(QWidget):
     def __init__(self, keyboard_model):
         self.keyboard_model = keyboard_model
@@ -61,34 +78,36 @@ class RGBMatrixTab(QWidget):
         layout = QVBoxLayout()
         self.tab_widget = QTabWidget()
 
-        self.rgb_video_tab = RGBVideoTab((app_width, app_height), self, self.rgb_matrix_size)
+        self.rgb_video_tab = RGBVideoTab(
+            (app_width, app_height), self, self.rgb_matrix_size
+        )
         self.rgb_animation_tab = RGBAnimationTab(self.rgb_matrix_size)
         self.rgb_audio_tab = RGBAudioTab(self.rgb_matrix_size)
         self.rgb_dynld_animation_tab = RGBDynLDAnimationTab()
 
-        self.tab_widget.addTab(self.rgb_video_tab, 'video')
-        self.tab_widget.addTab(self.rgb_animation_tab, 'animation')
-        self.tab_widget.addTab(self.rgb_audio_tab, 'audio')
-        self.tab_widget.addTab(self.rgb_dynld_animation_tab, 'dynld animation')
+        self.tab_widget.addTab(self.rgb_video_tab, "video")
+        self.tab_widget.addTab(self.rgb_animation_tab, "animation")
+        self.tab_widget.addTab(self.rgb_audio_tab, "audio")
+        self.tab_widget.addTab(self.rgb_dynld_animation_tab, "dynld animation")
 
         layout.addWidget(self.tab_widget)
         self.setLayout(layout)
 
-#-------------------------------------------------------------------------------
-class TreeviewWidget(QWidget):
 
+# -------------------------------------------------------------------------------
+class TreeviewWidget(QWidget):
     def __init__(self, keyboard_model):
         self.keyboard_model = keyboard_model
-        self.endian = 'little'
+        self.endian = "little"
         try:
             if self.keyboard_model.MCU[2].startswith("be"):
-                self.endian = 'big'
+                self.endian = "big"
         except:
             pass
         super().__init__()
 
     def init_gui(self):
-        if not hasattr(self, 'layout'):
+        if not hasattr(self, "layout"):
             self.layout = QVBoxLayout()
 
         # default tree view
@@ -101,33 +120,35 @@ class TreeviewWidget(QWidget):
         self.setLayout(self.layout)
 
     def update_view_model(self, view_model):
-        self.dbg.tr('D', "update_view_model: {}", view_model)
+        self.dbg.tr("D", "update_view_model: {}", view_model)
         self.tree_view.setModel(view_model)
         if view_model:
             try:
                 view_model.dataChanged.connect(self.update_keyb_data)
             except Exception as e:
-                self.dbg.tr('D', "update_view_model: {}", e)
+                self.dbg.tr("D", "update_view_model: {}", e)
 
-    def update_view(self, item_data): # update from keyboard
+    def update_view(self, item_data):  # update from keyboard
         try:
             item_id = item_data[0]
         except Exception as e:
-            self.dbg.tr('D', "update_view: {}", e)
+            self.dbg.tr("D", "update_view: {}", e)
             return
         field_values = item_data[1]
         model = self.tree_view.model()
-        item = model.item(item_id-1, 0)
-        if self.dbg.enabled('D'):
-            self.dbg.tr('D', "update_view: {} {}", item.text(), item_data)
-        for i in range(item.rowCount()): # todo: row number may not match field id
+        item = model.item(item_id - 1, 0)
+        if self.dbg.enabled("D"):
+            self.dbg.tr("D", "update_view: {} {}", item.text(), item_data)
+        for i in range(item.rowCount()):  # todo: row number may not match field id
             try:
                 value_item = item.child(i, 3)
                 type_item = item.child(i, 1)
-                field_value = field_values[i+1]
+                field_value = field_values[i + 1]
                 if type(field_value) == bytearray:
-                    value_item.setFont(QFont("Courier New", 7)) # todo move this to update_view_model
-                    hex_string = ''
+                    value_item.setFont(
+                        QFont("Courier New", 7)
+                    )  # todo move this to update_view_model
+                    hex_string = ""
                     if type_item.text().endswith("uint8"):
                         item_size = 1
                         items_per_line = 16
@@ -149,40 +170,46 @@ class TreeviewWidget(QWidget):
                         items_per_line = self.keyboard_model.matrix_size()[0]
 
                     for i in range(0, len(field_value), item_size):
-                        val = int.from_bytes(field_value[i:i+item_size], self.endian)
+                        val = int.from_bytes(
+                            field_value[i : i + item_size], self.endian
+                        )
                         hex_string += format_str % val
-                        if i % (items_per_line*item_size) == (items_per_line*item_size) - item_size:
-                            hex_string += '\n'
+                        if (
+                            i % (items_per_line * item_size)
+                            == (items_per_line * item_size) - item_size
+                        ):
+                            hex_string += "\n"
 
                     formatted_string = hex_string
                     field_value = formatted_string
-                    #field_value = field_value.hex(' ')
+                    # field_value = field_value.hex(' ')
                 value_item.setText(f"{field_value}")
             except Exception as e:
-                self.dbg.tr('D', "update_view: {}", e)
+                self.dbg.tr("D", "update_view: {}", e)
 
-#-------------------------------------------------------------------------------
+
+# -------------------------------------------------------------------------------
 class KeybConfigTab(TreeviewWidget):
     signal_keyb_set_config = Signal(tuple)
     signal_keyb_get_config = Signal(int)
     signal_macwin_mode = Signal(str)
 
     def __init__(self, keyboard_model):
-        self.dbg = DebugTracer(zones={'D':0}, obj=self)
+        self.dbg = DebugTracer(zones={"D": 0}, obj=self)
 
         self.keyboard_model = keyboard_model
         super().__init__(keyboard_model)
         self.init_gui()
 
     def update_keyb_data(self, tl, br, roles):
-        #self.dbg.tr('D', "update_keyb_data: topleft:{tl}, roles:{roles}", tl=tl, roles=roles)
+        # self.dbg.tr('D', "update_keyb_data: topleft:{tl}, roles:{roles}", tl=tl, roles=roles)
         update = False
         if roles:
             for role in roles:
                 if role == Qt.EditRole:
                     update = True
 
-        if update: # todo update only if changed via ui not from update_view
+        if update:  # todo update only if changed via ui not from update_view
             try:
                 item = self.tree_view.model().itemFromIndex(tl)
                 config_item = item.parent()
@@ -192,17 +219,17 @@ class KeybConfigTab(TreeviewWidget):
                 for i in range(config_item.rowCount()):
                     field = config_item.child(i, 0)
                     value = config_item.child(i, 3)
-                    #print(f"{field.text()} = {value.text()}")
+                    # print(f"{field.text()} = {value.text()}")
                     if value.text() == "":
                         return
                     if not value.flags() & Qt.ItemIsEditable:
                         return
-                    field_values[i+1] = value.text()
+                    field_values[i + 1] = value.text()
             except Exception as e:
-                self.dbg.tr('D', "update_keyb_config: {}", e)
+                self.dbg.tr("D", "update_keyb_config: {}", e)
                 return
             config = (config_id, field_values)
-            self.dbg.tr('D', "update_keyb_config:signal emit {}", config)
+            self.dbg.tr("D", "update_keyb_config:signal emit {}", config)
             self.signal_keyb_set_config.emit(config)
 
     def update_keyb_macwin_mode(self):
@@ -213,21 +240,25 @@ class KeybConfigTab(TreeviewWidget):
         hlayout = QHBoxLayout()
         config_label = QLabel("keyboard configuration")
         config_refresh_button = QPushButton("refresh")
-        config_refresh_button.clicked.connect(lambda: self.signal_keyb_get_config.emit(0))
+        config_refresh_button.clicked.connect(
+            lambda: self.signal_keyb_get_config.emit(0)
+        )
         hlayout.addWidget(config_label)
         hlayout.addWidget(config_refresh_button)
         hlayout.addStretch(1)
-        #---------------------------------------
+        # ---------------------------------------
         # mac/win mode
         macwin_label = QLabel("mac/win mode")
         self.mac_win_mode_selector = QComboBox()
-        self.mac_win_mode_selector.addItem('m')
-        self.mac_win_mode_selector.addItem('w')
-        self.mac_win_mode_selector.addItem('-')
+        self.mac_win_mode_selector.addItem("m")
+        self.mac_win_mode_selector.addItem("w")
+        self.mac_win_mode_selector.addItem("-")
         hlayout.addWidget(macwin_label)
         hlayout.addWidget(self.mac_win_mode_selector)
         self.mac_win_mode_selector.setCurrentIndex(1)
-        self.mac_win_mode_selector.currentIndexChanged.connect(self.update_keyb_macwin_mode)
+        self.mac_win_mode_selector.currentIndexChanged.connect(
+            self.update_keyb_macwin_mode
+        )
         self.mac_win_mode_selector.setFixedWidth(40)
         hlayout.addStretch(1)
 
@@ -236,14 +267,123 @@ class KeybConfigTab(TreeviewWidget):
         super().init_gui()
 
     def update_macwin_mode(self, macwin_mode):
-        self.mac_win_mode_selector.setCurrentIndex(0 if macwin_mode == 'm' else 1)
+        self.mac_win_mode_selector.setCurrentIndex(0 if macwin_mode == "m" else 1)
 
-#-------------------------------------------------------------------------------
+
+# -------------------------------------------------------------------------------
+class KeybScriptTab(QWidget):
+    signal_run_script = Signal(str, object)
+    signal_script_output = Signal(str)
+
+
+# -------------------------------------------------------------------------------
+class ComboConfigTab(QWidget):
+    signal_keyb_get_combo = Signal(int)
+    signal_keyb_set_combo = Signal(int, list, int)
+
+    def __init__(self, keyboard_model):
+        self.dbg = DebugTracer(zones={"D": 0}, obj=self)
+        self.keyboard_model = keyboard_model
+        super().__init__()
+        self.init_gui()
+
+    def init_gui(self):
+        layout = QVBoxLayout()
+
+        # Header
+        header = QHBoxLayout()
+        header.addWidget(QLabel("Dynamic Combo Configuration"))
+        refresh_btn = QPushButton("Refresh All")
+        refresh_btn.clicked.connect(self.refresh_all)
+        header.addWidget(refresh_btn)
+        header.addStretch(1)
+        layout.addLayout(header)
+
+        # Scroll area for slots
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        container = QWidget()
+        self.slots_layout = QVBoxLayout(container)
+
+        self.slot_widgets = []
+        for i in range(16):
+            slot_widget = self.create_slot_widget(i)
+            self.slot_widgets.append(slot_widget)
+            self.slots_layout.addWidget(slot_widget)
+
+        self.slots_layout.addStretch(1)
+        scroll.setWidget(container)
+        layout.addWidget(scroll)
+
+        self.setLayout(layout)
+
+    def create_slot_widget(self, slot):
+        widget = QFrame()
+        widget.setFrameShape(QFrame.StyledPanel)
+        layout = QHBoxLayout(widget)
+
+        label = QLabel(f"Slot {slot}:")
+        label.setFixedWidth(60)
+
+        keys_edit = QLineEdit()
+        keys_edit.setPlaceholderText("Keycodes (e.g. 0x04, 0x05)")
+        keys_edit.setFixedWidth(200)
+
+        code_edit = QLineEdit()
+        code_edit.setPlaceholderText("Result Keycode (e.g. 0x01)")
+        code_edit.setFixedWidth(150)
+
+        save_btn = QPushButton("Save")
+        save_btn.clicked.connect(lambda: self.save_combo(slot))
+
+        layout.addWidget(label)
+        layout.addWidget(QLabel("Keys:"))
+        layout.addWidget(keys_edit)
+        layout.addWidget(QLabel("Result:"))
+        layout.addWidget(code_edit)
+        layout.addWidget(save_btn)
+
+        # Store references to inputs
+        widget.keys_input = keys_edit
+        widget.code_input = code_edit
+
+        return widget
+
+    def refresh_all(self):
+        for i in range(16):
+            self.signal_keyb_get_combo.emit(i)
+
+    def update_slot(self, data):
+        if not data:
+            return
+        slot = data["slot"]
+        if slot < 16:
+            widget = self.slot_widgets[slot]
+            # Convert keys list to hex string
+            keys_str = ", ".join([f"0x{k:04x}" for k in data["keys"] if k != 0])
+            widget.keys_input.setText(keys_str)
+            widget.code_input.setText(f"0x{data['keycode']:04x}")
+
+    def save_combo(self, slot):
+        widget = self.slot_widgets[slot]
+        try:
+            # Parse keys
+            keys_str = widget.keys_input.text()
+            keys = [int(k.strip(), 0) for k in keys_str.split(",") if k.strip()]
+            # Parse keycode
+            keycode = int(widget.code_input.text().strip(), 0)
+
+            self.signal_keyb_set_combo.emit(slot, keys, keycode)
+        except Exception as e:
+            self.dbg.tr("E", "Failed to parse combo input: {}", e)
+
+
+# -------------------------------------------------------------------------------
 class KeybStatusTab(TreeviewWidget):
     signal_keyb_get_status = Signal(int, int)
 
     def __init__(self, keyboard_model):
-        self.dbg = DebugTracer(zones={'D':0}, obj=self)
+        self.dbg = DebugTracer(zones={"D": 0}, obj=self)
 
         self.keyboard_model = keyboard_model
         super().__init__(keyboard_model)
@@ -257,7 +397,9 @@ class KeybStatusTab(TreeviewWidget):
         every_msec_edit = QLineEdit("100")
         every_msec_edit.setValidator(QIntValidator(0, 60000))
         every_msec_edit.setFixedWidth(50)
-        status_refresh_button.clicked.connect(lambda: self.signal_keyb_get_status.emit(int(every_msec_edit.text()), 0))
+        status_refresh_button.clicked.connect(
+            lambda: self.signal_keyb_get_status.emit(int(every_msec_edit.text()), 0)
+        )
 
         hlayout.addWidget(status_label)
         hlayout.addWidget(status_refresh_button)
@@ -269,14 +411,15 @@ class KeybStatusTab(TreeviewWidget):
         self.layout.addLayout(hlayout)
         super().init_gui()
 
-#-------------------------------------------------------------------------------
+
+# -------------------------------------------------------------------------------
 class KeybScriptTab(QWidget):
     signal_run_script = Signal(str, object)
     signal_script_output = Signal(str)
 
     def __init__(self, keyboard_model):
-        self.dbg = DebugTracer(zones={'D':0}, obj=self)
-        #---------------------------------------
+        self.dbg = DebugTracer(zones={"D": 0}, obj=self)
+        # ---------------------------------------
         self.keyboard_model = keyboard_model
 
         super().__init__()
@@ -315,9 +458,11 @@ class KeybScriptTab(QWidget):
         layout.addWidget(self.script_output)
         self.setLayout(layout)
 
-#-------------------------------------------------------------------------------
-app_width       = 800
-app_height      = 900
+
+# -------------------------------------------------------------------------------
+app_width = 800
+app_height = 900
+
 
 class MainWindow(QMainWindow):
     def __init__(self, keyboard_vid_pid):
@@ -326,7 +471,7 @@ class MainWindow(QMainWindow):
         self.init_gui()
 
     def init_gui(self):
-        self.setWindowTitle('QMKata')
+        self.setWindowTitle("QMKata")
         self.setGeometry(100, 100, app_width, app_height)
         self.setFixedSize(app_width, app_height)
 
@@ -334,7 +479,7 @@ class MainWindow(QMainWindow):
         self.keyboard = QMKataKeyboard(port=None, vid_pid=self.keyboard_vid_pid)
         num_keyb_layers = self.keyboard.num_layers()
 
-        #-----------------------------------------------------------
+        # -----------------------------------------------------------
         # add tabs
         tab_widget = QTabWidget()
         self.console_tab = ConsoleTab(self.keyboard.keyboardModel)
@@ -343,48 +488,88 @@ class MainWindow(QMainWindow):
         self.keyb_config_tab = KeybConfigTab(self.keyboard.keyboardModel)
         self.keyb_status_tab = KeybStatusTab(self.keyboard.keyboardModel)
         self.keyb_script_tab = KeybScriptTab(self.keyboard.keyboardModel)
+        self.combo_config_tab = ComboConfigTab(self.keyboard.keyboardModel)
 
-        tab_widget.addTab(self.console_tab, 'console')
-        tab_widget.addTab(self.keyb_script_tab, 'keyboard script')
-        tab_widget.addTab(self.rgb_matrix_tab, 'rgb matrix')
-        tab_widget.addTab(self.layer_switch_tab, 'layer auto switch')
-        tab_widget.addTab(self.keyb_config_tab, 'keyboard config')
-        tab_widget.addTab(self.keyb_status_tab, 'keyboard status')
+        tab_widget.addTab(self.console_tab, "console")
+        tab_widget.addTab(self.keyb_script_tab, "keyboard script")
+        tab_widget.addTab(self.rgb_matrix_tab, "rgb matrix")
+        tab_widget.addTab(self.layer_switch_tab, "layer auto switch")
+        tab_widget.addTab(self.keyb_config_tab, "keyboard config")
+        tab_widget.addTab(self.keyb_status_tab, "keyboard status")
+        tab_widget.addTab(self.combo_config_tab, "combo config")
 
         self.setCentralWidget(tab_widget)
-        #-----------------------------------------------------------
+        # -----------------------------------------------------------
         # connect signals
         self.keyboard.signal_console_output.connect(self.console_tab.update_text)
-        self.keyboard.signal_default_layer.connect(self.layer_switch_tab.update_default_layer)
-        self.keyboard.signal_macwin_mode.connect(self.keyb_config_tab.update_macwin_mode)
-        self.keyboard.signal_config_model.connect(self.keyb_config_tab.update_view_model)
-        self.keyboard.signal_status_model.connect(self.keyb_status_tab.update_view_model)
+        self.keyboard.signal_default_layer.connect(
+            self.layer_switch_tab.update_default_layer
+        )
+        self.keyboard.signal_macwin_mode.connect(
+            self.keyb_config_tab.update_macwin_mode
+        )
+        self.keyboard.signal_config_model.connect(
+            self.keyb_config_tab.update_view_model
+        )
+        self.keyboard.signal_status_model.connect(
+            self.keyb_status_tab.update_view_model
+        )
         self.keyboard.signal_config.connect(self.keyb_config_tab.update_view)
         self.keyboard.signal_status.connect(self.keyb_status_tab.update_view)
 
         self.console_tab.signal_cli_command.connect(self.keyboard.keyb_set_cli_command)
-        self.rgb_matrix_tab.rgb_video_tab.signal_rgb_image.connect(self.keyboard.keyb_set_rgb_image)
-        self.rgb_matrix_tab.rgb_animation_tab.signal_rgb_image.connect(self.keyboard.keyb_set_rgb_image)
-        self.rgb_matrix_tab.rgb_audio_tab.signal_rgb_image.connect(self.keyboard.keyb_set_rgb_image)
-        self.rgb_matrix_tab.rgb_audio_tab.signal_peak_levels.connect(self.rgb_matrix_tab.rgb_animation_tab.on_audio_peak_levels)
-        self.rgb_matrix_tab.rgb_dynld_animation_tab.signal_dynld_function.connect(self.keyboard.keyb_set_dynld_function)
-        self.layer_switch_tab.signal_keyb_set_layer.connect(self.keyboard.keyb_set_default_layer)
-        self.keyb_config_tab.signal_keyb_set_config.connect(self.keyboard.keyb_set_config)
-        self.keyb_config_tab.signal_keyb_get_config.connect(self.keyboard.keyb_get_config)
-        self.keyb_config_tab.signal_macwin_mode.connect(self.keyboard.keyb_set_macwin_mode)
+        self.rgb_matrix_tab.rgb_video_tab.signal_rgb_image.connect(
+            self.keyboard.keyb_set_rgb_image
+        )
+        self.rgb_matrix_tab.rgb_animation_tab.signal_rgb_image.connect(
+            self.keyboard.keyb_set_rgb_image
+        )
+        self.rgb_matrix_tab.rgb_audio_tab.signal_rgb_image.connect(
+            self.keyboard.keyb_set_rgb_image
+        )
+        self.rgb_matrix_tab.rgb_audio_tab.signal_peak_levels.connect(
+            self.rgb_matrix_tab.rgb_animation_tab.on_audio_peak_levels
+        )
+        self.rgb_matrix_tab.rgb_dynld_animation_tab.signal_dynld_function.connect(
+            self.keyboard.keyb_set_dynld_function
+        )
+        self.layer_switch_tab.signal_keyb_set_layer.connect(
+            self.keyboard.keyb_set_default_layer
+        )
+        self.keyb_config_tab.signal_keyb_set_config.connect(
+            self.keyboard.keyb_set_config
+        )
+        self.keyb_config_tab.signal_keyb_get_config.connect(
+            self.keyboard.keyb_get_config
+        )
+        self.keyb_config_tab.signal_macwin_mode.connect(
+            self.keyboard.keyb_set_macwin_mode
+        )
         self.keyb_script_tab.signal_run_script.connect(self.keyboard.run_script)
-        self.keyb_status_tab.signal_keyb_get_status.connect(self.keyboard.keyb_get_status)
+        self.keyb_status_tab.signal_keyb_get_status.connect(
+            self.keyboard.keyb_get_status
+        )
+        self.combo_config_tab.signal_keyb_get_combo.connect(
+            lambda slot: self.combo_config_tab.update_slot(
+                self.keyboard.keyb_get_combo(slot)
+            )
+        )
+        self.combo_config_tab.signal_keyb_set_combo.connect(
+            self.keyboard.keyb_set_combo
+        )
 
-        #-----------------------------------------------------------
+        # -----------------------------------------------------------
         # window focus listener
         try:
             self.winfocus_listener = WinFocusListener()
-            self.winfocus_listener.signal_winfocus.connect(self.layer_switch_tab.on_winfocus)
+            self.winfocus_listener.signal_winfocus.connect(
+                self.layer_switch_tab.on_winfocus
+            )
             self.winfocus_listener.start()
         except:
             pass
 
-        #-----------------------------------------------------------
+        # -----------------------------------------------------------
         # start keyboard communication
         self.keyboard.start()
 
@@ -399,11 +584,12 @@ class MainWindow(QMainWindow):
             child.closeEvent(event)
         event.accept()
 
+
 class KeyboardSelectionPopup(QMessageBox):
     def __init__(self, keyboards):
         super().__init__()
-        self.setWindowTitle('select keyboard')
-        self.setText('keyboard:')
+        self.setWindowTitle("select keyboard")
+        self.setText("keyboard:")
 
         # dropdown (combo box) for keyboard selection
         self.comboBox = QComboBox()
@@ -422,14 +608,16 @@ class KeyboardSelectionPopup(QMessageBox):
     def selected_keyboard(self):
         return self.comboBox.currentText()
 
-#-------------------------------------------------------------------------------
+
+# -------------------------------------------------------------------------------
 def main(keyboard_vid_pid):
     from PySide6.QtCore import QLocale
+
     locale = QLocale("C")
     QLocale.setDefault(locale)
     app = QApplication(sys.argv)
-    #app.setStyle('Windows')
-    app.setStyle('Fusion')
+    # app.setStyle('Windows')
+    app.setStyle("Fusion")
 
     selected_keyboard = ""
     if keyboard_vid_pid[0] == None:
@@ -438,17 +626,23 @@ def main(keyboard_vid_pid):
             selection_popup = KeyboardSelectionPopup(keyboards)
             if selection_popup.exec():
                 selected_keyboard = selection_popup.selected_keyboard()
-                keyboard_vid_pid = keyb_models[selected_keyboard].VID, keyb_models[selected_keyboard].PID
+                keyboard_vid_pid = (
+                    keyb_models[selected_keyboard].VID,
+                    keyb_models[selected_keyboard].PID,
+                )
 
     main_window = MainWindow(keyboard_vid_pid)
     main_window.show()
     sys.exit(app.exec())
 
+
 parser = argparse.ArgumentParser(description="keyboard vendor/product id")
-parser.add_argument('--vid', required=False, type=lambda x: int(x, 16),
-                    help='keyboard vid in hex')
-parser.add_argument('--pid', required=False, type=lambda x: int(x, 16),
-                    help='keyboard pid in hex')
+parser.add_argument(
+    "--vid", required=False, type=lambda x: int(x, 16), help="keyboard vid in hex"
+)
+parser.add_argument(
+    "--pid", required=False, type=lambda x: int(x, 16), help="keyboard pid in hex"
+)
 args = parser.parse_args()
 
 main((args.vid, args.pid))
