@@ -50,6 +50,7 @@ except:
     pass
 
 from QMKataKeyboard import QMKataKeyboard
+from QMKataKeycodes import KeycodeResolver
 from ConsoleTab import ConsoleTab
 from WSServer import WSServer
 from RGBVideoTab import RGBVideoTab
@@ -275,9 +276,10 @@ class ComboConfigTab(QWidget):
     signal_keyb_get_combo = Signal(int)
     signal_keyb_set_combo = Signal(int, list, int)
 
-    def __init__(self, keyboard_model):
-        self.dbg = DebugTracer(zones={"D": 0}, obj=self)
+    def __init__(self, keyboard_model, resolver=None):
+        self.dbg = DebugTracer(zones={"D": 0, "E": 1}, obj=self)
         self.keyboard_model = keyboard_model
+        self.resolver = resolver or KeycodeResolver()
         super().__init__()
         self.init_gui()
 
@@ -320,11 +322,11 @@ class ComboConfigTab(QWidget):
         label.setFixedWidth(60)
 
         keys_edit = QLineEdit()
-        keys_edit.setPlaceholderText("Keycodes (e.g. 0x04, 0x05)")
+        keys_edit.setPlaceholderText("Keys (e.g. KC_A, KC_B)")
         keys_edit.setFixedWidth(200)
 
         code_edit = QLineEdit()
-        code_edit.setPlaceholderText("Result Keycode (e.g. 0x01)")
+        code_edit.setPlaceholderText("Result (e.g. LCTL(KC_C))")
         code_edit.setFixedWidth(150)
 
         save_btn = QPushButton("Save")
@@ -347,29 +349,53 @@ class ComboConfigTab(QWidget):
         for i in range(16):
             self.signal_keyb_get_combo.emit(i)
 
+    @staticmethod
+    def _split_keycode_list(text):
+        """Split comma-separated keycode expressions, respecting parentheses."""
+        items = []
+        depth = 0
+        current = []
+        for ch in text:
+            if ch == "," and depth == 0:
+                items.append("".join(current))
+                current = []
+            else:
+                if ch == "(":
+                    depth += 1
+                elif ch == ")":
+                    depth -= 1
+                current.append(ch)
+        if current:
+            items.append("".join(current))
+        return items
+
     def update_slot(self, data):
         if not data:
             return
         slot = data["slot"]
         if slot < 16:
             widget = self.slot_widgets[slot]
-            # Convert keys list to hex string
-            keys_str = ", ".join([f"0x{k:04x}" for k in data["keys"] if k != 0])
+            keys_str = ", ".join(
+                [self.resolver.value_to_display(k) for k in data["keys"] if k != 0]
+            )
             widget.keys_input.setText(keys_str)
-            widget.code_input.setText(f"0x{data['keycode']:04x}")
+            widget.code_input.setText(self.resolver.value_to_display(data["keycode"]))
 
     def save_combo(self, slot):
         widget = self.slot_widgets[slot]
         try:
-            # Parse keys
             keys_str = widget.keys_input.text()
-            keys = [int(k.strip(), 0) for k in keys_str.split(",") if k.strip()]
-            # Parse keycode
-            keycode = int(widget.code_input.text().strip(), 0)
-
+            keys = [
+                self.resolver.resolve(k.strip())
+                for k in self._split_keycode_list(keys_str)
+                if k.strip()
+            ]
+            keycode = self.resolver.resolve(widget.code_input.text().strip())
             self.signal_keyb_set_combo.emit(slot, keys, keycode)
         except Exception as e:
             self.dbg.tr("E", "Failed to parse combo input: {}", e)
+            # Brief visual feedback: set placeholder to show error
+            widget.code_input.setPlaceholderText(f"Error: {e}")
 
 
 # -------------------------------------------------------------------------------
@@ -459,8 +485,9 @@ app_height = 900
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, keyboard_vid_pid):
+    def __init__(self, keyboard_vid_pid, firmware_path=None):
         self.keyboard_vid_pid = keyboard_vid_pid
+        self.firmware_path = firmware_path
         super().__init__()
         self.init_gui()
 
@@ -482,7 +509,12 @@ class MainWindow(QMainWindow):
         self.keyb_config_tab = KeybConfigTab(self.keyboard.keyboardModel)
         self.keyb_status_tab = KeybStatusTab(self.keyboard.keyboardModel)
         self.keyb_script_tab = KeybScriptTab(self.keyboard.keyboardModel)
-        self.combo_config_tab = ComboConfigTab(self.keyboard.keyboardModel)
+        resolver = (
+            KeycodeResolver(self.firmware_path)
+            if self.firmware_path
+            else KeycodeResolver()
+        )
+        self.combo_config_tab = ComboConfigTab(self.keyboard.keyboardModel, resolver)
 
         tab_widget.addTab(self.console_tab, "console")
         tab_widget.addTab(self.keyb_script_tab, "keyboard script")
@@ -603,7 +635,7 @@ class KeyboardSelectionPopup(QMessageBox):
 
 
 # -------------------------------------------------------------------------------
-def main(keyboard_vid_pid):
+def main(keyboard_vid_pid, firmware_path=None):
     from PySide6.QtCore import QLocale
 
     locale = QLocale("C")
@@ -624,7 +656,7 @@ def main(keyboard_vid_pid):
                     keyb_models[selected_keyboard].PID,
                 )
 
-    main_window = MainWindow(keyboard_vid_pid)
+    main_window = MainWindow(keyboard_vid_pid, firmware_path=firmware_path)
     main_window.show()
     sys.exit(app.exec())
 
@@ -636,6 +668,12 @@ parser.add_argument(
 parser.add_argument(
     "--pid", required=False, type=lambda x: int(x, 16), help="keyboard pid in hex"
 )
+parser.add_argument(
+    "--firmware-path",
+    required=False,
+    type=str,
+    help="path to QMK firmware root (enables keycode name resolution)",
+)
 args = parser.parse_args()
 
-main((args.vid, args.pid))
+main((args.vid, args.pid), firmware_path=args.firmware_path)
