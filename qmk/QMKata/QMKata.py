@@ -16,7 +16,7 @@
 # USA.
 
 # this code is like a box of bugs, you never know what you're gonna get
-import os, sys, argparse
+import os, sys, argparse, struct
 
 from PySide6 import QtCore
 from PySide6.QtCore import Qt, Signal
@@ -36,6 +36,8 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QTreeView,
     QScrollArea,
+    QTableWidget,
+    QHeaderView,
 )
 from PySide6.QtWidgets import QComboBox, QMessageBox
 from PySide6.QtGui import QFont, QTextCursor
@@ -399,6 +401,84 @@ class ComboConfigTab(QWidget):
 
 
 # -------------------------------------------------------------------------------
+class TapDanceConfigTab(QWidget):
+    COLUMNS = ["Slot", "Tap×1", "Tap×2", "Tap×3", "Hold"]
+    NUM_SLOTS = 8
+
+    def __init__(self, keyboard, resolver, parent=None):
+        super().__init__(parent)
+        self.keyboard = keyboard
+        self.resolver = resolver
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+
+        self.table = QTableWidget(self.NUM_SLOTS, len(self.COLUMNS))
+        self.table.setHorizontalHeaderLabels(self.COLUMNS)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.verticalHeader().setVisible(False)
+
+        for row in range(self.NUM_SLOTS):
+            # Save button (replaces slot number in column 0)
+            btn = QPushButton("Save")
+            btn.clicked.connect(lambda checked, r=row: self.save_slot(r))
+            self.table.setCellWidget(row, 0, btn)
+            # Keycode fields
+            for col in range(1, len(self.COLUMNS)):
+                edit = QLineEdit()
+                edit.setPlaceholderText("KC_NO")
+                self.table.setCellWidget(row, col, edit)
+
+        layout.addWidget(self.table)
+
+        btn_row = QHBoxLayout()
+        refresh_btn = QPushButton("Refresh All")
+        refresh_btn.clicked.connect(self.refresh_all)
+        btn_row.addWidget(refresh_btn)
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+
+    def refresh_all(self):
+        for slot in range(self.NUM_SLOTS):
+            self.keyboard.keyb_get_tap_dance(slot)
+
+    def update_slot(self, slot, data):
+        """Called when signal_tap_dance fires. data is 8 raw bytes (4×uint16 LE)."""
+        if slot >= self.NUM_SLOTS:
+            return
+        if len(data) < 8:
+            return
+        kc1, kc2, kc3, hold = struct.unpack("<HHHH", data[:8])
+        values = [kc1, kc2, kc3, hold]
+        for col_idx, kc in enumerate(values):
+            edit = self.table.cellWidget(slot, col_idx + 1)
+            if edit:
+                edit.setText(self.resolver.value_to_display(kc) if kc else "")
+
+    def save_slot(self, row):
+        """Resolve keycode fields and send SET command for this row."""
+        kcs = []
+        error = False
+        for col in range(1, len(self.COLUMNS)):
+            edit = self.table.cellWidget(row, col)
+            text = edit.text().strip() if edit else ""
+            if not text:
+                kcs.append(0)
+                continue
+            try:
+                kc = self.resolver.resolve(text)
+                kcs.append(kc)
+                edit.setStyleSheet("")
+            except Exception as e:
+                edit.setStyleSheet("background: #ffcccc")
+                edit.setPlaceholderText(str(e))
+                error = True
+        if not error:
+            self.keyboard.keyb_set_tap_dance(row, *kcs)
+
+
+# -------------------------------------------------------------------------------
 class KeybStatusTab(TreeviewWidget):
     signal_keyb_get_status = Signal(int, int)
 
@@ -515,6 +595,7 @@ class MainWindow(QMainWindow):
             else KeycodeResolver()
         )
         self.combo_config_tab = ComboConfigTab(self.keyboard.keyboardModel, resolver)
+        self.tap_dance_tab = TapDanceConfigTab(self.keyboard, resolver)
 
         tab_widget.addTab(self.console_tab, "console")
         tab_widget.addTab(self.keyb_script_tab, "keyboard script")
@@ -523,6 +604,7 @@ class MainWindow(QMainWindow):
         tab_widget.addTab(self.keyb_config_tab, "keyboard config")
         tab_widget.addTab(self.keyb_status_tab, "keyboard status")
         tab_widget.addTab(self.combo_config_tab, "combo config")
+        tab_widget.addTab(self.tap_dance_tab, "Tap Dance")
 
         self.setCentralWidget(tab_widget)
         # -----------------------------------------------------------
@@ -582,6 +664,7 @@ class MainWindow(QMainWindow):
             self.keyboard.keyb_set_combo
         )
         self.keyboard.signal_combo.connect(self.combo_config_tab.update_slot)
+        self.keyboard.signal_tap_dance.connect(self.tap_dance_tab.update_slot)
 
         # -----------------------------------------------------------
         # window focus listener
