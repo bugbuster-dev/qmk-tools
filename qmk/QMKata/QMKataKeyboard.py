@@ -144,6 +144,7 @@ class QMKataKeybCmd_v0_3(QMKataKeybCmd_v0_2):
     ID_CONTROL = 11  # todo
     ID_EVENT = 10  # todo
     ID_COMBO = 11  # EEPROM-backed combo definitions
+    ID_TAP_DANCE = 12
 
 
 # use always latest, no plan for backward compatibility support for now
@@ -167,6 +168,7 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
     signal_config = Signal(object)
     signal_status = Signal(object)
     signal_combo = Signal(object)
+    signal_tap_dance = Signal(int, object)  # (slot, tap_dance_def bytes)
 
     # -------------------------------------------------------------------------------
     MAX_RGB_VAL = 255
@@ -791,6 +793,13 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 self.signal_combo.emit(
                     {"slot": slot_back, "keys": keys, "keycode": keycode}
                 )
+                return
+            if buf[0] == QMKataKeybCmd.ID_TAP_DANCE:
+                # buf: [ID_TAP_DANCE, slot, kc1_lo, kc1_hi, kc2_lo, kc2_hi,
+                #                          kc3_lo, kc3_hi, hold_lo, hold_hi]
+                if len(buf) >= 10:
+                    slot = buf[1]
+                    self.signal_tap_dance.emit(slot, bytes(buf[2:10]))
                 return
             if buf[0] == QMKataKeybCmd.ID_STRUCT_LAYOUT:
                 layout_id = buf[1]
@@ -1455,3 +1464,15 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.dbg.tr("SYSEX_COMMAND", "keyb_get_combo: slot={}", slot)
         data = bytearray([QMKataKeybCmd.ID_COMBO, slot & 0xFF])
         self.send_sysex(QMKataKeybCmd.GET, data)
+
+    def keyb_get_tap_dance(self, slot):
+        """Fire-and-forget GET for one tap dance slot. Response arrives via signal_tap_dance."""
+        buf = bytes([slot])
+        self.send_sysex(QMKataKeybCmd.GET, bytes([QMKataKeybCmd.ID_TAP_DANCE]) + buf)
+
+    def keyb_set_tap_dance(self, slot, kc1, kc2, kc3, hold):
+        """SET tap dance slot and save to EEPROM."""
+        payload = struct.pack(self.pack_endian + "BHHHH", slot, kc1, kc2, kc3, hold)
+        self.send_sysex(
+            QMKataKeybCmd.SET, bytes([QMKataKeybCmd.ID_TAP_DANCE]) + payload
+        )
