@@ -1467,11 +1467,21 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
     def keyb_get_tap_dance(self, slot):
         """Fire-and-forget GET for one tap dance slot. Response arrives via signal_tap_dance."""
-        buf = bytes([slot])
+        self.dbg.tr("SYSEX_COMMAND", "keyb_get_tap_dance: slot={}", slot)
+        buf = bytes([slot & 0xFF])
         self.send_sysex(QMKataKeybCmd.GET, bytes([QMKataKeybCmd.ID_TAP_DANCE]) + buf)
 
     def keyb_set_tap_dance(self, slot, kc1, kc2, kc3, hold):
         """SET tap dance slot and save to EEPROM."""
+        self.dbg.tr(
+            "SYSEX_COMMAND",
+            "keyb_set_tap_dance: slot={}, kc1={}, kc2={}, kc3={}, hold={}",
+            slot,
+            kc1,
+            kc2,
+            kc3,
+            hold,
+        )
         payload = struct.pack(self.pack_endian + "BHHHH", slot, kc1, kc2, kc3, hold)
         self.send_sysex(
             QMKataKeybCmd.SET, bytes([QMKataKeybCmd.ID_TAP_DANCE]) + payload

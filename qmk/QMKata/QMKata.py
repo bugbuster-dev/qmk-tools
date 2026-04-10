@@ -449,7 +449,9 @@ class TapDanceConfigTab(QWidget):
             return
         if len(data) < 8:
             return
-        kc1, kc2, kc3, hold = struct.unpack("<HHHH", data[:8])
+        kc1, kc2, kc3, hold = struct.unpack(
+            self.keyboard.pack_endian + "HHHH", data[:8]
+        )
         values = [kc1, kc2, kc3, hold]
         for col_idx, kc in enumerate(values):
             edit = self.table.cellWidget(slot, col_idx + 1)
@@ -604,7 +606,7 @@ class MainWindow(QMainWindow):
         tab_widget.addTab(self.keyb_config_tab, "keyboard config")
         tab_widget.addTab(self.keyb_status_tab, "keyboard status")
         tab_widget.addTab(self.combo_config_tab, "combo config")
-        tab_widget.addTab(self.tap_dance_tab, "Tap Dance")
+        tab_widget.addTab(self.tap_dance_tab, "tap dance")
 
         self.setCentralWidget(tab_widget)
         # -----------------------------------------------------------
