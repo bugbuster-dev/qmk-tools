@@ -145,6 +145,7 @@ class QMKataKeybCmd_v0_3(QMKataKeybCmd_v0_2):
     ID_EVENT = 10  # todo
     ID_COMBO = 11  # EEPROM-backed combo definitions
     ID_TAP_DANCE = 12
+    ID_LEADER = 13
 
 
 # use always latest, no plan for backward compatibility support for now
@@ -169,6 +170,7 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
     signal_status = Signal(object)
     signal_combo = Signal(object)
     signal_tap_dance = Signal(int, object)  # (slot, tap_dance_def bytes)
+    signal_leader = Signal(int, object)  # (slot, leader_def bytes)
 
     # -------------------------------------------------------------------------------
     MAX_RGB_VAL = 255
@@ -800,6 +802,12 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 if len(buf) >= 10:
                     slot = buf[1]
                     self.signal_tap_dance.emit(slot, bytes(buf[2:10]))
+                return
+            if buf[0] == QMKataKeybCmd.ID_LEADER:
+                # buf: [ID_LEADER, slot, seq0_lo, seq0_hi, ..., seq4_lo, seq4_hi, kc_lo, kc_hi]
+                if len(buf) >= 14:  # 1 (id) + 1 (slot) + 12 (leader_def_t)
+                    slot = buf[1]
+                    self.signal_leader.emit(slot, bytes(buf[2:14]))
                 return
             if buf[0] == QMKataKeybCmd.ID_STRUCT_LAYOUT:
                 layout_id = buf[1]
@@ -1486,3 +1494,25 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.send_sysex(
             QMKataKeybCmd.SET, bytes([QMKataKeybCmd.ID_TAP_DANCE]) + payload
         )
+
+    def keyb_get_leader(self, slot):
+        """Fire-and-forget GET for one leader slot. Response arrives via signal_leader."""
+        self.dbg.tr("SYSEX_COMMAND", "keyb_get_leader: slot={}", slot)
+        buf = bytes([slot & 0xFF])
+        self.send_sysex(QMKataKeybCmd.GET, bytes([QMKataKeybCmd.ID_LEADER]) + buf)
+
+    def keyb_set_leader(self, slot, seq, keycode):
+        """SET leader slot: seq is list of up to 5 keycodes, keycode is the action."""
+        self.dbg.tr(
+            "SYSEX_COMMAND",
+            "keyb_set_leader: slot={}, seq={}, keycode={}",
+            slot,
+            seq,
+            keycode,
+        )
+        payload = struct.pack(self.pack_endian + "B", slot)
+        for i in range(5):
+            kc = seq[i] if i < len(seq) else 0
+            payload += struct.pack(self.pack_endian + "H", kc)
+        payload += struct.pack(self.pack_endian + "H", keycode)
+        self.send_sysex(QMKataKeybCmd.SET, bytes([QMKataKeybCmd.ID_LEADER]) + payload)
