@@ -422,7 +422,7 @@ class TapDanceConfigTab(QWidget):
         for row in range(self.NUM_SLOTS):
             # Save button (replaces slot number in column 0)
             btn = QPushButton("Save")
-            btn.clicked.connect(lambda checked, r=row: self.save_slot(r))
+            btn.clicked.connect(lambda checked=False, r=row: self.save_slot(r))
             self.table.setCellWidget(row, 0, btn)
             # Keycode fields
             for col in range(1, len(self.COLUMNS)):
