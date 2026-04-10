@@ -493,7 +493,7 @@ class TapDanceConfigTab(QWidget):
 
 # -------------------------------------------------------------------------------
 class LeaderConfigTab(QWidget):
-    QK_LEADER = 0x7C00
+    QK_LEADER = 0x7C58
     COLUMNS = ["Slot", "Seq 1", "Seq 2", "Seq 3", "Seq 4", "Seq 5", "Action"]
     NUM_SLOTS = 8
 
