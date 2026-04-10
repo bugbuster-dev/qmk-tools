@@ -402,7 +402,8 @@ class ComboConfigTab(QWidget):
 
 # -------------------------------------------------------------------------------
 class TapDanceConfigTab(QWidget):
-    COLUMNS = ["Slot", "Tap×1", "Tap×2", "Tap×3", "Hold"]
+    QK_TAP_DANCE = 0x5700
+    COLUMNS = ["Slot", "Tap x1", "Tap x2", "Tap x3", "Hold"]
     NUM_SLOTS = 8
 
     def __init__(self, keyboard, resolver, parent=None):
@@ -420,8 +421,13 @@ class TapDanceConfigTab(QWidget):
         self.table.verticalHeader().setVisible(False)
 
         for row in range(self.NUM_SLOTS):
-            # Save button (replaces slot number in column 0)
-            btn = QPushButton("Save")
+            # Save button showing VIA keycode for this slot
+            via_kc = self.QK_TAP_DANCE + row
+            btn = QPushButton(f"Save  [0x{via_kc:04X}]")
+            btn.setToolTip(
+                f"TD({row}) = 0x{via_kc:04X}\n"
+                f"Use this keycode in VIA to assign this tap dance to a key"
+            )
             btn.clicked.connect(lambda checked=False, r=row: self.save_slot(r))
             self.table.setCellWidget(row, 0, btn)
             # Keycode fields
@@ -437,6 +443,11 @@ class TapDanceConfigTab(QWidget):
         refresh_btn.clicked.connect(self.refresh_all)
         btn_row.addWidget(refresh_btn)
         btn_row.addStretch()
+        hint = QLabel(
+            "assign TD(n) keycodes in VIA to map tap dance slots to physical keys"
+        )
+        hint.setStyleSheet("color: gray; font-style: italic;")
+        btn_row.addWidget(hint)
         layout.addLayout(btn_row)
 
     def refresh_all(self):
