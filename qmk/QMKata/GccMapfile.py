@@ -3,7 +3,7 @@ import re, io
 class GccMapfile:
     def __init__(self, map_file_path = ""):
         if not map_file_path:
-            map_file_path = 'V:\shared\keychron\keychron_q3_max_ansi_encoder_via.map'
+            map_file_path = 'V:\shared\keychron\keychron_qmk_firmware\.build\keychron_q3_max_ansi_encoder_via.map'
         self.functions, self.variables = self.parse_file(map_file_path)
 
     def fun_addr(self, name):

@@ -290,10 +290,15 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 import GccMapfile
 
                 self.mapfile = GccMapfile.GccMapfile()
+                # Linker map symbols exposed to scripts as:
+                #   kb.fun["symbol_name"] -> {"address", "size", ...}
+                #   kb.var["symbol_name"] -> {"address", "size", ...}
+                # Typical flow: addr = kb.fun["foo"]["address"]; kb.call(addr)
                 self.fun = self.mapfile.functions
                 self.var = self.mapfile.variables
             except Exception as e:
                 self.dbg.tr("D", "mapfile: {}", e)
+                # Map file is optional; scripts must handle missing kb.fun/kb.var.
                 self.mapfile = None
 
             try:
@@ -405,6 +410,7 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
         # call function at address
         def call(self, addr):
+            # Sends a CLI "call" command to firmware: c <hex address>
             self.dbg.tr("D", "call: {addr}", addr=addr)
             resp = self.keyboard.keyb_set_cli_command(f"c {hex(addr)}")
             return resp
@@ -992,6 +998,7 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
                         self.signal_output.emit(string)
 
             globals_dict = globals()
+            # Expose keyboard script environment to user scripts as `kb`.
             globals_dict.update({"kb": self.kb_script_env})
             script_output = ScriptOutput(signal_output)
             with redirect_stdout(script_output):
