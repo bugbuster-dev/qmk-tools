@@ -676,6 +676,15 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
         except Exception as e:
             self.dbg.tr("E", "{}", e)
 
+        # auto-load combo/tap_dance/leader EEPROM slots
+        time.sleep(0.3)
+        for slot in range(16):
+            self.keyb_get_combo(slot)
+        for slot in range(8):
+            self.keyb_get_tap_dance(slot)
+        for slot in range(8):
+            self.keyb_get_leader(slot)
+
     def stop(self):
         try:
             self.sp.close()
