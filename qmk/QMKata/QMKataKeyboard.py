@@ -266,7 +266,7 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 except:
                     return -1
 
-        def __init__(self, keyboard):
+        def __init__(self, keyboard, firmware_path=None):
             self.dbg = DebugTracer(zones={"D": 0}, obj=self)
 
             self.keyboard = keyboard
@@ -289,7 +289,7 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
             try:
                 import GccMapfile
 
-                self.mapfile = GccMapfile.GccMapfile()
+                self.mapfile = GccMapfile.GccMapfile(firmware_path=firmware_path)
                 # Linker map symbols exposed to scripts as:
                 #   kb.fun["symbol_name"] -> {"address", "size", ...}
                 #   kb.var["symbol_name"] -> {"address", "size", ...}
@@ -487,6 +487,7 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.name = None
         self.port = None
         self.vid_pid = None
+        self.firmware_path = None
         for arg in kwargs:
             if arg == "name":
                 self.name = kwargs[arg]
@@ -494,6 +495,8 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 self.port = kwargs[arg]
             if arg == "vid_pid":
                 self.vid_pid = kwargs[arg]
+            if arg == "firmware_path":
+                self.firmware_path = kwargs[arg]
 
         if self.name == None:
             self.name = self.port
@@ -525,7 +528,7 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
             )
             self.name = self.keyboardModel.name()
             self._rgb_max_refresh = self.rgb_max_refresh()
-        self.kb_script_env = self.KeybScriptEnv(self)
+        self.kb_script_env = self.KeybScriptEnv(self, firmware_path=self.firmware_path)
 
         self.samplerThread = pyfirmata2.util.Iterator(self)
         if self.port_type == "rawhid":

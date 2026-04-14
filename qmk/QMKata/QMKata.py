@@ -684,7 +684,9 @@ class MainWindow(QMainWindow):
         self.setFixedSize(app_width, app_height)
 
         # instantiate qmkata keyboard
-        self.keyboard = QMKataKeyboard(port=None, vid_pid=self.keyboard_vid_pid)
+        self.keyboard = QMKataKeyboard(
+            port=None, vid_pid=self.keyboard_vid_pid, firmware_path=self.firmware_path
+        )
         num_keyb_layers = self.keyboard.num_layers()
 
         # -----------------------------------------------------------
