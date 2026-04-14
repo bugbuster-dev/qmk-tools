@@ -134,7 +134,7 @@ class KeychronQ3Max:
     }
     # ---------------------------------------------------------------------------
     TOOLCHAIN = {
-        "path": "",
+        "path": "V:\\toolchain\\gcc-arm-none-eabi-10.3-2021.10\\bin\\",
         "options": [
             "-c",
             "-mcpu=cortex-m4",

@@ -55,9 +55,9 @@ class GccToolchain:
                     includes.insert(0, rel + os.sep)
             self.compiler_options.includes(includes)
 
-        # resolve toolchain path: prefer config, fall back to auto-discover on PATH
+        # resolve toolchain path: use config if it exists, fall back to auto-discover
         toolchain_prefix = ""
-        if not toolchain_path:
+        if not toolchain_path or not os.path.isdir(toolchain_path):
             toolchain_path, toolchain_prefix = self.find_toolchain_path()
 
         self.toolchain_path = toolchain_path
