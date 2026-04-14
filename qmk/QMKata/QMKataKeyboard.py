@@ -305,7 +305,8 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 import GccToolchain
 
                 self.toolchain = GccToolchain.GccToolchain(
-                    self.keyboard.keyboardModel.TOOLCHAIN
+                    self.keyboard.keyboardModel.TOOLCHAIN,
+                    firmware_path=firmware_path,
                 )
             except Exception as e:
                 self.dbg.tr("D", "toolchain: {}", e)
