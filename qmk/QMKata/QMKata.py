@@ -409,9 +409,9 @@ class TapDanceConfigTab(QWidget):
     signal_keyb_get_tap_dance = Signal(int)
     signal_keyb_set_tap_dance = Signal(int, int, int, int, int)
 
-    def __init__(self, pack_endian, resolver):
+    def __init__(self, keyboard, resolver):
         super().__init__()
-        self.pack_endian = pack_endian
+        self.keyboard = keyboard
         self.resolver = resolver
         self._build_ui()
 
@@ -463,7 +463,9 @@ class TapDanceConfigTab(QWidget):
             return
         if len(data) < 8:
             return
-        kc1, kc2, kc3, hold = struct.unpack(self.pack_endian + "HHHH", data[:8])
+        kc1, kc2, kc3, hold = struct.unpack(
+            self.keyboard.pack_endian + "HHHH", data[:8]
+        )
         values = [kc1, kc2, kc3, hold]
         for col_idx, kc in enumerate(values):
             edit = self.table.cellWidget(slot, col_idx + 1)
@@ -501,9 +503,9 @@ class LeaderConfigTab(QWidget):
     signal_keyb_get_leader = Signal(int)
     signal_keyb_set_leader = Signal(int, list, int)
 
-    def __init__(self, pack_endian, resolver):
+    def __init__(self, keyboard, resolver):
         super().__init__()
-        self.pack_endian = pack_endian
+        self.keyboard = keyboard
         self.resolver = resolver
         self._build_ui()
 
@@ -553,7 +555,7 @@ class LeaderConfigTab(QWidget):
             return
         if len(data) < 12:
             return
-        values = struct.unpack(self.pack_endian + "HHHHHH", data[:12])
+        values = struct.unpack(self.keyboard.pack_endian + "HHHHHH", data[:12])
         # values = (seq0, seq1, seq2, seq3, seq4, keycode)
         for col_idx, kc in enumerate(values):
             edit = self.table.cellWidget(slot, col_idx + 1)
@@ -600,8 +602,8 @@ class KeyFunctionsTab(QWidget):
         self.tab_widget = QTabWidget()
 
         self.combo_tab = ComboConfigTab(keyboard_model, resolver)
-        self.tap_dance_tab = TapDanceConfigTab(keyboard.pack_endian, resolver)
-        self.leader_tab = LeaderConfigTab(keyboard.pack_endian, resolver)
+        self.tap_dance_tab = TapDanceConfigTab(keyboard, resolver)
+        self.leader_tab = LeaderConfigTab(keyboard, resolver)
 
         self.tab_widget.addTab(self.combo_tab, "combo")
         self.tab_widget.addTab(self.tap_dance_tab, "tap dance")
