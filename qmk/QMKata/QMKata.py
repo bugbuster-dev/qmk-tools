@@ -275,12 +275,10 @@ class KeybConfigTab(TreeviewWidget):
 
 # -------------------------------------------------------------------------------
 class ComboConfigTab(QWidget):
-    signal_keyb_get_combo = Signal(int)
-    signal_keyb_set_combo = Signal(int, list, int)
-
-    def __init__(self, keyboard_model, resolver=None):
+    def __init__(self, keyboard_model, keyboard, resolver=None):
         self.dbg = DebugTracer(zones={"D": 0, "E": 1}, obj=self)
         self.keyboard_model = keyboard_model
+        self.keyboard = keyboard
         self.resolver = resolver or KeycodeResolver()
         super().__init__()
         self.init_gui()
@@ -349,7 +347,7 @@ class ComboConfigTab(QWidget):
 
     def refresh_all(self):
         for i in range(16):
-            self.signal_keyb_get_combo.emit(i)
+            self.keyboard.keyb_get_combo(i)
 
     @staticmethod
     def _split_keycode_list(text):
@@ -393,7 +391,7 @@ class ComboConfigTab(QWidget):
                 if k.strip()
             ]
             keycode = self.resolver.resolve(widget.code_input.text().strip())
-            self.signal_keyb_set_combo.emit(slot, keys, keycode)
+            self.keyboard.keyb_set_combo(slot, keys, keycode)
         except Exception as e:
             self.dbg.tr("E", "Failed to parse combo input: {}", e)
             # Brief visual feedback: set placeholder to show error
@@ -406,8 +404,8 @@ class TapDanceConfigTab(QWidget):
     COLUMNS = ["Slot", "Tap x1", "Tap x2", "Tap x3", "Hold"]
     NUM_SLOTS = 8
 
-    def __init__(self, keyboard, resolver, parent=None):
-        super().__init__(parent)
+    def __init__(self, keyboard, resolver):
+        super().__init__()
         self.keyboard = keyboard
         self.resolver = resolver
         self._build_ui()
@@ -497,8 +495,8 @@ class LeaderConfigTab(QWidget):
     COLUMNS = ["Slot", "Seq 1", "Seq 2", "Seq 3", "Seq 4", "Seq 5", "Action"]
     NUM_SLOTS = 8
 
-    def __init__(self, keyboard, resolver, parent=None):
-        super().__init__(parent)
+    def __init__(self, keyboard, resolver):
+        super().__init__()
         self.keyboard = keyboard
         self.resolver = resolver
         self._build_ui()
@@ -583,6 +581,27 @@ class LeaderConfigTab(QWidget):
                 error = True
         if not error:
             self.keyboard.keyb_set_leader(row, seq, keycode)
+
+
+# -------------------------------------------------------------------------------
+class KeyFunctionsTab(QWidget):
+    def __init__(self, keyboard_model, keyboard, resolver=None):
+        super().__init__()
+        self._build_ui(keyboard_model, keyboard, resolver)
+
+    def _build_ui(self, keyboard_model, keyboard, resolver):
+        layout = QVBoxLayout(self)
+        self.tab_widget = QTabWidget()
+
+        self.combo_tab = ComboConfigTab(keyboard_model, keyboard, resolver)
+        self.tap_dance_tab = TapDanceConfigTab(keyboard, resolver)
+        self.leader_tab = LeaderConfigTab(keyboard, resolver)
+
+        self.tab_widget.addTab(self.combo_tab, "combo")
+        self.tab_widget.addTab(self.tap_dance_tab, "tap dance")
+        self.tab_widget.addTab(self.leader_tab, "leader")
+
+        layout.addWidget(self.tab_widget)
 
 
 # -------------------------------------------------------------------------------
@@ -703,9 +722,9 @@ class MainWindow(QMainWindow):
             if self.firmware_path
             else KeycodeResolver()
         )
-        self.combo_config_tab = ComboConfigTab(self.keyboard.keyboardModel, resolver)
-        self.tap_dance_tab = TapDanceConfigTab(self.keyboard, resolver)
-        self.leader_tab = LeaderConfigTab(self.keyboard, resolver)
+        self.key_functions_tab = KeyFunctionsTab(
+            self.keyboard.keyboardModel, self.keyboard, resolver
+        )
 
         tab_widget.addTab(self.console_tab, "console")
         tab_widget.addTab(self.keyb_script_tab, "keyboard script")
@@ -713,9 +732,7 @@ class MainWindow(QMainWindow):
         tab_widget.addTab(self.layer_switch_tab, "layer auto switch")
         tab_widget.addTab(self.keyb_config_tab, "keyboard config")
         tab_widget.addTab(self.keyb_status_tab, "keyboard status")
-        tab_widget.addTab(self.combo_config_tab, "combo config")
-        tab_widget.addTab(self.tap_dance_tab, "tap dance")
-        tab_widget.addTab(self.leader_tab, "leader config")
+        tab_widget.addTab(self.key_functions_tab, "key functions")
 
         self.setCentralWidget(tab_widget)
         # -----------------------------------------------------------
@@ -768,15 +785,13 @@ class MainWindow(QMainWindow):
         self.keyb_status_tab.signal_keyb_get_status.connect(
             self.keyboard.keyb_get_status
         )
-        self.combo_config_tab.signal_keyb_get_combo.connect(
-            self.keyboard.keyb_get_combo
+        self.keyboard.signal_combo.connect(self.key_functions_tab.combo_tab.update_slot)
+        self.keyboard.signal_tap_dance.connect(
+            self.key_functions_tab.tap_dance_tab.update_slot
         )
-        self.combo_config_tab.signal_keyb_set_combo.connect(
-            self.keyboard.keyb_set_combo
+        self.keyboard.signal_leader.connect(
+            self.key_functions_tab.leader_tab.update_slot
         )
-        self.keyboard.signal_combo.connect(self.combo_config_tab.update_slot)
-        self.keyboard.signal_tap_dance.connect(self.tap_dance_tab.update_slot)
-        self.keyboard.signal_leader.connect(self.leader_tab.update_slot)
 
         # -----------------------------------------------------------
         # window focus listener
