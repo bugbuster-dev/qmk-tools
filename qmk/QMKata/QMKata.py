@@ -275,10 +275,12 @@ class KeybConfigTab(TreeviewWidget):
 
 # -------------------------------------------------------------------------------
 class ComboConfigTab(QWidget):
-    def __init__(self, keyboard_model, keyboard, resolver=None):
+    signal_keyb_get_combo = Signal(int)
+    signal_keyb_set_combo = Signal(int, list, int)
+
+    def __init__(self, keyboard_model, resolver=None):
         self.dbg = DebugTracer(zones={"D": 0, "E": 1}, obj=self)
         self.keyboard_model = keyboard_model
-        self.keyboard = keyboard
         self.resolver = resolver or KeycodeResolver()
         super().__init__()
         self.init_gui()
@@ -347,7 +349,7 @@ class ComboConfigTab(QWidget):
 
     def refresh_all(self):
         for i in range(16):
-            self.keyboard.keyb_get_combo(i)
+            self.signal_keyb_get_combo.emit(i)
 
     @staticmethod
     def _split_keycode_list(text):
@@ -391,7 +393,7 @@ class ComboConfigTab(QWidget):
                 if k.strip()
             ]
             keycode = self.resolver.resolve(widget.code_input.text().strip())
-            self.keyboard.keyb_set_combo(slot, keys, keycode)
+            self.signal_keyb_set_combo.emit(slot, keys, keycode)
         except Exception as e:
             self.dbg.tr("E", "Failed to parse combo input: {}", e)
             # Brief visual feedback: set placeholder to show error
@@ -404,9 +406,12 @@ class TapDanceConfigTab(QWidget):
     COLUMNS = ["Slot", "Tap x1", "Tap x2", "Tap x3", "Hold"]
     NUM_SLOTS = 8
 
-    def __init__(self, keyboard, resolver):
+    signal_keyb_get_tap_dance = Signal(int)
+    signal_keyb_set_tap_dance = Signal(int, int, int, int, int)
+
+    def __init__(self, pack_endian, resolver):
         super().__init__()
-        self.keyboard = keyboard
+        self.pack_endian = pack_endian
         self.resolver = resolver
         self._build_ui()
 
@@ -450,7 +455,7 @@ class TapDanceConfigTab(QWidget):
 
     def refresh_all(self):
         for slot in range(self.NUM_SLOTS):
-            self.keyboard.keyb_get_tap_dance(slot)
+            self.signal_keyb_get_tap_dance.emit(slot)
 
     def update_slot(self, slot, data):
         """Called when signal_tap_dance fires. data is 8 raw bytes (4×uint16 LE)."""
@@ -458,9 +463,7 @@ class TapDanceConfigTab(QWidget):
             return
         if len(data) < 8:
             return
-        kc1, kc2, kc3, hold = struct.unpack(
-            self.keyboard.pack_endian + "HHHH", data[:8]
-        )
+        kc1, kc2, kc3, hold = struct.unpack(self.pack_endian + "HHHH", data[:8])
         values = [kc1, kc2, kc3, hold]
         for col_idx, kc in enumerate(values):
             edit = self.table.cellWidget(slot, col_idx + 1)
@@ -486,7 +489,7 @@ class TapDanceConfigTab(QWidget):
                 edit.setPlaceholderText(str(e))
                 error = True
         if not error:
-            self.keyboard.keyb_set_tap_dance(row, *kcs)
+            self.signal_keyb_set_tap_dance.emit(row, *kcs)
 
 
 # -------------------------------------------------------------------------------
@@ -495,9 +498,12 @@ class LeaderConfigTab(QWidget):
     COLUMNS = ["Slot", "Seq 1", "Seq 2", "Seq 3", "Seq 4", "Seq 5", "Action"]
     NUM_SLOTS = 8
 
-    def __init__(self, keyboard, resolver):
+    signal_keyb_get_leader = Signal(int)
+    signal_keyb_set_leader = Signal(int, list, int)
+
+    def __init__(self, pack_endian, resolver):
         super().__init__()
-        self.keyboard = keyboard
+        self.pack_endian = pack_endian
         self.resolver = resolver
         self._build_ui()
 
@@ -539,7 +545,7 @@ class LeaderConfigTab(QWidget):
 
     def refresh_all(self):
         for slot in range(self.NUM_SLOTS):
-            self.keyboard.keyb_get_leader(slot)
+            self.signal_keyb_get_leader.emit(slot)
 
     def update_slot(self, slot, data):
         """Called when signal_leader fires. data is 12 raw bytes (5x uint16 seq + 1x uint16 kc)."""
@@ -547,7 +553,7 @@ class LeaderConfigTab(QWidget):
             return
         if len(data) < 12:
             return
-        values = struct.unpack(self.keyboard.pack_endian + "HHHHHH", data[:12])
+        values = struct.unpack(self.pack_endian + "HHHHHH", data[:12])
         # values = (seq0, seq1, seq2, seq3, seq4, keycode)
         for col_idx, kc in enumerate(values):
             edit = self.table.cellWidget(slot, col_idx + 1)
@@ -580,7 +586,7 @@ class LeaderConfigTab(QWidget):
                 edit.setPlaceholderText(str(e))
                 error = True
         if not error:
-            self.keyboard.keyb_set_leader(row, seq, keycode)
+            self.signal_keyb_set_leader.emit(row, seq, keycode)
 
 
 # -------------------------------------------------------------------------------
@@ -593,9 +599,9 @@ class KeyFunctionsTab(QWidget):
         layout = QVBoxLayout(self)
         self.tab_widget = QTabWidget()
 
-        self.combo_tab = ComboConfigTab(keyboard_model, keyboard, resolver)
-        self.tap_dance_tab = TapDanceConfigTab(keyboard, resolver)
-        self.leader_tab = LeaderConfigTab(keyboard, resolver)
+        self.combo_tab = ComboConfigTab(keyboard_model, resolver)
+        self.tap_dance_tab = TapDanceConfigTab(keyboard.pack_endian, resolver)
+        self.leader_tab = LeaderConfigTab(keyboard.pack_endian, resolver)
 
         self.tab_widget.addTab(self.combo_tab, "combo")
         self.tab_widget.addTab(self.tap_dance_tab, "tap dance")
@@ -786,11 +792,29 @@ class MainWindow(QMainWindow):
             self.keyboard.keyb_get_status
         )
         self.keyboard.signal_combo.connect(self.key_functions_tab.combo_tab.update_slot)
+        self.key_functions_tab.combo_tab.signal_keyb_get_combo.connect(
+            self.keyboard.keyb_get_combo
+        )
+        self.key_functions_tab.combo_tab.signal_keyb_set_combo.connect(
+            self.keyboard.keyb_set_combo
+        )
         self.keyboard.signal_tap_dance.connect(
             self.key_functions_tab.tap_dance_tab.update_slot
         )
+        self.key_functions_tab.tap_dance_tab.signal_keyb_get_tap_dance.connect(
+            self.keyboard.keyb_get_tap_dance
+        )
+        self.key_functions_tab.tap_dance_tab.signal_keyb_set_tap_dance.connect(
+            self.keyboard.keyb_set_tap_dance
+        )
         self.keyboard.signal_leader.connect(
             self.key_functions_tab.leader_tab.update_slot
+        )
+        self.key_functions_tab.leader_tab.signal_keyb_get_leader.connect(
+            self.keyboard.keyb_get_leader
+        )
+        self.key_functions_tab.leader_tab.signal_keyb_set_leader.connect(
+            self.keyboard.keyb_set_leader
         )
 
         # -----------------------------------------------------------
