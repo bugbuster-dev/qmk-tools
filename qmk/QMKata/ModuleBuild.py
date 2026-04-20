@@ -13,6 +13,7 @@ MODULE_HEADER_VERSION = 1
 MODULE_HEADER_SIZE    = 32
 MODULE_HOOK_TABLE_OFF = 32  # Hook table immediately follows header
 MODULE_HOOK_MAX       = 16
+MODULE_FLASH_SLOT_SIZE = 0x1000
 
 # Hook name → index mapping (human-readable)
 HOOK_NAMES = {
@@ -43,6 +44,7 @@ class ModuleBuild:
                 self.mapfile = GccMapfile(firmware_path=firmware_path)
             except Exception:
                 pass
+        self.last_error = None
         self.module_api_header = os.path.join(os.path.dirname(__file__), "module_api.h")
         self.linker_script = os.path.join(os.path.dirname(__file__), "module_linker.ld")
 
@@ -60,6 +62,8 @@ class ModuleBuild:
                 'size': int - total binary size
             or None on failure
         """
+        self.last_error = None
+
         with tempfile.TemporaryDirectory(prefix="module_build_") as tmpdir:
             base_name = os.path.splitext(os.path.basename(source_file))[0]
             obj_file = os.path.join(tmpdir, base_name + ".o")
@@ -68,6 +72,7 @@ class ModuleBuild:
 
             # Step 1: Compile with module-specific options
             if not self._compile(source_file, obj_file):
+                self.last_error = "compile failed"
                 return None
 
             # Step 2: Resolve external symbols → generate symbol .ld file
@@ -78,10 +83,12 @@ class ModuleBuild:
             # Step 3: Link
             extra_ld = [sym_ld_file] if os.path.exists(sym_ld_file) else None
             if not self.toolchain.link(obj_file, self.linker_script, elf_file, extra_ld):
+                self.last_error = "link failed"
                 return None
 
             # Step 4: objcopy to binary
             if not self.toolchain.elf2bin(elf_file, bin_file):
+                self.last_error = "objcopy failed"
                 return None
 
             # Step 5: Read binary and detect hooks
@@ -126,6 +133,7 @@ class ModuleBuild:
         nm_tool = self.toolchain.tool.get("nm")
         if not nm_tool:
             print("E: nm tool not found in toolchain")
+            self.last_error = "symbol resolution failed"
             return False
         try:
             result = subprocess.run(
@@ -134,6 +142,7 @@ class ModuleBuild:
             )
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
             print(f"E: nm failed: {e}")
+            self.last_error = "symbol resolution failed"
             return False
 
         undefined = []
@@ -157,6 +166,7 @@ class ModuleBuild:
 
         if not self.mapfile:
             print(f"E: module has undefined symbols but no .map file for resolution: {undefined}")
+            self.last_error = "symbol resolution failed"
             return False
 
         # Resolve each symbol
@@ -176,6 +186,7 @@ class ModuleBuild:
 
         if unresolved:
             print(f"E: cannot resolve symbols: {unresolved}")
+            self.last_error = "symbol resolution failed"
             return False
 
         # Write linker script with PROVIDE directives
@@ -195,6 +206,7 @@ class ModuleBuild:
 
         if len(raw_bin) < MODULE_HEADER_SIZE + MODULE_HOOK_MAX * 4:
             print(f"E: binary too small ({len(raw_bin)} bytes)")
+            self.last_error = "binary too small"
             return None
 
         # Read hook table to determine hook_bitmap
@@ -238,10 +250,19 @@ class ModuleBuild:
 
         # Replace first 32 bytes of binary with our header
         final_bin = header + raw_bin[MODULE_HEADER_SIZE:]
+        fits_slot = len(final_bin) <= MODULE_FLASH_SLOT_SIZE
+
+        if not fits_slot:
+            self.last_error = (
+                f"module binary exceeds slot size "
+                f"({len(final_bin)} > {MODULE_FLASH_SLOT_SIZE})"
+            )
+            return None
 
         return {
             'binary': final_bin,
             'hook_bitmap': hook_bitmap,
             'hooks': hooks,
             'size': len(final_bin),
+            'fits_slot': fits_slot,
         }

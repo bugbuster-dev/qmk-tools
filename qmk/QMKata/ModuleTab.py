@@ -1,8 +1,10 @@
+import struct
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QPushButton, QTextEdit, QComboBox,
-    QFileDialog, QGroupBox,
+    QFileDialog, QGroupBox, QCheckBox,
 )
 from PySide6.QtGui import QFont, QTextCursor
 
@@ -25,6 +27,7 @@ class ModuleTab(QWidget):
         self.keyboard = keyboard
         self.module_build = None  # set up when build is first triggered
         self.last_build_result = None
+        self.hook_checkboxes = []
         self.init_gui()
 
     def init_gui(self):
@@ -67,6 +70,12 @@ class ModuleTab(QWidget):
         slot_layout.addWidget(self.refresh_button)
         slot_group.setLayout(slot_layout)
         layout.addWidget(slot_group)
+
+        self.hooks_group = QGroupBox("Hooks")
+        self.hooks_layout = QVBoxLayout()
+        self.hooks_group.setLayout(self.hooks_layout)
+        self.hooks_group.setVisible(False)
+        layout.addWidget(self.hooks_group)
 
         # --- Slot status grid ---
         status_group = QGroupBox("Slot Status")
@@ -120,7 +129,48 @@ class ModuleTab(QWidget):
     def on_source_changed(self):
         if self.last_build_result is not None:
             self.last_build_result = None
+        self._clear_hook_checkboxes()
         self.load_button.setEnabled(False)
+
+    def _clear_hook_checkboxes(self):
+        while self.hooks_layout.count():
+            item = self.hooks_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self.hook_checkboxes = []
+        self.hooks_group.setVisible(False)
+
+    def _rebuild_hook_checkboxes(self, hooks):
+        self._clear_hook_checkboxes()
+        for hook_name in hooks:
+            checkbox = QCheckBox(hook_name)
+            checkbox.setChecked(True)
+            self.hooks_layout.addWidget(checkbox)
+            self.hook_checkboxes.append((hook_name, checkbox))
+        self.hooks_group.setVisible(bool(hooks))
+
+    def _selected_hook_bitmap(self):
+        hook_bitmap = 0
+        for hook_name, checkbox in self.hook_checkboxes:
+            if checkbox.isChecked():
+                hook_idx = HOOK_NAMES.get(hook_name)
+                if hook_idx is None and hook_name.startswith("hook_"):
+                    try:
+                        hook_idx = int(hook_name.split("_", 1)[1])
+                    except ValueError:
+                        hook_idx = None
+                if hook_idx is not None:
+                    hook_bitmap |= (1 << hook_idx)
+        return hook_bitmap
+
+    def _prepare_binary_for_load(self):
+        binary = bytearray(self.last_build_result['binary'])
+        hook_bitmap = self._selected_hook_bitmap()
+        if hook_bitmap == 0:
+            return None
+        struct.pack_into("<I", binary, 12, hook_bitmap)
+        return binary
 
     def build_module(self):
         """Build module from source file."""
@@ -152,15 +202,21 @@ class ModuleTab(QWidget):
 
         result = self.module_build.build(source)
         if result is None:
-            self.log("Build FAILED")
+            if self.module_build.last_error:
+                self.log(f"Build FAILED: {self.module_build.last_error}")
+            else:
+                self.log("Build FAILED")
+            self._clear_hook_checkboxes()
             self.load_button.setEnabled(False)
             self.last_build_result = None
             return
 
         self.last_build_result = result
-        self.load_button.setEnabled(True)
+        self._rebuild_hook_checkboxes(result['hooks'])
+        self.load_button.setEnabled(bool(result['hooks']))
         self.log(f"Build OK: {result['size']} bytes, hooks: {', '.join(result['hooks'])}")
         self.log(f"  hook_bitmap: 0x{result['hook_bitmap']:08X}")
+        self.log(f"  fits_slot: {'yes' if result['fits_slot'] else 'no'}")
 
     def load_module(self):
         """Load last built module to selected slot."""
@@ -168,7 +224,10 @@ class ModuleTab(QWidget):
             self.log("Error: No module built yet")
             return
         slot_id = self.slot_combo.currentData()
-        binary = bytearray(self.last_build_result['binary'])
+        binary = self._prepare_binary_for_load()
+        if binary is None:
+            self.log("Error: No hooks enabled for load")
+            return
         self.log(f"Loading module to slot {slot_id} ({len(binary)} bytes)...")
         self.signal_load_module.emit(slot_id, binary)
 
@@ -223,6 +282,16 @@ class ModuleTab(QWidget):
                     for name, idx in HOOK_NAMES.items():
                         if hook_bitmap & (1 << idx):
                             hook_names.append(name)
+                    known_mask = 0
+                    for idx in HOOK_NAMES.values():
+                        known_mask |= (1 << idx)
+                    unknown_bits = hook_bitmap & ~known_mask
+                    bit_index = 0
+                    while unknown_bits:
+                        if unknown_bits & 1:
+                            hook_names.append(f"hook_{bit_index}")
+                        unknown_bits >>= 1
+                        bit_index += 1
                     self.slot_labels[slot_id][1].setText(
                         ", ".join(hook_names) if hook_names else "none"
                     )
