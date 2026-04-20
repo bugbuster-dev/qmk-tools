@@ -19,8 +19,6 @@ HOOK_NAMES = {
     'combo_should_trigger': 0,
     'process_combo_event':  1,
     'get_combo_term':       2,
-    'init':                 3,
-    'deinit':               4,
 }
 
 
