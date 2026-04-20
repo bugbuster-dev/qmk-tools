@@ -19,6 +19,8 @@ HOOK_NAMES = {
     'combo_should_trigger': 0,
     'process_combo_event':  1,
     'get_combo_term':       2,
+    'init':                 3,
+    'deinit':               4,
 }
 
 
@@ -213,26 +215,27 @@ class ModuleBuild:
                 else:
                     hooks.append(f"hook_{i}")
 
-        # Build 32-byte header matching module_header_t layout:
+        # Build 32-byte header matching firmware module_header_t layout:
         #   uint32_t magic;          // offset 0
         #   uint16_t version;        // offset 4
         #   uint16_t flags;          // offset 6
-        #   uint32_t size;           // offset 8
+        #   uint32_t code_size;      // offset 8
         #   uint32_t hook_bitmap;    // offset 12
-        #   uint16_t hook_table_off; // offset 16
-        #   uint16_t init_off;       // offset 18
-        #   uint8_t  reserved[12];   // offset 20-31
-        header = struct.pack("<IHHIIHH",
+        #   uint32_t hook_table_off; // offset 16
+        #   uint32_t init_off;       // offset 20
+        #   uint32_t deinit_off;     // offset 24
+        #   uint32_t reserved;       // offset 28
+        header = struct.pack("<I H H I I I I I I",
             MODULE_HEADER_MAGIC,       # magic
             MODULE_HEADER_VERSION,     # version
             0x0001,                    # flags: enabled
-            len(raw_bin),              # size
+            len(raw_bin),              # code_size
             hook_bitmap,               # hook_bitmap
             MODULE_HOOK_TABLE_OFF,     # hook_table_off
             0,                         # init_off (no init)
+            0,                         # deinit_off (no deinit)
+            0,                         # reserved
         )
-        # Pad to 32 bytes with reserved zeros
-        header = header + b'\x00' * (MODULE_HEADER_SIZE - len(header))
         assert len(header) == MODULE_HEADER_SIZE
 
         # Replace first 32 bytes of binary with our header

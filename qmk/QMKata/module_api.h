@@ -8,6 +8,8 @@
 #define MODULE_HOOK_COMBO_SHOULD_TRIGGER  0
 #define MODULE_HOOK_PROCESS_COMBO_EVENT   1
 #define MODULE_HOOK_GET_COMBO_TERM        2
+#define MODULE_HOOK_INIT                  3
+#define MODULE_HOOK_DEINIT                4
 #define MODULE_HOOK_MAX                   16
 
 /* Place the hook table in the .hook_table section */
@@ -17,6 +19,9 @@
    Module code uses these instead of including full QMK headers. */
 typedef struct { const uint16_t *keys; uint16_t keycode; } combo_t;
 typedef struct { struct { uint16_t key; } event; } keyrecord_t;
+typedef uint32_t layer_state_t;
+
+extern layer_state_t layer_state;
 
 /* Default combo term if not defined */
 #ifndef COMBO_TERM

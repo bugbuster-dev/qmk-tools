@@ -836,16 +836,27 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
                     self.sysex_response_seq[seqnum] = buf[1]
                     dbg("module ACK response: {}, rc={}", buf, buf[1])
                     return
-                if len(buf) >= 3 and buf[1] == 0xFF:
+                if buf[1] == 0xFF:
                     # GET summary response
-                    slot_count = buf[2]
-                    actual_count = min(slot_count, len(buf) - 3)
-                    slots = list(buf[3:3 + actual_count])
-                    if actual_count != slot_count:
-                        dbg("module summary: WARNING slot_count={} but only {} slots in buffer", slot_count, actual_count)
-                    dbg("module summary: slot_count={}, slots={}", slot_count, slots)
+                    slot_count = 8
+                    expected_len = 2 + slot_count * 4
+                    if len(buf) < expected_len:
+                        dbg("module summary: short buffer len={}, expected={}", len(buf), expected_len)
+                        return
+                    magics = []
+                    slots = []
+                    for i in range(slot_count):
+                        magic = struct.unpack_from(self.pack_endian + "I", buf, 2 + i * 4)[0]
+                        magics.append(magic)
+                        slots.append(1 if magic == 0x4D4F444C else 0)
+                    dbg("module summary: slot_count={}, slots={}, magics={}", slot_count, slots, magics)
                     self.signal_module_status.emit(
-                        {'type': 'summary', 'slot_count': slot_count, 'slots': slots}
+                        {
+                            'type': 'summary',
+                            'slot_count': slot_count,
+                            'slots': slots,
+                            'magics': magics,
+                        }
                     )
                     return
                 # GET single slot response
