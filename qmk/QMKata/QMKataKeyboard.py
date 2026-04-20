@@ -865,9 +865,9 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
                     return
                 # GET single slot response
                 slot_id = buf[1]
-                magic = struct.unpack_from(self.pack_endian + "I", buf, 2)[0]
-                flags = struct.unpack_from(self.pack_endian + "H", buf, 6)[0]
-                hook_bitmap = struct.unpack_from(self.pack_endian + "I", buf, 8)[0]
+                magic = struct.unpack_from("<I", buf, 2)[0]
+                flags = struct.unpack_from("<H", buf, 6)[0]
+                hook_bitmap = struct.unpack_from("<I", buf, 8)[0]
                 dbg("module slot: id={}, magic={:#x}, flags={:#x}, hook_bitmap={:#x}",
                     slot_id, magic, flags, hook_bitmap)
                 self.signal_module_status.emit(

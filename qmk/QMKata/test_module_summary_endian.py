@@ -44,6 +44,20 @@ class _DummyQPainter:
         pass
 
 
+class _DummyWidget:
+    def __init__(self, *args, **kwargs):
+        pass
+
+
+class _DummyFont:
+    def __init__(self, *args, **kwargs):
+        pass
+
+
+class _DummyTextCursor:
+    End = 0
+
+
 class _DummyDebugTracer:
     def __init__(self, *args, **kwargs):
         pass
@@ -57,16 +71,37 @@ class _DummyDebugTracer:
 
 def _install_test_stubs():
     qtcore = types.ModuleType("PySide6.QtCore")
+    qtcore.Qt = types.SimpleNamespace()
     qtcore.QObject = _DummyQObject
     qtcore.Signal = _DummySignal
 
+    qtwidgets = types.ModuleType("PySide6.QtWidgets")
+    for name in [
+        "QWidget",
+        "QVBoxLayout",
+        "QHBoxLayout",
+        "QGridLayout",
+        "QLabel",
+        "QLineEdit",
+        "QPushButton",
+        "QTextEdit",
+        "QComboBox",
+        "QFileDialog",
+        "QGroupBox",
+        "QCheckBox",
+    ]:
+        setattr(qtwidgets, name, _DummyWidget)
+
     qtgui = types.ModuleType("PySide6.QtGui")
+    qtgui.QFont = _DummyFont
+    qtgui.QTextCursor = _DummyTextCursor
     qtgui.QImage = _DummyQImage
     qtgui.QColor = _DummyQColor
     qtgui.QPainter = _DummyQPainter
 
     pyside6 = types.ModuleType("PySide6")
     pyside6.QtCore = qtcore
+    pyside6.QtWidgets = qtwidgets
     pyside6.QtGui = qtgui
 
     pyfirmata2 = types.ModuleType("pyfirmata2")
@@ -86,6 +121,7 @@ def _install_test_stubs():
 
     sys.modules.setdefault("PySide6", pyside6)
     sys.modules.setdefault("PySide6.QtCore", qtcore)
+    sys.modules.setdefault("PySide6.QtWidgets", qtwidgets)
     sys.modules.setdefault("PySide6.QtGui", qtgui)
     sys.modules.setdefault("pyfirmata2", pyfirmata2)
     sys.modules.setdefault("serial", serial)
@@ -175,6 +211,34 @@ class ModuleSummaryEndianTest(unittest.TestCase):
 
         self.assertEqual([], keyboard.signal_module_status.emitted)
         self.assertTrue(keyboard.dbg.messages)
+
+    def test_module_slot_fields_are_always_little_endian(self):
+        payload = bytearray([7, QMKataKeybCmd.ID_MODULE, 3])
+        payload.extend(struct.pack("<I", 0x4D4F444C))
+        payload.extend(struct.pack("<H", 0x0001))
+        payload.extend(struct.pack("<I", 0x11223344))
+
+        keyboard = QMKataKeyboard.__new__(QMKataKeyboard)
+        keyboard.dbg = _FakeDbg()
+        keyboard.pack_endian = ">"
+        keyboard.sysex_response_seq = {}
+        keyboard._sysex_data_to_bytearray = lambda _data: payload
+        keyboard.signal_module_status = _FakeSignal()
+
+        keyboard.sysex_response_handler(0)
+
+        self.assertEqual(
+            [
+                {
+                    "type": "slot",
+                    "slot_id": 3,
+                    "magic": 0x4D4F444C,
+                    "flags": 0x0001,
+                    "hook_bitmap": 0x11223344,
+                }
+            ],
+            keyboard.signal_module_status.emitted,
+        )
 
 
 if __name__ == "__main__":
