@@ -4,7 +4,15 @@ MEMORY {
 }
 SECTIONS {
     .module_header : {
-        . = 32;  /* Reserve space for 32-byte header (host fills post-link) */
+        /* Emit 32 real bytes so objcopy keeps header padding in the raw binary. */
+        LONG(0)
+        LONG(0)
+        LONG(0)
+        LONG(0)
+        LONG(0)
+        LONG(0)
+        LONG(0)
+        LONG(0)
     } > MODULE
     .hook_table : ALIGN(4) {
         KEEP(*(.hook_table))
