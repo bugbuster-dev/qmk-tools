@@ -23,8 +23,8 @@ HOOK_NAMES = {
 }
 
 RESERVED_HOOK_NAMES = {
-    'reserved_init': 3,
-    'reserved_deinit': 4,
+    'init': 3,
+    'deinit': 4,
 }
 
 DISPLAY_HOOK_NAMES = {**HOOK_NAMES, **RESERVED_HOOK_NAMES}

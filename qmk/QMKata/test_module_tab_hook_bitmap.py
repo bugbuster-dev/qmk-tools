@@ -17,6 +17,11 @@ class _DummyWidget:
         pass
 
 
+class _DummyQObject:
+    def __init__(self, *args, **kwargs):
+        pass
+
+
 class _DummyFont:
     def __init__(self, *args, **kwargs):
         pass
@@ -24,6 +29,33 @@ class _DummyFont:
 
 class _DummyTextCursor:
     End = 0
+
+
+class _DummyQImage:
+    Format_RGB888 = 0
+    Format_BGR888 = 1
+
+
+class _DummyQColor:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def getRgb(self):
+        return (0, 0, 0, 0)
+
+    def rgb(self):
+        return 0
+
+
+class _DummyQPainter:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def drawImage(self, *args, **kwargs):
+        pass
+
+    def end(self):
+        pass
 
 
 class _DummyDebugTracer:
@@ -34,6 +66,7 @@ class _DummyDebugTracer:
 def _install_test_stubs():
     qtcore = types.ModuleType("PySide6.QtCore")
     qtcore.Qt = types.SimpleNamespace()
+    qtcore.QObject = _DummyQObject
     qtcore.Signal = _DummySignal
 
     qtwidgets = types.ModuleType("PySide6.QtWidgets")
@@ -56,6 +89,9 @@ def _install_test_stubs():
     qtgui = types.ModuleType("PySide6.QtGui")
     qtgui.QFont = _DummyFont
     qtgui.QTextCursor = _DummyTextCursor
+    qtgui.QImage = _DummyQImage
+    qtgui.QColor = _DummyQColor
+    qtgui.QPainter = _DummyQPainter
 
     pyside6 = types.ModuleType("PySide6")
     pyside6.QtCore = qtcore
@@ -109,7 +145,7 @@ class ModuleTabHookBitmapTest(unittest.TestCase):
         }
         tab.hook_checkboxes = [
             ("combo_should_trigger", _FakeCheckBox(False)),
-            ("reserved_init", _FakeCheckBox(False)),
+            ("init", _FakeCheckBox(False)),
         ]
 
         binary = tab._prepare_binary_for_load()
@@ -119,8 +155,8 @@ class ModuleTabHookBitmapTest(unittest.TestCase):
     def test_selected_hook_bitmap_maps_reserved_labels_to_reserved_bits(self):
         tab = ModuleTab.__new__(ModuleTab)
         tab.hook_checkboxes = [
-            ("reserved_init", _FakeCheckBox(True)),
-            ("reserved_deinit", _FakeCheckBox(True)),
+            ("init", _FakeCheckBox(True)),
+            ("deinit", _FakeCheckBox(True)),
             ("hook_5", _FakeCheckBox(False)),
         ]
 
