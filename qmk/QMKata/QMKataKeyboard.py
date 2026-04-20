@@ -838,11 +838,15 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
                     return
                 if buf[1] == 0xFF:
                     # GET summary response
-                    slot_count = 8
-                    expected_len = 2 + slot_count * 4
-                    if len(buf) < expected_len:
-                        dbg("module summary: short buffer len={}, expected={}", len(buf), expected_len)
+                    payload_len = len(buf) - 2
+                    if payload_len % 4 != 0:
+                        dbg(
+                            "module summary: invalid payload len={}, buf_len={}",
+                            payload_len,
+                            len(buf),
+                        )
                         return
+                    slot_count = payload_len // 4
                     magics = []
                     slots = []
                     for i in range(slot_count):

@@ -114,11 +114,14 @@ class _FakeSignal:
 
 
 class _FakeDbg:
-    def enabled(self, *_args, **_kwargs):
-        return False
+    def __init__(self):
+        self.messages = []
 
-    def tr(self, *_args, **_kwargs):
-        pass
+    def enabled(self, *_args, **_kwargs):
+        return True
+
+    def tr(self, *args, **kwargs):
+        self.messages.append((args, kwargs))
 
 
 class ModuleSummaryEndianTest(unittest.TestCase):
@@ -133,6 +136,7 @@ class ModuleSummaryEndianTest(unittest.TestCase):
             0x00000001,
             0xFFFFFFFF,
         ]
+        slot_count = len(magics)
         payload = bytearray([9, QMKataKeybCmd.ID_MODULE, 0xFF])
         for magic in magics:
             payload.extend(struct.pack("<I", magic))
@@ -150,12 +154,27 @@ class ModuleSummaryEndianTest(unittest.TestCase):
         self.assertEqual(
             {
                 "type": "summary",
-                "slot_count": 8,
+                "slot_count": slot_count,
                 "slots": [1, 0, 0, 1, 0, 0, 0, 0],
                 "magics": magics,
             },
             keyboard.signal_module_status.emitted[0],
         )
+
+    def test_module_summary_ignores_malformed_payload_length(self):
+        payload = bytearray([3, QMKataKeybCmd.ID_MODULE, 0xFF, 0x34, 0x12, 0x00])
+
+        keyboard = QMKataKeyboard.__new__(QMKataKeyboard)
+        keyboard.dbg = _FakeDbg()
+        keyboard.pack_endian = ">"
+        keyboard.sysex_response_seq = {}
+        keyboard._sysex_data_to_bytearray = lambda _data: payload
+        keyboard.signal_module_status = _FakeSignal()
+
+        keyboard.sysex_response_handler(0)
+
+        self.assertEqual([], keyboard.signal_module_status.emitted)
+        self.assertTrue(keyboard.dbg.messages)
 
 
 if __name__ == "__main__":
