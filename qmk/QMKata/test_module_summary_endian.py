@@ -240,6 +240,30 @@ class ModuleSummaryEndianTest(unittest.TestCase):
             keyboard.signal_module_status.emitted,
         )
 
+    def test_module_upload_offsets_are_always_little_endian(self):
+        keyboard = QMKataKeyboard.__new__(QMKataKeyboard)
+        keyboard.dbg = _FakeDbg()
+        keyboard.pack_endian = ">"
+        keyboard.MAX_LEN_SYSEX_DATA = 6
+
+        sent_packets = []
+
+        def fake_send_sysex_wait(_sysex_cmd, data):
+            sent_packets.append(bytes(data))
+            return bytes([0, 0])
+
+        keyboard.send_sysex_wait = fake_send_sysex_wait
+
+        self.assertTrue(keyboard.keyb_set_module(2, b"ABCD"))
+        self.assertEqual(
+            [
+                bytes([QMKataKeybCmd.ID_MODULE, 2, 0x00, 0x00, ord("A"), ord("B")]),
+                bytes([QMKataKeybCmd.ID_MODULE, 2, 0x02, 0x00, ord("C"), ord("D")]),
+                bytes([QMKataKeybCmd.ID_MODULE, 2, 0xFF, 0xFF]),
+            ],
+            sent_packets,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1593,7 +1593,7 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
             data = bytearray()
             data.append(QMKataKeybCmd.ID_MODULE)
             data.append(slot_id & 0xFF)
-            offset_packed = struct.pack(self.pack_endian + "H", offset)
+            offset_packed = struct.pack("<H", offset)
             data.extend(offset_packed)
             return data
 
