@@ -846,7 +846,7 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
                     magics = []
                     slots = []
                     for i in range(slot_count):
-                        magic = struct.unpack_from(self.pack_endian + "I", buf, 2 + i * 4)[0]
+                        magic = struct.unpack_from("<I", buf, 2 + i * 4)[0]
                         magics.append(magic)
                         slots.append(1 if magic == 0x4D4F444C else 0)
                     dbg("module summary: slot_count={}, slots={}, magics={}", slot_count, slots, magics)
