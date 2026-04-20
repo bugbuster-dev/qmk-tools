@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QFont, QTextCursor
 
 from DebugTracer import DebugTracer
-from ModuleBuild import ModuleBuild, HOOK_NAMES
+from ModuleBuild import ModuleBuild, HOOK_NAMES, hook_name_for_index, hook_index_for_name
 
 
 class ModuleTab(QWidget):
@@ -154,12 +154,7 @@ class ModuleTab(QWidget):
         hook_bitmap = 0
         for hook_name, checkbox in self.hook_checkboxes:
             if checkbox.isChecked():
-                hook_idx = HOOK_NAMES.get(hook_name)
-                if hook_idx is None and hook_name.startswith("hook_"):
-                    try:
-                        hook_idx = int(hook_name.split("_", 1)[1])
-                    except ValueError:
-                        hook_idx = None
+                hook_idx = hook_index_for_name(hook_name)
                 if hook_idx is not None:
                     hook_bitmap |= (1 << hook_idx)
         return hook_bitmap
@@ -167,8 +162,6 @@ class ModuleTab(QWidget):
     def _prepare_binary_for_load(self):
         binary = bytearray(self.last_build_result['binary'])
         hook_bitmap = self._selected_hook_bitmap()
-        if hook_bitmap == 0:
-            return None
         struct.pack_into("<I", binary, 12, hook_bitmap)
         return binary
 
@@ -213,7 +206,7 @@ class ModuleTab(QWidget):
 
         self.last_build_result = result
         self._rebuild_hook_checkboxes(result['hooks'])
-        self.load_button.setEnabled(bool(result['hooks']))
+        self.load_button.setEnabled(True)
         self.log(f"Build OK: {result['size']} bytes, hooks: {', '.join(result['hooks'])}")
         self.log(f"  hook_bitmap: 0x{result['hook_bitmap']:08X}")
         self.log(f"  fits_slot: {'yes' if result['fits_slot'] else 'no'}")
@@ -225,9 +218,6 @@ class ModuleTab(QWidget):
             return
         slot_id = self.slot_combo.currentData()
         binary = self._prepare_binary_for_load()
-        if binary is None:
-            self.log("Error: No hooks enabled for load")
-            return
         self.log(f"Loading module to slot {slot_id} ({len(binary)} bytes)...")
         self.signal_load_module.emit(slot_id, binary)
 
@@ -279,19 +269,9 @@ class ModuleTab(QWidget):
                     self.slot_labels[slot_id][0].setText(enabled)
                     # Decode hook names
                     hook_names = []
-                    for name, idx in HOOK_NAMES.items():
-                        if hook_bitmap & (1 << idx):
-                            hook_names.append(name)
-                    known_mask = 0
-                    for idx in HOOK_NAMES.values():
-                        known_mask |= (1 << idx)
-                    unknown_bits = hook_bitmap & ~known_mask
-                    bit_index = 0
-                    while unknown_bits:
-                        if unknown_bits & 1:
-                            hook_names.append(f"hook_{bit_index}")
-                        unknown_bits >>= 1
-                        bit_index += 1
+                    for bit_index in range(32):
+                        if hook_bitmap & (1 << bit_index):
+                            hook_names.append(hook_name_for_index(bit_index))
                     self.slot_labels[slot_id][1].setText(
                         ", ".join(hook_names) if hook_names else "none"
                     )

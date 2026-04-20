@@ -22,6 +22,32 @@ HOOK_NAMES = {
     'get_combo_term':       2,
 }
 
+RESERVED_HOOK_NAMES = {
+    'reserved_init': 3,
+    'reserved_deinit': 4,
+}
+
+DISPLAY_HOOK_NAMES = {**HOOK_NAMES, **RESERVED_HOOK_NAMES}
+
+
+def hook_name_for_index(index):
+    for name, idx in DISPLAY_HOOK_NAMES.items():
+        if idx == index:
+            return name
+    return f"hook_{index}"
+
+
+def hook_index_for_name(name):
+    hook_idx = DISPLAY_HOOK_NAMES.get(name)
+    if hook_idx is not None:
+        return hook_idx
+    if name.startswith("hook_"):
+        try:
+            return int(name.split("_", 1)[1])
+        except ValueError:
+            return None
+    return None
+
 
 class ModuleBuild:
     """Build pipeline for loadable keyboard modules.
@@ -217,13 +243,7 @@ class ModuleBuild:
             offset_val = struct.unpack_from("<I", hook_table_data, i * 4)[0]
             if offset_val != 0:
                 hook_bitmap |= (1 << i)
-                # Look up human-readable name
-                for name, idx in HOOK_NAMES.items():
-                    if idx == i:
-                        hooks.append(name)
-                        break
-                else:
-                    hooks.append(f"hook_{i}")
+                hooks.append(hook_name_for_index(i))
 
         # Build 32-byte header matching firmware module_header_t layout:
         #   uint32_t magic;          // offset 0

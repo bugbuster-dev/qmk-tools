@@ -102,6 +102,30 @@ class ModuleTabHookBitmapTest(unittest.TestCase):
 
         self.assertEqual(0x00000005, struct.unpack_from("<I", binary, 12)[0])
 
+    def test_prepare_binary_for_load_allows_zero_selected_hooks(self):
+        tab = ModuleTab.__new__(ModuleTab)
+        tab.last_build_result = {
+            "binary": bytes(32),
+        }
+        tab.hook_checkboxes = [
+            ("combo_should_trigger", _FakeCheckBox(False)),
+            ("reserved_init", _FakeCheckBox(False)),
+        ]
+
+        binary = tab._prepare_binary_for_load()
+
+        self.assertEqual(0x00000000, struct.unpack_from("<I", binary, 12)[0])
+
+    def test_selected_hook_bitmap_maps_reserved_labels_to_reserved_bits(self):
+        tab = ModuleTab.__new__(ModuleTab)
+        tab.hook_checkboxes = [
+            ("reserved_init", _FakeCheckBox(True)),
+            ("reserved_deinit", _FakeCheckBox(True)),
+            ("hook_5", _FakeCheckBox(False)),
+        ]
+
+        self.assertEqual(0x00000018, tab._selected_hook_bitmap())
+
 
 if __name__ == "__main__":
     unittest.main()
