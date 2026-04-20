@@ -59,6 +59,7 @@ from RGBVideoTab import RGBVideoTab
 from RGBAudioTab import RGBAudioTab
 from RGBAnimationTab import RGBAnimationTab, CodeTextEdit
 from RGBDynLDAnimationTab import RGBDynLDAnimationTab
+from ModuleTab import ModuleTab
 from LayerAutoSwitchTab import LayerAutoSwitchTab
 
 if __name__ != "__main__":
@@ -742,6 +743,9 @@ class MainWindow(QMainWindow):
         tab_widget.addTab(self.keyb_status_tab, "keyboard status")
         tab_widget.addTab(self.key_functions_tab, "key functions")
 
+        self.module_tab = ModuleTab(self.keyboard.keyboardModel, self.keyboard)
+        tab_widget.addTab(self.module_tab, "modules")
+
         self.setCentralWidget(tab_widget)
         # -----------------------------------------------------------
         # connect signals
@@ -818,6 +822,13 @@ class MainWindow(QMainWindow):
         self.key_functions_tab.leader_tab.signal_keyb_set_leader.connect(
             self.keyboard.keyb_set_leader
         )
+
+        # Module tab signals
+        self.keyboard.signal_module_status.connect(self.module_tab.update_module_status)
+        self.module_tab.signal_load_module.connect(self.keyboard.keyb_set_module)
+        self.module_tab.signal_unload_module.connect(self.keyboard.keyb_del_module)
+        self.module_tab.signal_get_module_summary.connect(self.keyboard.keyb_get_module_summary)
+        self.module_tab.signal_get_module.connect(self.keyboard.keyb_get_module)
 
         # -----------------------------------------------------------
         # window focus listener
