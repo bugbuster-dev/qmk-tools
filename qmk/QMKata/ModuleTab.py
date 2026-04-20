@@ -163,6 +163,10 @@ class ModuleTab(QWidget):
         binary = bytearray(self.last_build_result['binary'])
         hook_bitmap = self._selected_hook_bitmap()
         struct.pack_into("<I", binary, 12, hook_bitmap)
+        if not (hook_bitmap & (1 << 3)):
+            struct.pack_into("<I", binary, 20, 0)
+        if not (hook_bitmap & (1 << 4)):
+            struct.pack_into("<I", binary, 24, 0)
         return binary
 
     def build_module(self):

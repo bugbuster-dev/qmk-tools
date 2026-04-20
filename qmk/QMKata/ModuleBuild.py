@@ -238,12 +238,18 @@ class ModuleBuild:
         # Read hook table to determine hook_bitmap
         hook_table_data = raw_bin[MODULE_HOOK_TABLE_OFF:MODULE_HOOK_TABLE_OFF + MODULE_HOOK_MAX * 4]
         hook_bitmap = 0
+        init_off = 0
+        deinit_off = 0
         hooks = []
         for i in range(MODULE_HOOK_MAX):
             offset_val = struct.unpack_from("<I", hook_table_data, i * 4)[0]
             if offset_val != 0:
                 hook_bitmap |= (1 << i)
                 hooks.append(hook_name_for_index(i))
+                if i == 3:
+                    init_off = offset_val
+                elif i == 4:
+                    deinit_off = offset_val
 
         # Build 32-byte header matching firmware module_header_t layout:
         #   uint32_t magic;          // offset 0
@@ -262,8 +268,8 @@ class ModuleBuild:
             len(raw_bin),              # code_size
             hook_bitmap,               # hook_bitmap
             MODULE_HOOK_TABLE_OFF,     # hook_table_off
-            0,                         # init_off (no init)
-            0,                         # deinit_off (no deinit)
+            init_off,                  # init_off
+            deinit_off,                # deinit_off
             0,                         # reserved
         )
         assert len(header) == MODULE_HEADER_SIZE
