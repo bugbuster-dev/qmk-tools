@@ -61,7 +61,7 @@ class GccToolchain:
             toolchain_path, toolchain_prefix = self.find_toolchain_path()
 
         self.toolchain_path = toolchain_path
-        self.tool_names = ["gcc", "objcopy", "objdump"]  # todo extend as needed
+        self.tool_names = ["gcc", "objcopy", "objdump", "nm"]
         self.tool = {}
         self.triplet = {}
         exe_extension = ".exe" if os.name == "nt" else ""

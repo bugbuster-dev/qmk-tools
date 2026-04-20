@@ -8,7 +8,7 @@ from GccMapfile import GccMapfile
 
 
 # Must match firmware module_loader.h
-MODULE_HEADER_MAGIC   = 0x4D4F444C  # "MODL" in little-endian
+MODULE_HEADER_MAGIC   = 0x4D4F444C  # "MODL" as uint32 (bytes on disk: 4C 44 4F 4D)
 MODULE_HEADER_VERSION = 1
 MODULE_HEADER_SIZE    = 32
 MODULE_HOOK_TABLE_OFF = 32  # Hook table immediately follows header
@@ -99,6 +99,8 @@ class ModuleBuild:
             "-c",
             "-mcpu=cortex-m4",
             "-mthumb",
+            "-mfloat-abi=hard",
+            "-mfpu=fpv4-sp-d16",
             "-Os",
             "-ffreestanding",
             "-ffunction-sections",
@@ -121,7 +123,10 @@ class ModuleBuild:
         Returns True on success, False on failure (unresolvable symbols).
         """
         # Get undefined symbols using nm -u
-        nm_tool = self.toolchain.tool.get("gcc", "").replace("gcc", "nm")
+        nm_tool = self.toolchain.tool.get("nm")
+        if not nm_tool:
+            print("E: nm tool not found in toolchain")
+            return False
         try:
             result = subprocess.run(
                 [nm_tool, "-u", obj_file],
