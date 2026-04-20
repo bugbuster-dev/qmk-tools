@@ -825,8 +825,8 @@ class MainWindow(QMainWindow):
 
         # Module tab signals
         self.keyboard.signal_module_status.connect(self.module_tab.update_module_status)
-        self.module_tab.signal_load_module.connect(self.keyboard.keyb_set_module)
-        self.module_tab.signal_unload_module.connect(self.keyboard.keyb_del_module)
+        self.module_tab.signal_load_module.connect(self.on_module_load)
+        self.module_tab.signal_unload_module.connect(self.on_module_unload)
         self.module_tab.signal_get_module_summary.connect(self.keyboard.keyb_get_module_summary)
         self.module_tab.signal_get_module.connect(self.keyboard.keyb_get_module)
 
@@ -844,6 +844,21 @@ class MainWindow(QMainWindow):
         # -----------------------------------------------------------
         # start keyboard communication
         self.keyboard.start()
+        QtCore.QTimer.singleShot(250, self.module_tab.refresh_slots)
+
+    def on_module_load(self, slot_id, binary):
+        if self.keyboard.keyb_set_module(slot_id, binary):
+            self.module_tab.log(f"Load OK: slot {slot_id}")
+        else:
+            self.module_tab.log(f"Load FAILED: slot {slot_id}")
+        self.module_tab.refresh_slots()
+
+    def on_module_unload(self, slot_id):
+        if self.keyboard.keyb_del_module(slot_id):
+            self.module_tab.log(f"Unload OK: slot {slot_id}")
+        else:
+            self.module_tab.log(f"Unload FAILED: slot {slot_id}")
+        self.module_tab.refresh_slots()
 
     def closeEvent(self, event):
         try:

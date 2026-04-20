@@ -36,6 +36,7 @@ class ModuleTab(QWidget):
         source_layout.addWidget(QLabel("C source:"))
         self.source_input = QLineEdit()
         self.source_input.setPlaceholderText("path/to/module.c")
+        self.source_input.textChanged.connect(self.on_source_changed)
         source_layout.addWidget(self.source_input)
         self.browse_button = QPushButton("Browse...")
         self.browse_button.clicked.connect(self.browse_source)
@@ -85,6 +86,13 @@ class ModuleTab(QWidget):
         status_group.setLayout(self.status_grid)
         layout.addWidget(status_group)
 
+        limitation_label = QLabel(
+            "Note: loading a slot erases other modules in the same sector "
+            "(slots 0-3 share one sector, 4-7 share another)."
+        )
+        limitation_label.setWordWrap(True)
+        layout.addWidget(limitation_label)
+
         # --- Log area ---
         self.log_area = QTextEdit()
         self.log_area.setReadOnly(True)
@@ -108,6 +116,11 @@ class ModuleTab(QWidget):
         )
         if file_path:
             self.source_input.setText(file_path)
+
+    def on_source_changed(self):
+        if self.last_build_result is not None:
+            self.last_build_result = None
+        self.load_button.setEnabled(False)
 
     def build_module(self):
         """Build module from source file."""
@@ -187,6 +200,9 @@ class ModuleTab(QWidget):
                     self.slot_labels[i][0].setText(status_text)
                     if not status:
                         self.slot_labels[i][1].setText("—")
+            for i in range(len(slots), len(self.slot_labels)):
+                self.slot_labels[i][0].setText("—")
+                self.slot_labels[i][1].setText("—")
             # Request details for occupied slots
             for i, status in enumerate(slots):
                 if status:
