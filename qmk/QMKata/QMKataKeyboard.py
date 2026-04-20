@@ -836,10 +836,13 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
                     self.sysex_response_seq[seqnum] = buf[1]
                     dbg("module ACK response: {}, rc={}", buf, buf[1])
                     return
-                if len(buf) >= 10 and buf[1] == 0xFF:
+                if len(buf) >= 3 and buf[1] == 0xFF:
                     # GET summary response
                     slot_count = buf[2]
-                    slots = list(buf[3:3 + slot_count])
+                    actual_count = min(slot_count, len(buf) - 3)
+                    slots = list(buf[3:3 + actual_count])
+                    if actual_count != slot_count:
+                        dbg("module summary: WARNING slot_count={} but only {} slots in buffer", slot_count, actual_count)
                     dbg("module summary: slot_count={}, slots={}", slot_count, slots)
                     self.signal_module_status.emit(
                         {'type': 'summary', 'slot_count': slot_count, 'slots': slots}
@@ -1568,13 +1571,15 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
     def keyb_set_module(self, slot_id, buf):
         """Upload module binary to keyboard slot via chunked SysEx."""
+        if self.dbg.enabled("SYSEX_COMMAND"):
+            self.dbg.tr("SYSEX_COMMAND", "keyb_set_module: slot={} len={}", slot_id, len(buf))
 
         def module_data_hdr(slot_id, offset):
             data = bytearray()
             data.append(QMKataKeybCmd.ID_MODULE)
             data.append(slot_id & 0xFF)
-            data.append(offset & 0xFF)
-            data.append((offset >> 8) & 0xFF)
+            offset_packed = struct.pack(self.pack_endian + "H", offset)
+            data.extend(offset_packed)
             return data
 
         data = module_data_hdr(slot_id, 0)
