@@ -272,6 +272,8 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
             self.dbg = DebugTracer(zones={"D": 0}, obj=self)
 
             self.keyboard = keyboard
+            self.firmware_path = firmware_path
+            self._module_build = None
             self.pack_endian = "<"
             try:
                 if self.keyboard.keyboardModel.MCU[2].startswith("be"):
@@ -455,6 +457,36 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
         # load function
         def load_fun(self, fun_id, code):
             self.keyboard.keyb_set_dynld_function(fun_id, code)
+
+        def _module_builder(self):
+            if not self.toolchain:
+                return None
+            if self._module_build is None:
+                from ModuleBuild import ModuleBuild
+
+                self._module_build = ModuleBuild(
+                    self.toolchain,
+                    mapfile=self.mapfile,
+                )
+            return self._module_build
+
+        def build_module(self, source_file):
+            builder = self._module_builder()
+            if not builder:
+                return None
+            source_path = Path(source_file)
+            if not source_path.is_absolute():
+                source_path = Path(__file__).resolve().parent / source_path
+            return builder.build(str(source_path))
+
+        def load_module(self, slot_id, binary_or_result):
+            binary = binary_or_result
+            if isinstance(binary_or_result, dict):
+                binary = binary_or_result["binary"]
+            return self.keyboard.keyb_set_module(slot_id, binary)
+
+        def unload_module(self, slot_id):
+            return self.keyboard.keyb_del_module(slot_id)
 
         def set(self, key, val):
             self.dbg.tr("E", "todo")
