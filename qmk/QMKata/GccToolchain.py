@@ -128,6 +128,43 @@ class GccToolchain:
             print(f"E: compilation nok: {e.stderr.decode()}")
             return False
 
+    def link(self, object_files, linker_script, output_file, extra_ld_files=None):
+        """Link object files with a linker script.
+        
+        Args:
+            object_files: list of .o file paths
+            linker_script: path to .ld linker script
+            output_file: path for output .elf file
+            extra_ld_files: optional list of additional .ld files (e.g., symbol definitions)
+        Returns:
+            True on success, False on failure
+        """
+        gcc = self.tool["gcc"]
+        link_command = [gcc, "-nostdlib", "-nostartfiles"]
+        link_command.extend(["-T", linker_script])
+        if extra_ld_files:
+            for ld_file in extra_ld_files:
+                link_command.extend(["-T", ld_file])
+        link_command.extend(["-o", output_file])
+        if isinstance(object_files, str):
+            object_files = [object_files]
+        link_command.extend(object_files)
+        if self.debug:
+            print(f"{link_command}")
+        try:
+            result = subprocess.run(
+                link_command,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            if self.debug:
+                print(f"linking ok")
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"E: linking nok: {e.stderr.decode()}")
+            return False
+
     def elf2bin(self, elf_file, bin_file=""):
         if not bin_file:
             bin_file = elf_file.replace(".elf", ".bin")
