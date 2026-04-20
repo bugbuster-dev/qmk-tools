@@ -120,9 +120,10 @@ class _FakeKeyboard:
 class _FakeModuleBuild:
     instances = []
 
-    def __init__(self, toolchain, mapfile=None):
+    def __init__(self, toolchain, mapfile=None, firmware_path=None):
         self.toolchain = toolchain
         self.mapfile = mapfile
+        self.firmware_path = firmware_path
         self.build_calls = []
         _FakeModuleBuild.instances.append(self)
 
@@ -146,7 +147,7 @@ class KeybScriptModuleHelpersTest(unittest.TestCase):
             sys.modules["ModuleBuild"] = self._orig_module
 
     def _env(self):
-        env = QMKataKeyboard.KeybScriptEnv(_FakeKeyboard(), firmware_path=None)
+        env = QMKataKeyboard.KeybScriptEnv(_FakeKeyboard(), firmware_path=str(ROOT))
         env.toolchain = object()
         env.mapfile = object()
         return env
@@ -163,6 +164,7 @@ class KeybScriptModuleHelpersTest(unittest.TestCase):
         self.assertIs(env._module_builder(), _FakeModuleBuild.instances[0])
         self.assertEqual(env.toolchain, _FakeModuleBuild.instances[0].toolchain)
         self.assertEqual(env.mapfile, _FakeModuleBuild.instances[0].mapfile)
+        self.assertEqual(str(ROOT), _FakeModuleBuild.instances[0].firmware_path)
         self.assertEqual(
             [
                 str(ROOT / "module_examples/combo_layer_filter.c"),
@@ -170,6 +172,15 @@ class KeybScriptModuleHelpersTest(unittest.TestCase):
             ],
             _FakeModuleBuild.instances[0].build_calls,
         )
+
+    def test_build_module_preserves_absolute_paths(self):
+        env = self._env()
+        source = str(ROOT / "module_examples/combo_layer_filter.c")
+
+        result = env.build_module(source)
+
+        self.assertEqual(b"BIN", result["binary"])
+        self.assertEqual([source], _FakeModuleBuild.instances[0].build_calls)
 
     def test_build_module_returns_none_without_toolchain(self):
         env = self._env()

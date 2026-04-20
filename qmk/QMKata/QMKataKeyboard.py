@@ -467,6 +467,7 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 self._module_build = ModuleBuild(
                     self.toolchain,
                     mapfile=self.mapfile,
+                    firmware_path=self.firmware_path,
                 )
             return self._module_build
 
