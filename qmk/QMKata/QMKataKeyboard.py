@@ -146,6 +146,7 @@ class QMKataKeybCmd_v0_3(QMKataKeybCmd_v0_2):
     ID_COMBO = 11  # EEPROM-backed combo definitions
     ID_TAP_DANCE = 12
     ID_LEADER = 13
+    ID_MODULE = 14
 
 
 # use always latest, no plan for backward compatibility support for now
@@ -171,6 +172,7 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
     signal_combo = Signal(object)
     signal_tap_dance = Signal(int, object)  # (slot, tap_dance_def bytes)
     signal_leader = Signal(int, object)  # (slot, leader_def bytes)
+    signal_module_status = Signal(object)
 
     # -------------------------------------------------------------------------------
     MAX_RGB_VAL = 255
@@ -827,6 +829,33 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 if len(buf) >= 14:  # 1 (id) + 1 (slot) + 12 (leader_def_t)
                     slot = buf[1]
                     self.signal_leader.emit(slot, bytes(buf[2:14]))
+                return
+            if buf[0] == QMKataKeybCmd.ID_MODULE:
+                if len(buf) <= 2:
+                    # Chunk ACK or DEL response
+                    self.sysex_response_seq[seqnum] = buf[1]
+                    dbg("module ACK response: {}, rc={}", buf, buf[1])
+                    return
+                if len(buf) >= 10 and buf[1] == 0xFF:
+                    # GET summary response
+                    slot_count = buf[2]
+                    slots = list(buf[3:3 + slot_count])
+                    dbg("module summary: slot_count={}, slots={}", slot_count, slots)
+                    self.signal_module_status.emit(
+                        {'type': 'summary', 'slot_count': slot_count, 'slots': slots}
+                    )
+                    return
+                # GET single slot response
+                slot_id = buf[1]
+                magic = struct.unpack_from(self.pack_endian + "I", buf, 2)[0]
+                flags = struct.unpack_from(self.pack_endian + "H", buf, 6)[0]
+                hook_bitmap = struct.unpack_from(self.pack_endian + "I", buf, 8)[0]
+                dbg("module slot: id={}, magic={:#x}, flags={:#x}, hook_bitmap={:#x}",
+                    slot_id, magic, flags, hook_bitmap)
+                self.signal_module_status.emit(
+                    {'type': 'slot', 'slot_id': slot_id, 'magic': magic,
+                     'flags': flags, 'hook_bitmap': hook_bitmap}
+                )
                 return
             if buf[0] == QMKataKeybCmd.ID_STRUCT_LAYOUT:
                 layout_id = buf[1]
@@ -1536,3 +1565,73 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
             payload += struct.pack(self.pack_endian + "H", kc)
         payload += struct.pack(self.pack_endian + "H", keycode)
         self.send_sysex(QMKataKeybCmd.SET, bytes([QMKataKeybCmd.ID_LEADER]) + payload)
+
+    def keyb_set_module(self, slot_id, buf):
+        """Upload module binary to keyboard slot via chunked SysEx."""
+
+        def module_data_hdr(slot_id, offset):
+            data = bytearray()
+            data.append(QMKataKeybCmd.ID_MODULE)
+            data.append(slot_id & 0xFF)
+            data.append(offset & 0xFF)
+            data.append((offset >> 8) & 0xFF)
+            return data
+
+        data = module_data_hdr(slot_id, 0)
+        data_hdr_len = len(data)
+        i = 0
+        while i < len(buf):
+            if len(data) >= self.MAX_LEN_SYSEX_DATA:
+                if not (response := self.send_sysex_wait(QMKataKeybCmd.SET, data)):
+                    self.dbg.tr("E", "keyb_set_module: send failed")
+                    return False
+                if response[1] != 0:
+                    self.dbg.tr("E", "keyb_set_module: error {}", response[1])
+                    return False
+                offset = i
+                data = module_data_hdr(slot_id, offset)
+            data.append(buf[i])
+            i += 1
+
+        # Send remaining data
+        if len(data) > data_hdr_len:
+            if not (response := self.send_sysex_wait(QMKataKeybCmd.SET, data)):
+                self.dbg.tr("E", "keyb_set_module: send failed (last chunk)")
+                return False
+            if response[1] != 0:
+                self.dbg.tr("E", "keyb_set_module: error {} (last chunk)", response[1])
+                return False
+
+        # Finalize: offset=0xFFFF signals end-of-data + commit to flash
+        data = module_data_hdr(slot_id, 0xFFFF)
+        if not (response := self.send_sysex_wait(QMKataKeybCmd.SET, data)):
+            self.dbg.tr("E", "keyb_set_module: finalize send failed")
+            return False
+        if response[1] != 0:
+            self.dbg.tr("E", "keyb_set_module: finalize error {}", response[1])
+            return False
+        return True
+
+    def keyb_get_module_summary(self):
+        """Request summary of all module slots. Response via signal_module_status."""
+        self.dbg.tr("SYSEX_COMMAND", "keyb_get_module_summary")
+        data = bytearray([QMKataKeybCmd.ID_MODULE, 0xFF])
+        self.send_sysex(QMKataKeybCmd.GET, data)
+
+    def keyb_get_module(self, slot_id):
+        """Request details of a specific module slot. Response via signal_module_status."""
+        self.dbg.tr("SYSEX_COMMAND", "keyb_get_module: slot={}", slot_id)
+        data = bytearray([QMKataKeybCmd.ID_MODULE, slot_id & 0xFF])
+        self.send_sysex(QMKataKeybCmd.GET, data)
+
+    def keyb_del_module(self, slot_id):
+        """Unload module from slot. Returns True on success."""
+        self.dbg.tr("SYSEX_COMMAND", "keyb_del_module: slot={}", slot_id)
+        data = bytearray([QMKataKeybCmd.ID_MODULE, slot_id & 0xFF])
+        if not (response := self.send_sysex_wait(QMKataKeybCmd.DEL, data)):
+            self.dbg.tr("E", "keyb_del_module: send failed")
+            return False
+        if response[1] != 0:
+            self.dbg.tr("E", "keyb_del_module: error {}", response[1])
+            return False
+        return True
