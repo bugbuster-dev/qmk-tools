@@ -1,4 +1,5 @@
 import os
+import re
 import struct
 import subprocess
 import tempfile
@@ -17,9 +18,15 @@ MODULE_FLASH_SLOT_SIZE = 0x1000
 
 # Hook name → index mapping (human-readable)
 HOOK_NAMES = {
-    'combo_should_trigger': 0,
-    'process_combo_event':  1,
-    'get_combo_term':       2,
+    'combo_should_trigger':         0,
+    'process_combo_event':          1,
+    'get_combo_term':               2,
+    'get_combo_must_hold':          5,
+    'get_combo_must_tap':           6,
+    'get_combo_must_press_in_order': 7,
+    'process_combo_key_release':    8,
+    'process_combo_key_repress':    9,
+    'combo_ref_from_layer':         10,
 }
 
 RESERVED_HOOK_NAMES = {
@@ -99,6 +106,10 @@ class ModuleBuild:
             # Step 1: Compile with module-specific options
             if not self._compile(source_file, obj_file):
                 self.last_error = "compile failed"
+                return None
+
+            # Step 1.5: Reject writable module sections (.data/.bss/etc.)
+            if not self._validate_no_writable_sections(obj_file):
                 return None
 
             # Step 2: Resolve external symbols → generate symbol .ld file
@@ -220,6 +231,49 @@ class ModuleBuild:
             f.write("/* Auto-resolved external symbols from firmware .map */\n")
             for sym, addr in resolved:
                 f.write(f"PROVIDE({sym} = {hex(addr)});\n")
+
+        return True
+
+    def _validate_no_writable_sections(self, obj_file):
+        """Reject module objects containing writable global/static sections."""
+        objdump_tool = self.toolchain.tool.get("objdump")
+        if not objdump_tool:
+            self.last_error = "module section validation failed"
+            return False
+
+        try:
+            result = subprocess.run(
+                [objdump_tool, "-h", obj_file],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            print(f"E: objdump section inspection failed: {e}")
+            self.last_error = "module section validation failed"
+            return False
+
+        writable_prefixes = (".data", ".bss", ".sdata", ".sbss", ".tdata", ".tbss")
+        offenders = []
+        section_line = re.compile(r"^\s*\d+\s+(\S+)\s+([0-9A-Fa-f]+)\s+")
+
+        for line in result.stdout.decode().splitlines():
+            m = section_line.match(line)
+            if not m:
+                continue
+
+            sec_name = m.group(1)
+            sec_size = int(m.group(2), 16)
+            if sec_size == 0:
+                continue
+
+            if sec_name.startswith(writable_prefixes):
+                offenders.append((sec_name, sec_size))
+
+        if offenders:
+            names = ", ".join(f"{name}(0x{size:x})" for name, size in offenders)
+            self.last_error = f"module contains writable sections: {names}"
+            return False
 
         return True
 

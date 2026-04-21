@@ -15,9 +15,37 @@ class ModuleApiContractTest(unittest.TestCase):
                 "combo_should_trigger": 0,
                 "process_combo_event": 1,
                 "get_combo_term": 2,
+                "get_combo_must_hold": 5,
+                "get_combo_must_tap": 6,
+                "get_combo_must_press_in_order": 7,
+                "process_combo_key_release": 8,
+                "process_combo_key_repress": 9,
+                "combo_ref_from_layer": 10,
             },
             HOOK_NAMES,
         )
+
+    def test_hook_indices_match_module_api_header(self):
+        header = MODULE_API.read_text(encoding="ascii")
+        expected_defines = {
+            "MODULE_HOOK_COMBO_SHOULD_TRIGGER": 0,
+            "MODULE_HOOK_PROCESS_COMBO_EVENT": 1,
+            "MODULE_HOOK_GET_COMBO_TERM": 2,
+            "MODULE_HOOK_INIT": 3,
+            "MODULE_HOOK_DEINIT": 4,
+            "MODULE_HOOK_GET_COMBO_MUST_HOLD": 5,
+            "MODULE_HOOK_GET_COMBO_MUST_TAP": 6,
+            "MODULE_HOOK_GET_COMBO_MUST_PRESS_IN_ORDER": 7,
+            "MODULE_HOOK_PROCESS_COMBO_KEY_RELEASE": 8,
+            "MODULE_HOOK_PROCESS_COMBO_KEY_REPRESS": 9,
+            "MODULE_HOOK_COMBO_REF_FROM_LAYER": 10,
+            "MODULE_HOOK_MAX": 16,
+        }
+        import re
+        for name, expected in expected_defines.items():
+            m = re.search(rf"#define\s+{name}\s+(\d+)", header)
+            self.assertIsNotNone(m, f"{name} missing from module_api.h")
+            self.assertEqual(expected, int(m.group(1)), f"{name} index mismatch")
 
     def test_module_api_uses_layout_compatible_stubs(self):
         header = MODULE_API.read_text(encoding="ascii")

@@ -5,12 +5,18 @@
 #include <stdbool.h>
 
 /* Hook indices - must match firmware module_loader.h */
-#define MODULE_HOOK_COMBO_SHOULD_TRIGGER  0
-#define MODULE_HOOK_PROCESS_COMBO_EVENT   1
-#define MODULE_HOOK_GET_COMBO_TERM        2
-#define MODULE_HOOK_INIT                  3
-#define MODULE_HOOK_DEINIT                4
-#define MODULE_HOOK_MAX                   16
+#define MODULE_HOOK_COMBO_SHOULD_TRIGGER           0
+#define MODULE_HOOK_PROCESS_COMBO_EVENT            1
+#define MODULE_HOOK_GET_COMBO_TERM                 2
+#define MODULE_HOOK_INIT                           3
+#define MODULE_HOOK_DEINIT                         4
+#define MODULE_HOOK_GET_COMBO_MUST_HOLD            5
+#define MODULE_HOOK_GET_COMBO_MUST_TAP             6
+#define MODULE_HOOK_GET_COMBO_MUST_PRESS_IN_ORDER  7
+#define MODULE_HOOK_PROCESS_COMBO_KEY_RELEASE      8
+#define MODULE_HOOK_PROCESS_COMBO_KEY_REPRESS      9
+#define MODULE_HOOK_COMBO_REF_FROM_LAYER          10
+#define MODULE_HOOK_MAX                           16
 
 /* Place the hook table in the .hook_table section */
 #define MODULE_HOOK_TABLE __attribute__((section(".hook_table"), used))
