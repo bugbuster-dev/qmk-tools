@@ -30,5 +30,8 @@ SECTIONS {
         *(.comment)
         *(.ARM.attributes)
         *(.ARM.exidx*)
+        *(.ARM.extab*)
+        *(.eh_frame*)
+        *(.gnu.linkonce.armexidx.*)
     }
 }

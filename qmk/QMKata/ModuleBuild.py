@@ -150,6 +150,15 @@ class ModuleBuild:
             "-ffunction-sections",
             "-fdata-sections",
             "-fno-common",
+            # Suppress exception unwind metadata. The module linker script
+            # discards .ARM.exidx/.ARM.extab, so any compiler-emitted
+            # unwind references would become dangling at runtime. These
+            # flags guarantee no such metadata is generated in the first
+            # place, preventing undefined behavior if module code ever
+            # pulls in helpers that touch the unwind tables.
+            "-fno-unwind-tables",
+            "-fno-asynchronous-unwind-tables",
+            "-fno-exceptions",
             "-Wall",
             "-Werror",
             "-std=gnu11",
