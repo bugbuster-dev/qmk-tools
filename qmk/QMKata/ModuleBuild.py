@@ -3,6 +3,7 @@ import re
 import struct
 import subprocess
 import tempfile
+import zlib
 
 from GccToolchain import GccToolchain, CompilerOptions
 from GccMapfile import GccMapfile
@@ -323,7 +324,7 @@ class ModuleBuild:
         #   uint32_t hook_table_off; // offset 16
         #   uint32_t init_off;       // offset 20
         #   uint32_t deinit_off;     // offset 24
-        #   uint32_t reserved;       // offset 28
+        #   uint32_t crc32;          // offset 28 (filled in below)
         header = struct.pack("<I H H I I I I I I",
             MODULE_HEADER_MAGIC,       # magic
             MODULE_HEADER_VERSION,     # version
@@ -333,12 +334,28 @@ class ModuleBuild:
             MODULE_HOOK_TABLE_OFF,     # hook_table_off
             init_off,                  # init_off
             deinit_off,                # deinit_off
-            0,                         # reserved
+            0,                         # crc32 placeholder, patched below
         )
         assert len(header) == MODULE_HEADER_SIZE
 
         # Replace first 32 bytes of binary with our header
-        final_bin = header + raw_bin[MODULE_HEADER_SIZE:]
+        final_bin = bytearray(header) + raw_bin[MODULE_HEADER_SIZE:]
+
+        # Compute CRC-32/ISO-HDLC (zlib-compatible) over the whole binary
+        # with the 4-byte crc32 field held at zero, then patch the result
+        # into the header. The firmware uses the same algorithm and the
+        # same "crc field reads as zero during computation" convention,
+        # so a match at load/boot time means accidental corruption of the
+        # flashed bytes (transmission error, interrupted erase, bit rot)
+        # is detected with ~2**-32 false-negative probability. This is
+        # NOT an authenticity check — CRC-32 is trivially forgeable.
+        # See validate_module_crc() in module_loader.c.
+        crc_off = MODULE_HEADER_SIZE - 4
+        assert bytes(final_bin[crc_off:crc_off + 4]) == b"\x00\x00\x00\x00"
+        crc_value = zlib.crc32(bytes(final_bin)) & 0xFFFFFFFF
+        struct.pack_into("<I", final_bin, crc_off, crc_value)
+        final_bin = bytes(final_bin)
+
         fits_slot = len(final_bin) <= MODULE_FLASH_SLOT_SIZE
 
         if not fits_slot:

@@ -1,4 +1,5 @@
 import struct
+import zlib
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -9,7 +10,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QFont, QTextCursor
 
 from DebugTracer import DebugTracer
-from ModuleBuild import ModuleBuild, HOOK_NAMES, hook_name_for_index, hook_index_for_name
+from ModuleBuild import ModuleBuild, HOOK_NAMES, MODULE_HEADER_SIZE, hook_name_for_index, hook_index_for_name
 
 
 class ModuleTab(QWidget):
@@ -167,6 +168,18 @@ class ModuleTab(QWidget):
             struct.pack_into("<I", binary, 20, 0)
         if not (hook_bitmap & (1 << 4)):
             struct.pack_into("<I", binary, 24, 0)
+
+        # We just mutated hook_bitmap / init_off / deinit_off, which
+        # invalidates the CRC written by ModuleBuild._assemble. Recompute
+        # it with the crc32 field (last 4 bytes of the 32-byte header)
+        # zeroed so the result matches what validate_module_crc() on the
+        # device will compute. Without this, the firmware rejects any
+        # module whose UI-selected hook set differs from the build-time
+        # default.
+        crc_off = MODULE_HEADER_SIZE - 4
+        struct.pack_into("<I", binary, crc_off, 0)
+        crc_value = zlib.crc32(bytes(binary)) & 0xFFFFFFFF
+        struct.pack_into("<I", binary, crc_off, crc_value)
         return binary
 
     def build_module(self):

@@ -2,6 +2,7 @@ import struct
 import sys
 import types
 import unittest
+import zlib
 
 from ModuleBuild import (
     MODULE_HEADER_MAGIC,
@@ -216,6 +217,64 @@ class ModuleTabHookBitmapTest(unittest.TestCase):
         ]
 
         self.assertEqual(0x00000018, tab._selected_hook_bitmap())
+
+
+def _recompute_crc(binary):
+    """Reference CRC that must match validate_module_crc() in firmware:
+    zlib.crc32 over the whole binary with the 4-byte crc32 field
+    (last 4 bytes of the 32-byte header) held at zero."""
+    buf = bytearray(binary)
+    crc_off = MODULE_HEADER_SIZE - 4
+    struct.pack_into("<I", buf, crc_off, 0)
+    return zlib.crc32(bytes(buf)) & 0xFFFFFFFF
+
+
+class ModuleCrcTest(unittest.TestCase):
+    def test_assemble_writes_valid_crc_over_entire_binary(self):
+        # A non-trivial body so the CRC depends on more than the header.
+        body_size = MODULE_HOOK_MAX * 4 + 128
+        raw_bin = bytearray(MODULE_HEADER_SIZE + body_size)
+        for i in range(body_size):
+            raw_bin[MODULE_HEADER_SIZE + i] = (i * 37 + 11) & 0xFF
+
+        result = ModuleBuild(_FakeToolchain())._assemble(bytes(raw_bin))
+        self.assertIsNotNone(result)
+        binary = result["binary"]
+
+        stored_crc = struct.unpack_from("<I", binary, MODULE_HEADER_SIZE - 4)[0]
+        self.assertEqual(stored_crc, _recompute_crc(binary))
+
+    def test_prepare_binary_for_load_keeps_crc_valid_after_bitmap_patch(self):
+        # Simulate a post-build binary: assemble with body, then let the UI
+        # flip hook selections, which rewrites hook_bitmap/init/deinit.
+        raw_bin = bytearray(MODULE_HEADER_SIZE + MODULE_HOOK_MAX * 4 + 64)
+        struct.pack_into("<I", raw_bin, MODULE_HOOK_TABLE_OFF + (3 * 4), 0x44)
+        struct.pack_into("<I", raw_bin, MODULE_HOOK_TABLE_OFF + (4 * 4), 0x88)
+        # Fill body with arbitrary bytes so CRC is sensitive to content.
+        for i in range(64):
+            raw_bin[MODULE_HEADER_SIZE + MODULE_HOOK_MAX * 4 + i] = (i ^ 0x5A) & 0xFF
+
+        built = ModuleBuild(_FakeToolchain())._assemble(bytes(raw_bin))
+        self.assertIsNotNone(built)
+
+        tab = ModuleTab.__new__(ModuleTab)
+        tab.last_build_result = built
+        # Deselect init/deinit so _prepare_binary_for_load must zero
+        # offsets 20 and 24, exercising the CRC-invalidation path.
+        tab.hook_checkboxes = [
+            ("combo_should_trigger", _FakeCheckBox(True)),
+            ("init", _FakeCheckBox(False)),
+            ("deinit", _FakeCheckBox(False)),
+        ]
+        tab.log = lambda _message: None
+
+        prepared = tab._prepare_binary_for_load()
+
+        stored_crc = struct.unpack_from("<I", prepared, MODULE_HEADER_SIZE - 4)[0]
+        self.assertEqual(stored_crc, _recompute_crc(prepared))
+        # Sanity: bytes actually changed relative to the built binary, so
+        # the CRC had to be recomputed (not just copied forward).
+        self.assertNotEqual(bytes(built["binary"]), bytes(prepared))
 
 
 if __name__ == "__main__":
