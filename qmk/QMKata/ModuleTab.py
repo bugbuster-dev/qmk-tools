@@ -265,12 +265,14 @@ class ModuleTab(QWidget):
         elif msg_type == 'slot':
             slot_id = data.get('slot_id', 0)
             magic = data.get('magic', 0)
-            flags = data.get('flags', 0)
+            # flags (data['flags']) is reserved in the current module header
+            # format; firmware ignores it and the host always sends 0. The
+            # status label set by the 'summary' branch ("Occupied") already
+            # conveys everything the user can act on, so we do not override
+            # it here.
             hook_bitmap = data.get('hook_bitmap', 0)
             if slot_id < len(self.slot_labels):
                 if magic == 0x4D4F444C:  # MODULE_HEADER_MAGIC
-                    enabled = "Enabled" if (flags & 1) else "Disabled"
-                    self.slot_labels[slot_id][0].setText(enabled)
                     # Decode hook names
                     hook_names = []
                     for bit_index in range(32):

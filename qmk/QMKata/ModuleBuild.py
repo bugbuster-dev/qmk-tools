@@ -327,7 +327,7 @@ class ModuleBuild:
         header = struct.pack("<I H H I I I I I I",
             MODULE_HEADER_MAGIC,       # magic
             MODULE_HEADER_VERSION,     # version
-            0x0001,                    # flags: enabled
+            0x0000,                    # flags: reserved (firmware ignores)
             len(raw_bin),              # code_size
             hook_bitmap,               # hook_bitmap
             MODULE_HOOK_TABLE_OFF,     # hook_table_off
