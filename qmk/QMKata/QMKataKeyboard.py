@@ -1618,45 +1618,48 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
         self.send_sysex(QMKataKeybCmd.SET, bytes([QMKataKeybCmd.ID_LEADER]) + payload)
 
     def keyb_set_module(self, slot_id, buf):
-        """Upload module binary to keyboard slot via chunked SysEx."""
+        """Upload module binary to keyboard slot via chunked SysEx.
+
+        Wire format per chunk (after SysEx framing):
+            [ID_MODULE, slot, off_lo, off_hi, declared_len, payload...]
+        `declared_len` is the exact number of payload bytes in the chunk and
+        lets the firmware ignore any trailing SysEx terminator / HID report
+        padding that follows the logical message on the wire.
+
+        Finalize: `[ID_MODULE, slot, 0xFF, 0xFF, 0x00]` (no payload).
+        """
         if self.dbg.enabled("SYSEX_COMMAND"):
             self.dbg.tr("SYSEX_COMMAND", "keyb_set_module: slot={} len={}", slot_id, len(buf))
 
-        def module_data_hdr(slot_id, offset):
+        # 5 header bytes consumed per chunk; rest is payload.
+        MAX_PAYLOAD = self.MAX_LEN_SYSEX_DATA - 5
+        if MAX_PAYLOAD <= 0:
+            self.dbg.tr("E", "keyb_set_module: MAX_LEN_SYSEX_DATA too small")
+            return False
+
+        def chunk_header(slot_id, offset, declared_len):
             data = bytearray()
             data.append(QMKataKeybCmd.ID_MODULE)
             data.append(slot_id & 0xFF)
-            offset_packed = struct.pack("<H", offset)
-            data.extend(offset_packed)
+            data.extend(struct.pack("<H", offset))
+            data.append(declared_len & 0xFF)
             return data
 
-        data = module_data_hdr(slot_id, 0)
-        data_hdr_len = len(data)
-        i = 0
-        while i < len(buf):
-            if len(data) >= self.MAX_LEN_SYSEX_DATA:
-                if not (response := self.send_sysex_wait(QMKataKeybCmd.SET, data)):
-                    self.dbg.tr("E", "keyb_set_module: send failed")
-                    return False
-                if response[1] != 0:
-                    self.dbg.tr("E", "keyb_set_module: error {}", response[1])
-                    return False
-                offset = i
-                data = module_data_hdr(slot_id, offset)
-            data.append(buf[i])
-            i += 1
-
-        # Send remaining data
-        if len(data) > data_hdr_len:
+        offset = 0
+        while offset < len(buf):
+            chunk = buf[offset : offset + MAX_PAYLOAD]
+            data = chunk_header(slot_id, offset, len(chunk))
+            data.extend(chunk)
             if not (response := self.send_sysex_wait(QMKataKeybCmd.SET, data)):
-                self.dbg.tr("E", "keyb_set_module: send failed (last chunk)")
+                self.dbg.tr("E", "keyb_set_module: send failed at offset {}", offset)
                 return False
             if response[1] != 0:
-                self.dbg.tr("E", "keyb_set_module: error {} (last chunk)", response[1])
+                self.dbg.tr("E", "keyb_set_module: error {} at offset {}", response[1], offset)
                 return False
+            offset += len(chunk)
 
-        # Finalize: offset=0xFFFF signals end-of-data + commit to flash
-        data = module_data_hdr(slot_id, 0xFFFF)
+        # Finalize: offset=0xFFFF signals end-of-data + commit to flash.
+        data = chunk_header(slot_id, 0xFFFF, 0)
         if not (response := self.send_sysex_wait(QMKataKeybCmd.SET, data)):
             self.dbg.tr("E", "keyb_set_module: finalize send failed")
             return False

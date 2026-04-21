@@ -244,7 +244,7 @@ class ModuleSummaryEndianTest(unittest.TestCase):
         keyboard = QMKataKeyboard.__new__(QMKataKeyboard)
         keyboard.dbg = _FakeDbg()
         keyboard.pack_endian = ">"
-        keyboard.MAX_LEN_SYSEX_DATA = 6
+        keyboard.MAX_LEN_SYSEX_DATA = 7  # header(5) + 2-byte payload
 
         sent_packets = []
 
@@ -257,9 +257,11 @@ class ModuleSummaryEndianTest(unittest.TestCase):
         self.assertTrue(keyboard.keyb_set_module(2, b"ABCD"))
         self.assertEqual(
             [
-                bytes([QMKataKeybCmd.ID_MODULE, 2, 0x00, 0x00, ord("A"), ord("B")]),
-                bytes([QMKataKeybCmd.ID_MODULE, 2, 0x02, 0x00, ord("C"), ord("D")]),
-                bytes([QMKataKeybCmd.ID_MODULE, 2, 0xFF, 0xFF]),
+                # [ID_MODULE, slot, off_lo, off_hi, declared_len, payload...]
+                bytes([QMKataKeybCmd.ID_MODULE, 2, 0x00, 0x00, 2, ord("A"), ord("B")]),
+                bytes([QMKataKeybCmd.ID_MODULE, 2, 0x02, 0x00, 2, ord("C"), ord("D")]),
+                # finalize: offset=0xFFFF, declared_len=0
+                bytes([QMKataKeybCmd.ID_MODULE, 2, 0xFF, 0xFF, 0x00]),
             ],
             sent_packets,
         )
