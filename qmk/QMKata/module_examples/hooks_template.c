@@ -41,7 +41,7 @@ extern int printf(const char *fmt, ...);
 
 /* Local prototypes for init/deinit — module_api.h does not declare
  * them since they are module-local names, not part of the public API. */
-static uint32_t module_init(void);
+static uint32_t module_init(uint32_t module_base);
 static uint32_t module_deinit(void);
 
 /* ------------------------------------------------------------------ *
@@ -88,8 +88,10 @@ uint16_t get_combo_term(uint16_t index, combo_t *combo) {
  * Must return MODULE_INIT_MAGIC so the firmware loader can confirm
  * the call reached module code; any other value is logged as a
  * mismatch warning. */
-static uint32_t module_init(void) {
-    printf("[mod] init\n");
+static uint32_t module_init(uint32_t module_base) {
+    /* NOTE: To print strings from flash, you must use module_base.
+       e.g. printf("%s", (char *)(module_base + OFFSET)); */
+    printf("[mod] init (base=0x%lx)\n", (unsigned long)module_base);
     return MODULE_INIT_MAGIC;
 }
 

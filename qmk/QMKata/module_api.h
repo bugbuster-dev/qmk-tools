@@ -20,9 +20,12 @@
 
 /* Value a module's init function must return for the firmware loader
    to consider the init call successful. Must match the firmware's
-   MODULE_INIT_MAGIC in module_loader.h. Init and deinit both have
-   signature `uint32_t (*)(void)`. Init must return this magic; deinit's
-   return is logged by the firmware but not checked. */
+   MODULE_INIT_MAGIC in module_loader.h.
+   
+   Init signature: uint32_t module_init(uint32_t module_base)
+   Deinit signature: uint32_t module_deinit(void)
+   
+   Init must return this magic; deinit's return is logged by the firmware but not checked. */
 #define MODULE_INIT_MAGIC                         0x600DBEEFu
 
 /* Place the hook table in the .hook_table section */
