@@ -140,7 +140,7 @@ class GccToolchain:
             True on success, False on failure
         """
         gcc = self.tool["gcc"]
-        link_command = [gcc, "-nostdlib", "-nostartfiles"]
+        link_command = [gcc, "-nostdlib", "-nostartfiles", "-Wl,-q"]
         link_command.extend(["-T", linker_script])
         if extra_ld_files:
             for ld_file in extra_ld_files:

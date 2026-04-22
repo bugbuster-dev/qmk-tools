@@ -287,6 +287,52 @@ class ModuleBuild:
 
         return True
 
+    def _extract_relocations(self, elf_file):
+        """Extract R_ARM_ABS32 relocations targeting .text (literal pool).
+
+        Returns a sorted list of byte offsets (into the final binary) where
+        a 32-bit absolute address sits that must be rebased from link-time
+        (ORIGIN=0) to runtime (slot_addr) by adding slot_addr.
+
+        Relocations against .hook_table are filtered out because firmware
+        dispatch already adds slot_addr to those offsets at call time.
+        Other reloc types (R_ARM_THM_CALL etc.) are ignored because
+        external symbols like printf are resolved at link time via the
+        PROVIDE() symbol map.
+
+        NOTE: the .text-only filter assumes module_linker.ld merges
+        .rodata* into .text. If that changes (e.g. a separate .rodata
+        output section is added), .rodata targets must be added here
+        or literal-pool rebasing will silently break.
+        """
+        from elftools.elf.elffile import ELFFile
+        from elftools.elf.relocation import RelocationSection
+        from elftools.elf.enums import ENUM_RELOC_TYPE_ARM
+
+        R_ARM_ABS32 = ENUM_RELOC_TYPE_ARM['R_ARM_ABS32']
+        offsets = []
+        with open(elf_file, "rb") as f:
+            elf = ELFFile(f)
+            # For ET_EXEC (our case — module_linker.ld produces an executable
+            # with ORIGIN=0), r_offset is already the VMA, which for us
+            # equals the file offset into the raw binary. For ET_REL we'd
+            # add sh_addr, but we never link modules with -r.
+            is_exec = elf['e_type'] == 'ET_EXEC'
+            for sec in elf.iter_sections():
+                if not isinstance(sec, RelocationSection):
+                    continue
+                target = elf.get_section(sec['sh_info'])
+                if target.name != ".text":
+                    # Skip .hook_table and any other targets. Hook-table
+                    # relocations are intentionally offset-based.
+                    continue
+                base = 0 if is_exec else target['sh_addr']
+                for r in sec.iter_relocations():
+                    if r['r_info_type'] != R_ARM_ABS32:
+                        continue
+                    offsets.append(base + r['r_offset'])
+        return sorted(offsets)
+
     def _assemble(self, raw_bin):
         """Assemble final module binary: replace header area + parse hook table."""
         # The binary starts at offset 0:
