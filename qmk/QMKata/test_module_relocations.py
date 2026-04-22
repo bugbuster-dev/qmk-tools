@@ -102,6 +102,50 @@ class ModuleRelocationsTest(unittest.TestCase):
             # hook-table slot for module_init, which we must skip.
             self.assertEqual([], relocs)
 
+    def test_emitted_relocs_are_data_not_thm_call(self):
+        """Defense-in-depth: every emitted reloc offset must point at a
+        literal-pool word (a plausible data pointer into the binary),
+        NOT at a BL.W/BLX Thumb-2 instruction pair. The _extract_relocations
+        filter already rejects R_ARM_THM_CALL (only R_ARM_ABS32 is kept),
+        so this assertion should trivially hold — but it's a cheap guard
+        against future refactors silently letting call-site relocations
+        slip through into the runtime patch list.
+
+        Encoding check (ARMv7-M T1 BL encoding, little-endian word read):
+            low  halfword:  1111 0Sii iiii iiii  (bits 15..11 == 0b11110)
+            high halfword:  11J1 Jiii iiii iiii  (bits 15,14,12 == 1;
+                                                  bits 13 (J1), 11 (J2) vary)
+        So: low halfword fixed mask = 0xF800 / value 0xF000.
+            high halfword: (val & 0xD000) == 0xD000 (bits 15 and 12 set).
+        We cannot use a single 32-bit mask because J1 varies — the previous
+        mask-only test only caught ~25% of BL.W encodings. Do an explicit
+        halfword decomposition instead.
+        """
+        builder = ModuleBuild(
+            GccToolchain(KeychronQ3Max.TOOLCHAIN, firmware_path=str(FIRMWARE_ROOT)),
+            firmware_path=str(FIRMWARE_ROOT),
+        )
+        null_src = ROOT / "module_examples" / "null_module.c"
+        result = builder.build(str(null_src))
+        self.assertIsNotNone(result, builder.last_error)
+        b = result["binary"]
+        reloc_off = int.from_bytes(b[28:32], "little")
+        reloc_count = int.from_bytes(b[32:36], "little")
+        self.assertGreater(reloc_count, 0,
+            "null_module should emit at least one reloc; test is vacuous otherwise")
+        for i in range(reloc_count):
+            off = int.from_bytes(b[reloc_off + 4 * i:reloc_off + 4 * i + 4], "little")
+            self.assertLessEqual(off + 4, len(b),
+                f"reloc offset 0x{off:x} past bin end")
+            word = int.from_bytes(b[off:off + 4], "little")
+            self.assertLess(word, len(b),
+                f"patch site word 0x{word:x} not a plausible in-binary data pointer")
+            lo = word & 0xFFFF
+            hi = (word >> 16) & 0xFFFF
+            is_bl_w = ((lo & 0xF800) == 0xF000) and ((hi & 0xD000) == 0xD000)
+            self.assertFalse(is_bl_w,
+                f"patch site 0x{off:x} holds a BL.W instruction pair (word=0x{word:08x})")
+
 
 if __name__ == "__main__":
     unittest.main()
