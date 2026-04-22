@@ -16,12 +16,16 @@
  */
 
 #include "module_api.h"
-
+ 
 /* printf is provided by the firmware (CONSOLE_ENABLE=yes). Host module
  * builder resolves this symbol against the firmware .map and emits its
  * absolute address in symbols.ld at link time. */
 extern int printf(const char *fmt, ...);
-
+ 
+/* This string is placed in .rodata. Because the module is linked at base 0,
+ * the symbol address is exactly its offset from the module base. */
+static const char init_msg[] = "[mod] null_module init\n";
+ 
 /* Marked used so the compiler can't optimize it away; the linker would
  * otherwise drop an unreferenced static function. The hook table below
  * references it, but -ffunction-sections + gc-sections has bitten us
@@ -32,15 +36,12 @@ extern int printf(const char *fmt, ...);
  * other return value causes the loader to log a mismatch warning. */
 static uint32_t module_init(uint32_t module_base) __attribute__((used));
 static uint32_t module_init(uint32_t module_base) {
-    /* Strings in flash are accessed relative to module_base to avoid
-       absolute literal pool failures in slot-independent modules. */
-    const char *msg = (const char *)(module_base + 0x000000A0); 
-    /* Note: 0x000000A0 is a hardcoded offset for null_module.c's string 
-       obtained via objdump. For production, this is a placeholder. */
-    printf("%s\n", msg);
+    /* Access the string by adding its link-time offset to the runtime base.
+       This avoids the absolute literal pool trap. */
+    printf("%s", (const char *)(module_base + (uintptr_t)init_msg));
     return MODULE_INIT_MAGIC;
 }
-
+ 
 MODULE_HOOK_TABLE
 const void *module_hook_table[MODULE_HOOK_MAX] = {
     [MODULE_HOOK_INIT] = module_init,
