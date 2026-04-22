@@ -41,8 +41,8 @@ extern int printf(const char *fmt, ...);
 
 /* Local prototypes for init/deinit — module_api.h does not declare
  * them since they are module-local names, not part of the public API. */
-static void module_init(void);
-static void module_deinit(void);
+static uint32_t module_init(void);
+static uint32_t module_deinit(void);
 
 /* ------------------------------------------------------------------ *
  * Hook implementations
@@ -84,16 +84,22 @@ uint16_t get_combo_term(uint16_t index, combo_t *combo) {
 
 /* Index 3 — module lifecycle: called once, right after the module's
  * hooks are installed in the dispatch table. Use for one-shot setup
- * that doesn't require writable globals (modules have no .data/.bss). */
-static void module_init(void) {
+ * that doesn't require writable globals (modules have no .data/.bss).
+ * Must return MODULE_INIT_MAGIC so the firmware loader can confirm
+ * the call reached module code; any other value is logged as a
+ * mismatch warning. */
+static uint32_t module_init(void) {
     printf("[mod] init\n");
+    return MODULE_INIT_MAGIC;
 }
 
 /* Index 4 — module lifecycle: called once, right before the module's
  * hooks are removed (on unload, or before a replacing module_load).
- * Use for cleanup that does not touch flash. */
-static void module_deinit(void) {
+ * Use for cleanup that does not touch flash. Return value is logged
+ * by the firmware but not checked; 0 is conventional. */
+static uint32_t module_deinit(void) {
     printf("[mod] deinit\n");
+    return 0;
 }
 
 /* Index 5 — per-combo "must hold" override. Return true to require

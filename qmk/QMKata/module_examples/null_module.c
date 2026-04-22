@@ -25,10 +25,15 @@ extern int printf(const char *fmt, ...);
 /* Marked used so the compiler can't optimize it away; the linker would
  * otherwise drop an unreferenced static function. The hook table below
  * references it, but -ffunction-sections + gc-sections has bitten us
- * before. */
-static void module_init(void) __attribute__((used));
-static void module_init(void) {
+ * before.
+ *
+ * Returns MODULE_INIT_MAGIC so the firmware loader can confirm the
+ * call reached module code and ran to completion end-to-end. Any
+ * other return value causes the loader to log a mismatch warning. */
+static uint32_t module_init(void) __attribute__((used));
+static uint32_t module_init(void) {
     printf("[mod] null_module init\n");
+    return MODULE_INIT_MAGIC;
 }
 
 MODULE_HOOK_TABLE
