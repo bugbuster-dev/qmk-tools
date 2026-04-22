@@ -11,9 +11,9 @@ from GccMapfile import GccMapfile
 
 # Must match firmware module_loader.h
 MODULE_HEADER_MAGIC   = 0x4D4F444C  # "MODL" as uint32 (bytes on disk: 4C 44 4F 4D)
-MODULE_HEADER_VERSION = 1
-MODULE_HEADER_SIZE    = 32
-MODULE_HOOK_TABLE_OFF = 32  # Hook table immediately follows header
+MODULE_HEADER_VERSION = 2
+MODULE_HEADER_SIZE    = 40
+MODULE_HOOK_TABLE_OFF = 40  # Hook table immediately follows header
 MODULE_HOOK_MAX       = 16
 MODULE_FLASH_SLOT_SIZE = 0x1000
 
@@ -290,9 +290,9 @@ class ModuleBuild:
     def _assemble(self, raw_bin):
         """Assemble final module binary: replace header area + parse hook table."""
         # The binary starts at offset 0:
-        #   [0..31]   = header space (32 bytes, filled by linker with zeros)
-        #   [32..95]  = hook table (16 * 4 = 64 bytes)
-        #   [96..]    = code (.text + .rodata)
+        #   [0..39]    = header space (40 bytes, filled by linker with zeros)
+        #   [40..103]  = hook table (16 * 4 = 64 bytes)
+        #   [104..]    = code (.text + .rodata)
 
         if len(raw_bin) < MODULE_HEADER_SIZE + MODULE_HOOK_MAX * 4:
             print(f"E: binary too small ({len(raw_bin)} bytes)")
@@ -315,7 +315,7 @@ class ModuleBuild:
                 elif i == 4:
                     deinit_off = offset_val
 
-        # Build 32-byte header matching firmware module_header_t layout:
+        # Build 40-byte header matching firmware module_header_t layout:
         #   uint32_t magic;          // offset 0
         #   uint16_t version;        // offset 4
         #   uint16_t flags;          // offset 6
@@ -324,21 +324,25 @@ class ModuleBuild:
         #   uint32_t hook_table_off; // offset 16
         #   uint32_t init_off;       // offset 20
         #   uint32_t deinit_off;     // offset 24
-        #   uint32_t crc32;          // offset 28 (filled in below)
-        header = struct.pack("<I H H I I I I I I",
+        #   uint32_t reloc_off;      // offset 28 (0 = none; populated in Task 3)
+        #   uint32_t reloc_count;    // offset 32 (populated in Task 3)
+        #   uint32_t crc32;          // offset 36 (filled in below)
+        header = struct.pack("<I H H I I I I I I I I",
             MODULE_HEADER_MAGIC,       # magic
-            MODULE_HEADER_VERSION,     # version
+            MODULE_HEADER_VERSION,     # version = 2
             0x0000,                    # flags: reserved (firmware ignores)
             len(raw_bin),              # code_size
             hook_bitmap,               # hook_bitmap
-            MODULE_HOOK_TABLE_OFF,     # hook_table_off
+            MODULE_HOOK_TABLE_OFF,     # hook_table_off = 40
             init_off,                  # init_off
             deinit_off,                # deinit_off
+            0,                         # reloc_off (filled in Task 3)
+            0,                         # reloc_count (filled in Task 3)
             0,                         # crc32 placeholder, patched below
         )
         assert len(header) == MODULE_HEADER_SIZE
 
-        # Replace first 32 bytes of binary with our header
+        # Replace first MODULE_HEADER_SIZE bytes of binary with our header
         final_bin = bytearray(header) + raw_bin[MODULE_HEADER_SIZE:]
 
         # Compute CRC-32/ISO-HDLC (zlib-compatible) over the whole binary

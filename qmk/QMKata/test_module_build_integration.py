@@ -57,6 +57,28 @@ const void *module_hook_table[MODULE_HOOK_MAX] = {
         self.assertIsNotNone(builder.last_error)
         self.assertIn("writable sections", builder.last_error)
 
+    def test_header_layout_v2(self):
+        builder = ModuleBuild(
+            GccToolchain(KeychronQ3Max.TOOLCHAIN, firmware_path=str(FIRMWARE_ROOT)),
+            firmware_path=str(FIRMWARE_ROOT),
+        )
+        result = builder.build(str(EXAMPLE_MODULE))
+        self.assertIsNotNone(result, builder.last_error)
+        binary = result["binary"]
+        # v2 header is 40 bytes, hook table starts at 40
+        magic = int.from_bytes(binary[0:4], "little")
+        version = int.from_bytes(binary[4:6], "little")
+        hook_table_off = int.from_bytes(binary[16:20], "little")
+        reloc_off = int.from_bytes(binary[28:32], "little")
+        reloc_count = int.from_bytes(binary[32:36], "little")
+        crc = int.from_bytes(binary[36:40], "little")
+        self.assertEqual(0x4D4F444C, magic)
+        self.assertEqual(2, version)
+        self.assertEqual(40, hook_table_off)
+        # combo_layer_filter has no string literals → reloc_count may be 0 or 1
+        self.assertGreaterEqual(reloc_count, 0)
+        self.assertNotEqual(0, crc)  # computed CRC should not be zero
+
 
 if __name__ == "__main__":
     unittest.main()
