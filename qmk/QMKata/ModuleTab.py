@@ -171,7 +171,7 @@ class ModuleTab(QWidget):
 
         # We just mutated hook_bitmap / init_off / deinit_off, which
         # invalidates the CRC written by ModuleBuild._assemble. Recompute
-        # it with the crc32 field (last 4 bytes of the 32-byte header)
+        # it with the crc32 field (last 4 bytes of the module header)
         # zeroed so the result matches what validate_module_crc() on the
         # device will compute. Without this, the firmware rejects any
         # module whose UI-selected hook set differs from the build-time

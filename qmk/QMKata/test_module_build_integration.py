@@ -75,8 +75,8 @@ const void *module_hook_table[MODULE_HOOK_MAX] = {
         self.assertEqual(0x4D4F444C, magic)
         self.assertEqual(2, version)
         self.assertEqual(40, hook_table_off)
-        # combo_layer_filter has no string literals → reloc_count may be 0 or 1
-        self.assertGreaterEqual(reloc_count, 0)
+        self.assertEqual(0, reloc_off, "Task 1: reloc_off must be zero until Task 3 populates it")
+        self.assertEqual(0, reloc_count, "Task 1: reloc_count must be zero until Task 3 populates it")
         self.assertNotEqual(0, crc)  # computed CRC should not be zero
 
 

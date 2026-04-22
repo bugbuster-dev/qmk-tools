@@ -154,7 +154,7 @@ class ModuleTabHookBitmapTest(unittest.TestCase):
     def test_prepare_binary_for_load_patches_selected_hook_bitmap(self):
         tab = ModuleTab.__new__(ModuleTab)
         tab.last_build_result = {
-            "binary": bytes(32),
+            "binary": bytes(MODULE_HEADER_SIZE),
         }
         tab.hook_checkboxes = [
             ("combo_should_trigger", _FakeCheckBox(True)),
@@ -168,7 +168,7 @@ class ModuleTabHookBitmapTest(unittest.TestCase):
         self.assertEqual(0x00000005, struct.unpack_from("<I", binary, 12)[0])
 
     def test_prepare_binary_for_load_allows_zero_selected_hooks(self):
-        built_binary = bytearray(32)
+        built_binary = bytearray(MODULE_HEADER_SIZE)
         struct.pack_into("<I", built_binary, 20, 0x44)
         struct.pack_into("<I", built_binary, 24, 0x88)
 
@@ -189,7 +189,7 @@ class ModuleTabHookBitmapTest(unittest.TestCase):
         self.assertEqual(0x00000000, struct.unpack_from("<I", binary, 24)[0])
 
     def test_prepare_binary_for_load_preserves_checked_lifecycle_offsets(self):
-        built_binary = bytearray(32)
+        built_binary = bytearray(MODULE_HEADER_SIZE)
         struct.pack_into("<I", built_binary, 20, 0x44)
         struct.pack_into("<I", built_binary, 24, 0x88)
 
@@ -222,7 +222,7 @@ class ModuleTabHookBitmapTest(unittest.TestCase):
 def _recompute_crc(binary):
     """Reference CRC that must match validate_module_crc() in firmware:
     zlib.crc32 over the whole binary with the 4-byte crc32 field
-    (last 4 bytes of the 32-byte header) held at zero."""
+    (last 4 bytes of the module header) held at zero."""
     buf = bytearray(binary)
     crc_off = MODULE_HEADER_SIZE - 4
     struct.pack_into("<I", buf, crc_off, 0)
