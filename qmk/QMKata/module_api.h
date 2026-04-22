@@ -21,10 +21,14 @@
 /* Value a module's init function must return for the firmware loader
    to consider the init call successful. Must match the firmware's
    MODULE_INIT_MAGIC in module_loader.h.
-   
-   Init signature: uint32_t module_init(uint32_t module_base)
+
+   Init signature:   uint32_t module_init(void)
    Deinit signature: uint32_t module_deinit(void)
-   
+
+   Module code accesses its own .rodata through normal C references;
+   the loader has already rebased literal-pool addresses to the slot's
+   runtime location, so no module_base parameter is needed.
+
    Init must return this magic; deinit's return is logged by the firmware but not checked. */
 #define MODULE_INIT_MAGIC                         0x600DBEEFu
 

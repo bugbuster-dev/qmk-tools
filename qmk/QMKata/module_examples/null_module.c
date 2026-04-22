@@ -17,7 +17,8 @@
  * Note: passing a plain string literal to printf works transparently
  * because the host builder emits an R_ARM_ABS32 reloc for the literal
  * pool slot and the firmware loader rebases it to slot_addr at load
- * time. No `module_base + offset` arithmetic is needed.
+ * time. Module code references its own .rodata through plain C; no
+ * load-address arithmetic is needed.
  */
 
 #include "module_api.h"
@@ -27,8 +28,7 @@
  * absolute address in symbols.ld at link time. */
 extern int printf(const char *fmt, ...);
 
-static uint32_t module_init(uint32_t module_base) {
-    (void)module_base;
+static uint32_t module_init(void) {
     printf("[mod] null_module init\n");
     return MODULE_INIT_MAGIC;
 }

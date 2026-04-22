@@ -40,8 +40,7 @@ class ModuleRelocationsTest(unittest.TestCase):
     def test_extract_relocations_for_two_printf_literals(self):
         with tempfile.TemporaryDirectory() as td:
             elf, bin_bytes = self._build_probe(td, [
-                'static uint32_t module_init(uint32_t b) {',
-                '    (void)b;',
+                'static uint32_t module_init(void) {',
                 '    printf("[mod] hello world\\n");',
                 '    printf("value=%u\\n", 42);',
                 '    return MODULE_INIT_MAGIC;',
@@ -76,8 +75,7 @@ class ModuleRelocationsTest(unittest.TestCase):
     def test_extract_relocations_empty_for_no_literals(self):
         with tempfile.TemporaryDirectory() as td:
             elf, _ = self._build_probe(td, [
-                'static uint32_t module_init(uint32_t b) {',
-                '    (void)b;',
+                'static uint32_t module_init(void) {',
                 '    return MODULE_INIT_MAGIC;',
                 '}',
             ])
@@ -91,8 +89,8 @@ class ModuleRelocationsTest(unittest.TestCase):
         still dispatches via offset + slot_addr, not via patched absolutes."""
         with tempfile.TemporaryDirectory() as td:
             elf, _ = self._build_probe(td, [
-                'static uint32_t module_init(uint32_t b) {',
-                '    (void)b; return MODULE_INIT_MAGIC;',
+                'static uint32_t module_init(void) {',
+                '    return MODULE_INIT_MAGIC;',
                 '}',
             ])
             tc = GccToolchain(KeychronQ3Max.TOOLCHAIN, firmware_path=str(FIRMWARE_ROOT))

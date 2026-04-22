@@ -41,13 +41,8 @@ extern int printf(const char *fmt, ...);
 
 /* Local prototypes for init/deinit — module_api.h does not declare
  * them since they are module-local names, not part of the public API. */
-static uint32_t module_init(uint32_t module_base);
-static uint32_t module_deinit(uint32_t module_base);
-
-/* Strings used for tracing. We use static const arrays so we can 
- * resolve their addresses relative to module_base. */
-static const char init_msg[] = "[mod] init\n";
-static const char deinit_msg[] = "[mod] deinit\n";
+static uint32_t module_init(void);
+static uint32_t module_deinit(void);
 
 /* ------------------------------------------------------------------ *
  * Hook implementations
@@ -93,8 +88,8 @@ uint16_t get_combo_term(uint16_t index, combo_t *combo) {
  * Must return MODULE_INIT_MAGIC so the firmware loader can confirm
  * the call reached module code; any other value is logged as a
  * mismatch warning. */
-static uint32_t module_init(uint32_t module_base) {
-    printf("%s", (const char *)(module_base + (uintptr_t)init_msg));
+static uint32_t module_init(void) {
+    printf("[mod] init\n");
     return MODULE_INIT_MAGIC;
 }
 
@@ -102,8 +97,8 @@ static uint32_t module_init(uint32_t module_base) {
  * hooks are removed (on unload, or before a replacing module_load).
  * Use for cleanup that does not touch flash. Return value is logged
  * by the firmware but not checked; 0 is conventional. */
-static uint32_t module_deinit(uint32_t module_base) {
-    printf("%s", (const char *)(module_base + (uintptr_t)deinit_msg));
+static uint32_t module_deinit(void) {
+    printf("[mod] deinit\n");
     return 0;
 }
 
