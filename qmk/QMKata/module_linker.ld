@@ -15,6 +15,14 @@ SECTIONS {
     } > MODULE
     .text : ALIGN(4) {
         *(.text*)
+        /* NOTE: ModuleBuild._extract_relocations (qmk-tools) filters
+           R_ARM_ABS32 entries to .text-targeted ones only. Keeping
+           .rodata merged into .text here is a load-bearing invariant:
+           moving string literals (or any other rodata) into a separate
+           section would make the extractor drop their ABS32 relocs,
+           which in turn would leave the firmware loader with no way to
+           rebase their literal-pool addresses — silently breaking
+           printf("literal") and every other rodata reference at runtime. */
         *(.rodata*)
         . = ALIGN(4);
     } > MODULE
