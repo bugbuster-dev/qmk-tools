@@ -4,9 +4,9 @@ MEMORY {
 }
 SECTIONS {
     .module_header : {
-        /* Emit 40 real bytes so objcopy keeps header padding in the raw binary. */
-        LONG(0) LONG(0) LONG(0) LONG(0) LONG(0)
-        LONG(0) LONG(0) LONG(0) LONG(0) LONG(0)
+        /* Emit 32 real bytes so objcopy keeps header padding in the raw binary. */
+        LONG(0) LONG(0) LONG(0) LONG(0)
+        LONG(0) LONG(0) LONG(0) LONG(0)
     } > MODULE
     .hook_table : ALIGN(4) {
         KEEP(*(.hook_table))

@@ -66,22 +66,20 @@ const void *module_hook_table[MODULE_HOOK_MAX] = {
         result = builder.build(str(EXAMPLE_MODULE))
         self.assertIsNotNone(result, builder.last_error)
         binary = result["binary"]
-        # v2 header is 40 bytes, hook table starts at 40
+        # v1 header is 32 bytes, hook table starts at 32
         magic = int.from_bytes(binary[0:4], "little")
         version = int.from_bytes(binary[4:6], "little")
         hook_table_off = int.from_bytes(binary[16:20], "little")
-        reloc_off = int.from_bytes(binary[28:32], "little")
-        reloc_count = int.from_bytes(binary[32:36], "little")
-        crc = int.from_bytes(binary[36:40], "little")
+        crc = int.from_bytes(binary[28:32], "little")
         self.assertEqual(0x4D4F444C, magic)
-        self.assertEqual(2, version)
-        self.assertEqual(40, hook_table_off)
-        # combo_layer_filter has no string literals -> reloc_count may be 0
-        # (empty table -> reloc_off == 0 too; populated table -> both non-zero).
-        self.assertGreaterEqual(reloc_count, 0)
-        self.assertEqual(reloc_count == 0, reloc_off == 0,
-            "reloc_off and reloc_count must be both zero or both nonzero")
-        self.assertNotEqual(0, crc)  # computed CRC should not be zero
+        self.assertEqual(1, version)
+        self.assertEqual(32, hook_table_off)
+        self.assertNotEqual(0, crc)  # provisional CRC should not be zero
+        # Relocations are now returned in result['relocs'], not appended
+        # to the binary. combo_layer_filter has no string literals, so
+        # the list may be empty or non-empty depending on inlining —
+        # assert only that the key exists.
+        self.assertIn("relocs", result)
 
     def test_header_field_order_for_null_module(self):
         """Pin exact init_off and deinit_off values for null_module.
@@ -94,17 +92,16 @@ const void *module_hook_table[MODULE_HOOK_MAX] = {
         so a swap shows up immediately as a test failure.
 
         Expected values for null_module:
-          - init_off = 145: the only function in the module is
+          - init_off = 137: the only function in the module is
             module_init. The linker script currently produces a
             104-byte .hook_table section (see the deferred linker-script
-            finding in docs/plans/2026-04-22-module-runtime-relocations.md
-            "Out of scope"): `. = 40 + 64;` is interpreted section-
-            relative, so .hook_table spans VMA 40..144, leaving 40
-            bytes of unused padding between the real hook slots
-            (40..104) and .text. module_init therefore lands at
-            VMA 144 and the Thumb bit is set on function pointers:
-            144 | 1 = 145. **When the linker-script bug is fixed this
-            assertion must be updated to 105** (104 | 1).
+            finding, Task 5 of the current plan): `. = 40 + 64;` is
+            interpreted section-relative, so .hook_table spans VMA
+            32..136, leaving 40 bytes of unused padding between the real
+            hook slots (32..96) and .text. module_init therefore lands at
+            VMA 136 and the Thumb bit is set on function pointers:
+            136 | 1 = 137. **When Task 5 fixes the padding this assertion
+            must be updated to 97** (96 | 1).
           - deinit_off = 0: null_module declares no deinit hook, so
             the hook table slot at MODULE_HOOK_DEINIT stays NULL and
             _assemble() leaves deinit_off unset.
@@ -119,8 +116,8 @@ const void *module_hook_table[MODULE_HOOK_MAX] = {
         init_off = int.from_bytes(binary[20:24], "little")
         deinit_off = int.from_bytes(binary[24:28], "little")
         self.assertEqual(
-            145, init_off,
-            "init_off must point at module_init at .text base (144) with Thumb bit set",
+            137, init_off,
+            "init_off must point at module_init at .text base (136) with Thumb bit set",
         )
         self.assertEqual(
             0, deinit_off,
@@ -129,8 +126,8 @@ const void *module_hook_table[MODULE_HOOK_MAX] = {
 
     def test_null_module_has_one_reloc_for_init_string(self):
         """null_module calls printf on one string literal. After the
-        build, reloc_count should be 1 and the pointed-to word must
-        match the link-time address of that string."""
+        build, result['relocs'] should have exactly one entry and the
+        pointed-to word must match the link-time address of that string."""
         builder = ModuleBuild(
             GccToolchain(KeychronQ3Max.TOOLCHAIN, firmware_path=str(FIRMWARE_ROOT)),
             firmware_path=str(FIRMWARE_ROOT),
@@ -138,19 +135,18 @@ const void *module_hook_table[MODULE_HOOK_MAX] = {
         result = builder.build(str(NULL_MODULE))
         self.assertIsNotNone(result, builder.last_error)
         b = result["binary"]
-        reloc_off = int.from_bytes(b[28:32], "little")
-        reloc_count = int.from_bytes(b[32:36], "little")
-        self.assertEqual(1, reloc_count, f"expected 1 reloc, got {reloc_count}")
-        self.assertGreater(reloc_off, 104)  # past hook table
+        relocs = result["relocs"]
+        self.assertEqual(1, len(relocs), f"expected 1 reloc, got {relocs}")
+        reloc_off = relocs[0]
+        self.assertGreater(reloc_off, 96)  # past hook table (32-byte hdr + 64-byte table)
         self.assertLessEqual(reloc_off + 4, len(b))
-        target_offset = int.from_bytes(b[reloc_off:reloc_off + 4], "little")
-        # The target offset points at a literal-pool word. That word
-        # holds the link-time-absolute address of the
-        # "[mod] null_module init" string.
-        word = int.from_bytes(b[target_offset:target_offset + 4], "little")
-        # String must exist at `word` offset and begin with "[mod]"
-        self.assertLess(word, len(b))
-        self.assertEqual(b"[mod]", b[word:word + 5])
+        # The reloc site holds a literal-pool word: the link-time-absolute
+        # address of the "[mod] null_module init" string. Because the
+        # module is linked at ORIGIN=0, that address is also the offset
+        # into the binary where the string bytes live.
+        string_off = int.from_bytes(b[reloc_off:reloc_off + 4], "little")
+        self.assertLess(string_off, len(b))
+        self.assertEqual(b"[mod]", b[string_off:string_off + 5])
 
 
 if __name__ == "__main__":

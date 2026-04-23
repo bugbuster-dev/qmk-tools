@@ -11,9 +11,9 @@ from GccMapfile import GccMapfile
 
 # Must match firmware module_loader.h
 MODULE_HEADER_MAGIC   = 0x4D4F444C  # "MODL" as uint32 (bytes on disk: 4C 44 4F 4D)
-MODULE_HEADER_VERSION = 2
-MODULE_HEADER_SIZE    = 40
-MODULE_HOOK_TABLE_OFF = 40  # Hook table immediately follows header
+MODULE_HEADER_VERSION = 1
+MODULE_HEADER_SIZE    = 32
+MODULE_HOOK_TABLE_OFF = 32  # Hook table immediately follows header
 MODULE_HOOK_MAX       = 16
 MODULE_FLASH_SLOT_SIZE = 0x1000
 
@@ -132,8 +132,8 @@ class ModuleBuild:
             # Step 3.5: Extract R_ARM_ABS32 relocations (literal-pool
             # absolute addresses that must be rebased at load time) from
             # the linked ELF. Done here, before objcopy strips the reloc
-            # sections, so _assemble() can append the reloc table to the
-            # raw binary and populate reloc_off/reloc_count in the header.
+            # sections, so _assemble() can return them in the result dict
+            # for apply_relocations_and_crc to consume at load time.
             relocs = self._extract_relocations(elf_file)
 
             # Step 4: objcopy to binary
@@ -346,27 +346,28 @@ class ModuleBuild:
         return sorted(offsets)
 
     def _assemble(self, raw_bin, relocs):
-        """Assemble final module binary: replace header area + parse hook table.
+        """Assemble final module binary: write header, return result dict.
 
-        Appends the relocation table (one little-endian uint32 offset
-        per entry, in the already-sorted order returned by
-        _extract_relocations) directly after .text so that:
-          - code_size in the header covers the reloc table too;
-          - the CRC is computed over the full post-append binary;
-          - the firmware loader can read `code_size` bytes from Flash,
-            verify CRC, then walk the reloc table at `reloc_off`.
+        The relocations list is carried in the returned dict and applied
+        later by ModuleTab._prepare_binary_for_load → apply_relocations_and_crc.
+        It is NOT written into the binary — firmware doesn't need it,
+        since the host rebases literals before upload and stores the
+        final CRC over the relocated bytes.
 
-        An empty `relocs` list leaves both reloc_off and reloc_count
-        at zero and does NOT append any bytes (no sentinel).
+        The 4-byte `crc32` header field holds a provisional CRC here
+        (over the pre-reloc image with the field zeroed during compute).
+        apply_relocations_and_crc overwrites it with the final CRC at
+        load time, when the target slot's absolute XIP address is known.
         """
         # The binary starts at offset 0:
-        #   [0..39]    = header space (40 bytes, filled by linker with zeros)
-        #   [40..143]  = .hook_table section (linker reserves 104 bytes due
+        #   [0..31]    = header space (32 bytes, filled by linker with zeros)
+        #   [32..135]  = .hook_table section (linker reserves 104 bytes due
         #                to section-relative `. = 40 + 64;` in module_linker.ld;
-        #                only bytes 40..103 hold real hook slots, 104..143 is
-        #                padding — see plan 2026-04-22 "Out of scope" for the
-        #                deferred fix that would shrink this to 64 bytes)
-        #   [144..]    = code (.text + merged .rodata), followed by reloc table
+        #                only bytes 32..95 hold real hook slots, 96..135 is
+        #                padding — Task 5 drops the padding)
+        #   [136..]    = code (.text + merged .rodata). No reloc table is
+        #                appended; relocs are returned in result['relocs'] and
+        #                consumed by apply_relocations_and_crc at load time.
 
         if len(raw_bin) < MODULE_HEADER_SIZE + MODULE_HOOK_MAX * 4:
             print(f"E: binary too small ({len(raw_bin)} bytes)")
@@ -389,28 +390,16 @@ class ModuleBuild:
                 elif i == 4:
                     deinit_off = offset_val
 
-        # Append the reloc table BEFORE computing code_size / CRC, so
-        # both cover the appended bytes. Offsets are already sorted
-        # ascending by _extract_relocations; do not re-sort or reorder.
         # The linker script ends .text with ALIGN(4), so raw_bin length
-        # must already be word-aligned — if this assertion ever fails,
-        # a linker-script regression has broken the alignment invariant
-        # the reloc table relies on (firmware reads 4-byte LE entries
-        # starting at reloc_off and expects no padding between them).
+        # must already be word-aligned. The reloc table is no longer
+        # appended here (relocs are returned in the result dict), but
+        # the alignment check remains as a sanity check on linker output.
         assert len(raw_bin) % 4 == 0, (
-            f"raw_bin length {len(raw_bin)} not 4-aligned before reloc append; "
+            f"raw_bin length {len(raw_bin)} not 4-aligned; "
             "check module_linker.ld ALIGN(4) at end of .text"
         )
-        if relocs:
-            reloc_off = len(raw_bin)
-            reloc_count = len(relocs)
-            reloc_bytes = b"".join(struct.pack("<I", off) for off in relocs)
-            raw_bin = raw_bin + reloc_bytes
-        else:
-            reloc_off = 0
-            reloc_count = 0
 
-        # Build 40-byte header matching firmware module_header_t layout:
+        # Build 32-byte header matching firmware module_header_t layout:
         #   uint32_t magic;          // offset 0
         #   uint16_t version;        // offset 4
         #   uint16_t flags;          // offset 6
@@ -419,20 +408,17 @@ class ModuleBuild:
         #   uint32_t hook_table_off; // offset 16
         #   uint32_t init_off;       // offset 20
         #   uint32_t deinit_off;     // offset 24
-        #   uint32_t reloc_off;      // offset 28 (0 = none)
-        #   uint32_t reloc_count;    // offset 32
-        #   uint32_t crc32;          // offset 36 (filled in below)
-        header = struct.pack("<I H H I I I I I I I I",
+        #   uint32_t crc32;          // offset 28 (provisional; overwritten
+        #                                by apply_relocations_and_crc)
+        header = struct.pack("<I H H I I I I I I",
             MODULE_HEADER_MAGIC,       # magic
-            MODULE_HEADER_VERSION,     # version = 2
+            MODULE_HEADER_VERSION,     # version = 1
             0x0000,                    # flags: reserved (firmware ignores)
-            len(raw_bin),              # code_size (includes reloc table)
+            len(raw_bin),              # code_size
             hook_bitmap,               # hook_bitmap
-            MODULE_HOOK_TABLE_OFF,     # hook_table_off = 40
+            MODULE_HOOK_TABLE_OFF,     # hook_table_off = 32
             init_off,                  # init_off
             deinit_off,                # deinit_off
-            reloc_off,                 # reloc_off (0 if no relocs)
-            reloc_count,               # reloc_count (0 if no relocs)
             0,                         # crc32 placeholder, patched below
         )
         assert len(header) == MODULE_HEADER_SIZE

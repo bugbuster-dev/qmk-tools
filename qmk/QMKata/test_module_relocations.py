@@ -127,12 +127,10 @@ class ModuleRelocationsTest(unittest.TestCase):
         result = builder.build(str(null_src))
         self.assertIsNotNone(result, builder.last_error)
         b = result["binary"]
-        reloc_off = int.from_bytes(b[28:32], "little")
-        reloc_count = int.from_bytes(b[32:36], "little")
-        self.assertGreater(reloc_count, 0,
+        relocs = result["relocs"]
+        self.assertGreater(len(relocs), 0,
             "null_module should emit at least one reloc; test is vacuous otherwise")
-        for i in range(reloc_count):
-            off = int.from_bytes(b[reloc_off + 4 * i:reloc_off + 4 * i + 4], "little")
+        for off in relocs:
             self.assertLessEqual(off + 4, len(b),
                 f"reloc offset 0x{off:x} past bin end")
             word = int.from_bytes(b[off:off + 4], "little")
