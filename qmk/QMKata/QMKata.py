@@ -847,26 +847,43 @@ class MainWindow(QMainWindow):
         QtCore.QTimer.singleShot(250, self.module_tab.refresh_slots)
 
     def on_module_load(self, slot_id, binary):
-        # Sector-preserving reload: read all slots in the sector, replace
-        # the target, then erase+rewrite the entire sector. This prevents
-        # sibling modules from being destroyed by the sector-erase that
-        # flash programming requires.
+        # Sector-preserving reload: read siblings, erase sector, write all
+        # slots back. Flash erase is sector-granular (16 KB = 4 slots), so
+        # loading into any slot would otherwise destroy its 3 siblings.
+        MODULE_HEADER_MAGIC = 0x4D4F444C  # 'MODL'
+        MODULE_FLASH_SLOT_SIZE = 0x1000
+
         sector_id = slot_id // 4
         sector_slots = [sector_id * 4 + i for i in range(4)]
 
-        self.module_tab.log(f"Reading sector {sector_id} (slots {sector_slots})...")
+        # Read magic for each sibling to decide which ones need preservation.
+        # Blank slots (0xFFFFFFFF) and invalidated slots (0x00000000) are
+        # skipped — reading 4 KB of 0xFF would waste ~270 USB round-trips
+        # and writing them back would fail module_load() validation.
+        self.module_tab.log(f"Scanning sector {sector_id} (slots {sector_slots})...")
         sector_binaries = {}
         for s in sector_slots:
-            data = self.keyboard.keyb_read_module_binary(s)
+            if s == slot_id:
+                continue  # will be overwritten with new binary anyway
+            magic = self.keyboard.keyb_read_module_magic(s)
+            if magic is None:
+                self.module_tab.log(f"Scan FAILED: slot {s}")
+                return
+            if magic != MODULE_HEADER_MAGIC:
+                self.module_tab.log(f"  slot {s}: blank/invalid (magic=0x{magic:08x}), skipping")
+                continue
+            # Occupied sibling — read its full binary
+            self.module_tab.log(f"  slot {s}: occupied, reading {MODULE_FLASH_SLOT_SIZE} bytes...")
+            data = self.keyboard.keyb_read_module_binary(s, MODULE_FLASH_SLOT_SIZE)
             if data is None:
                 self.module_tab.log(f"Read FAILED: slot {s}")
                 return
             sector_binaries[s] = data
 
-        # Replace target slot with new binary
+        # Target slot: new binary replaces whatever was there
         sector_binaries[slot_id] = binary
 
-        self.module_tab.log(f"Reloading sector {sector_id}...")
+        self.module_tab.log(f"Reloading sector {sector_id} ({len(sector_binaries)} slot(s) to write)...")
         if self.keyboard.keyb_sector_reload(slot_id, sector_binaries):
             self.module_tab.log(f"Load OK: slot {slot_id} (sector {sector_id})")
         else:

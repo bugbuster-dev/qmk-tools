@@ -865,16 +865,16 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 return
             if buf[0] == QMKataKeybCmd.ID_MODULE:
                 if len(buf) <= 2:
-                    # Chunk ACK or DEL response
+                    # Chunk ACK or DEL response (3 bytes on wire incl. seqnum)
                     self.sysex_response_seq[seqnum] = buf[1]
                     dbg("module ACK response: {}, rc={}", buf, buf[1])
                     return
-                if len(buf) > 5 and buf[1] != 0xFF:
+                if buf[1] == 0xFD:
                     # Chunked binary read response:
-                    # [ID_MODULE, slot_id, off_lo, off_hi, chunk_len, data...]
+                    # [ID_MODULE, 0xFD, slot_id, off_lo, off_hi, chunk_len, data...]
                     self.sysex_response_seq[seqnum] = buf
                     dbg("module binary chunk: slot={} off={} len={}",
-                        buf[1], buf[2] | (buf[3] << 8), buf[4])
+                        buf[2], buf[3] | (buf[4] << 8), buf[5])
                     return
                 if buf[1] == 0xFF:
                     # GET summary response
@@ -1124,7 +1124,17 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
         return self.script_stop
 
     # -------------------------------------------------------------------------------
-    def wait_for_response(self, seqnum):
+    def wait_for_response(self, seqnum, timeout_s=None):
+        """Wait for a sysex response with the given seqnum.
+
+        timeout_s: overall timeout. Defaults to keyb_poll_time * 100 (~100ms).
+            Callers performing operations known to block the firmware for
+            >100ms (e.g. flash sector erase) should pass a larger timeout
+            to avoid spurious retries that queue up identical commands in
+            the USB stack while the firmware is busy.
+        """
+        if timeout_s is None:
+            timeout_s = self.keyb_poll_time * 100
         timed_out = False
         start = now = time.monotonic()
         while not timed_out:
@@ -1132,21 +1142,27 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
             if seqnum in self.sysex_response_seq:
                 return True, self.sysex_response_seq.pop(seqnum, None)
             now = time.monotonic()
-            timed_out = now - start > self.keyb_poll_time * 100
+            timed_out = now - start > timeout_s
         self.dbg.tr(
             "E", "response timeout seqnum:{} start-now:{}-{}", hex(seqnum), start, now
         )
         return None
 
     # send and wait for response
-    def send_sysex_wait(self, sysex_cmd, data):
+    def send_sysex_wait(self, sysex_cmd, data, timeout_s=None):
+        """Send sysex and wait for matching-seqnum response.
+
+        timeout_s: per-attempt timeout (passed to wait_for_response).
+            Default ~100ms. Slow firmware operations (flash erase) should
+            pass a larger timeout to avoid spurious retries.
+        """
         response_received = None
         num_sends = 0
         while not response_received:
             _, seqnum = self.send_sysex(sysex_cmd, data)
             self.dbg.tr("SYSEX_COMMAND", "cmd:{}, seqnum:{}", sysex_cmd, seqnum)
             num_sends += 1
-            response_received = self.wait_for_response(seqnum)
+            response_received = self.wait_for_response(seqnum, timeout_s=timeout_s)
             if num_sends > 10:
                 self.dbg.tr("E", "response not received {}", seqnum)
                 return False
@@ -1666,8 +1682,10 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
             offset += len(chunk)
 
         # Finalize: offset=0xFFFF signals end-of-data + commit to flash.
+        # Use a generous timeout because module_load() may erase the
+        # sector (~200 ms–1 s) if it isn't already blank.
         data = chunk_header(slot_id, 0xFFFF, 0)
-        if not (response := self.send_sysex_wait(QMKataKeybCmd.SET, data)):
+        if not (response := self.send_sysex_wait(QMKataKeybCmd.SET, data, timeout_s=3.0)):
             self.dbg.tr("E", "keyb_set_module: finalize send failed")
             return False
         if response[1] != 0:
@@ -1703,22 +1721,43 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
     # Sector-preserving module reload helpers
     # -----------------------------------------------------------------------
 
+    def keyb_read_module_magic(self, slot_id):
+        """Read just the 4-byte magic word of a slot's header.
+
+        Returns the uint32 magic, or None on failure. Used to skip blank
+        slots (magic=0xFFFFFFFF) and invalidated slots (magic=0x00000000)
+        during sector-preserving reload so we don't waste USB bandwidth
+        reading 4 KB of 0xFF for empty slots.
+        """
+        data = bytearray([
+            QMKataKeybCmd.ID_MODULE,
+            slot_id & 0xFF,
+            0x00, 0x00,  # offset = 0 (read first 4 bytes via chunked read)
+        ])
+        if not (response := self.send_sysex_wait(QMKataKeybCmd.GET, data)):
+            return None
+        # Response: [ID_MODULE, 0xFD, slot_id, off_lo, off_hi, chunk_len, data...]
+        if (len(response) < 11 or response[0] != QMKataKeybCmd.ID_MODULE
+                or response[1] != 0xFD):
+            return None
+        magic = response[6] | (response[7] << 8) | (response[8] << 16) | (response[9] << 24)
+        return magic
+
     def keyb_read_module_binary(self, slot_id, size=0x1000):
         """Read full module binary from a slot via chunked GET.
 
         Returns bytes (size bytes) or None on failure.
         Wire format per chunk request:
             [ID_MODULE, slot_id, off_lo, off_hi]
-        Response per chunk:
-            [ID_MODULE, slot_id, off_lo, off_hi, chunk_len, data...]
+        Response per chunk (discriminator 0xFD distinguishes from per-slot
+        header response and summary response):
+            [ID_MODULE, 0xFD, slot_id, off_lo, off_hi, chunk_len, data...]
         """
         self.dbg.tr("SYSEX_COMMAND", "keyb_read_module_binary: slot={} size={}", slot_id, size)
-        CHUNK = 48  # matches firmware max chunk size
         result = bytearray()
 
         offset = 0
         while offset < size:
-            request_len = min(CHUNK, size - offset)
             data = bytearray([
                 QMKataKeybCmd.ID_MODULE,
                 slot_id & 0xFF,
@@ -1729,15 +1768,18 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 self.dbg.tr("E", "keyb_read_module_binary: GET failed at offset {}", offset)
                 return None
             # Response (buf after seqnum stripped):
-            # [ID_MODULE, slot_id, off_lo, off_hi, chunk_len, data...]
-            if len(response) < 6 or response[0] != QMKataKeybCmd.ID_MODULE:
+            # [ID_MODULE, 0xFD, slot_id, off_lo, off_hi, chunk_len, data...]
+            if (len(response) < 7 or response[0] != QMKataKeybCmd.ID_MODULE
+                    or response[1] != 0xFD):
                 self.dbg.tr("E", "keyb_read_module_binary: bad response at offset {}", offset)
                 return None
-            resp_off = response[2] | (response[3] << 8)
-            resp_len = response[4]
-            resp_data = response[5:5+resp_len]
-            if resp_off != offset or len(resp_data) < resp_len:
-                self.dbg.tr("E", "keyb_read_module_binary: offset mismatch off={} exp={}", resp_off, offset)
+            resp_slot = response[2]
+            resp_off = response[3] | (response[4] << 8)
+            resp_len = response[5]
+            resp_data = response[6:6+resp_len]
+            if resp_slot != slot_id or resp_off != offset or len(resp_data) < resp_len:
+                self.dbg.tr("E", "keyb_read_module_binary: slot/offset mismatch slot={} off={} exp=({},{})",
+                             resp_slot, resp_off, slot_id, offset)
                 return None
             result.extend(resp_data[:resp_len])
             offset += resp_len
@@ -1751,6 +1793,10 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
         Returns True on success.
 
         Wire: SET [ID_MODULE, 0xFE, sector_id, 0x00, 0x00, 0x00]
+
+        STM32F4 16 KB sector erase takes ~200 ms–1 s. Pass a generous
+        per-attempt timeout so send_sysex_wait doesn't spuriously retry
+        while the firmware is still busy with the erase.
         """
         self.dbg.tr("SYSEX_COMMAND", "keyb_erase_module_sector: sector={}", sector_id)
         data = bytearray([
@@ -1760,7 +1806,7 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
             0x00,                   # offset lo
             0x00,                   # declared_len = 0
         ])
-        if not (response := self.send_sysex_wait(QMKataKeybCmd.SET, data)):
+        if not (response := self.send_sysex_wait(QMKataKeybCmd.SET, data, timeout_s=3.0)):
             self.dbg.tr("E", "keyb_erase_module_sector: send failed")
             return False
         if response[1] != 0:
@@ -1772,7 +1818,12 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
         """Reload an entire module sector, preserving sibling modules.
 
         slot_id: target slot being updated (0-7).
-        sector_binaries: dict {slot_id: bytes} for all 4 slots in the sector.
+        sector_binaries: dict {slot_id: bytes} for slots that should be
+            written. Missing entries (or entries with value None) are
+            skipped — the sector erase already cleared them and leaving
+            them blank (flash 0xFF) is correct. This avoids the "write
+            4 KB of zeros" anti-pattern that would fail module_load()
+            validation.
 
         Returns True on success.
         """
@@ -1786,12 +1837,14 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
         if not self.keyb_erase_module_sector(sector_id):
             return False
 
-        # Step 2: write each slot individually (flash is already erased)
+        # Step 2: write each slot individually (flash is already erased).
+        # Slots not present in sector_binaries are left blank — this is
+        # both faster (no USB traffic) and correct (module_load() rejects
+        # all-zero headers, so we mustn't send them).
         for s in sector_slots:
             binary = sector_binaries.get(s)
             if binary is None:
-                # Blank slot — pad to 4 KB of zeros
-                binary = b'\x00' * 0x1000
+                continue
             if not self.keyb_set_module(s, binary):
                 self.dbg.tr("E", "keyb_sector_reload: failed writing slot {}", s)
                 return False
