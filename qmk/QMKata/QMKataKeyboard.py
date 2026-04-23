@@ -869,13 +869,6 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
                     self.sysex_response_seq[seqnum] = buf[1]
                     dbg("module ACK response: {}, rc={}", buf, buf[1])
                     return
-                if buf[1] == 0xFD:
-                    # Chunked binary read response:
-                    # [ID_MODULE, 0xFD, slot_id, off_lo, off_hi, chunk_len, data...]
-                    self.sysex_response_seq[seqnum] = buf
-                    dbg("module binary chunk: slot={} off={} len={}",
-                        buf[2], buf[3] | (buf[4] << 8), buf[5])
-                    return
                 if buf[1] == 0xFF:
                     # GET summary response
                     payload_len = len(buf) - 2
@@ -903,17 +896,24 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
                         }
                     )
                     return
-                # GET single slot response
-                slot_id = buf[1]
-                magic = struct.unpack_from("<I", buf, 2)[0]
-                flags = struct.unpack_from("<H", buf, 6)[0]
-                hook_bitmap = struct.unpack_from("<I", buf, 8)[0]
-                dbg("module slot: id={}, magic={:#x}, flags={:#x}, hook_bitmap={:#x}",
-                    slot_id, magic, flags, hook_bitmap)
-                self.signal_module_status.emit(
-                    {'type': 'slot', 'slot_id': slot_id, 'magic': magic,
-                     'flags': flags, 'hook_bitmap': hook_bitmap}
-                )
+                if len(buf) == 13:
+                    # GET single-slot header response (magic+flags+hook_bitmap)
+                    slot_id = buf[1]
+                    magic = struct.unpack_from("<I", buf, 2)[0]
+                    flags = struct.unpack_from("<H", buf, 6)[0]
+                    hook_bitmap = struct.unpack_from("<I", buf, 8)[0]
+                    dbg("module slot: id={}, magic={:#x}, flags={:#x}, hook_bitmap={:#x}",
+                        slot_id, magic, flags, hook_bitmap)
+                    self.signal_module_status.emit(
+                        {'type': 'slot', 'slot_id': slot_id, 'magic': magic,
+                         'flags': flags, 'hook_bitmap': hook_bitmap}
+                    )
+                    return
+                # Chunked binary read response (6+chunk bytes, never 13):
+                # [ID_MODULE, slot_id, off_lo, off_hi, chunk_len, data...]
+                self.sysex_response_seq[seqnum] = buf
+                dbg("module binary chunk: slot={} off={} len={}",
+                    buf[1], buf[2] | (buf[3] << 8), buf[4])
                 return
             if buf[0] == QMKataKeybCmd.ID_STRUCT_LAYOUT:
                 layout_id = buf[1]
@@ -1736,11 +1736,10 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
         ])
         if not (response := self.send_sysex_wait(QMKataKeybCmd.GET, data)):
             return None
-        # Response: [ID_MODULE, 0xFD, slot_id, off_lo, off_hi, chunk_len, data...]
-        if (len(response) < 11 or response[0] != QMKataKeybCmd.ID_MODULE
-                or response[1] != 0xFD):
+        # Response: [ID_MODULE, slot_id, off_lo, off_hi, chunk_len, data...]
+        if len(response) < 10 or response[0] != QMKataKeybCmd.ID_MODULE:
             return None
-        magic = response[6] | (response[7] << 8) | (response[8] << 16) | (response[9] << 24)
+        magic = response[5] | (response[6] << 8) | (response[7] << 16) | (response[8] << 24)
         return magic
 
     def keyb_read_module_binary(self, slot_id, size=0x1000):
@@ -1749,9 +1748,8 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
         Returns bytes (size bytes) or None on failure.
         Wire format per chunk request:
             [ID_MODULE, slot_id, off_lo, off_hi]
-        Response per chunk (discriminator 0xFD distinguishes from per-slot
-        header response and summary response):
-            [ID_MODULE, 0xFD, slot_id, off_lo, off_hi, chunk_len, data...]
+        Response per chunk (distinguished from per-slot header by length):
+            [ID_MODULE, slot_id, off_lo, off_hi, chunk_len, data...]
         """
         self.dbg.tr("SYSEX_COMMAND", "keyb_read_module_binary: slot={} size={}", slot_id, size)
         result = bytearray()
@@ -1768,15 +1766,14 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 self.dbg.tr("E", "keyb_read_module_binary: GET failed at offset {}", offset)
                 return None
             # Response (buf after seqnum stripped):
-            # [ID_MODULE, 0xFD, slot_id, off_lo, off_hi, chunk_len, data...]
-            if (len(response) < 7 or response[0] != QMKataKeybCmd.ID_MODULE
-                    or response[1] != 0xFD):
+            # [ID_MODULE, slot_id, off_lo, off_hi, chunk_len, data...]
+            if len(response) < 6 or response[0] != QMKataKeybCmd.ID_MODULE:
                 self.dbg.tr("E", "keyb_read_module_binary: bad response at offset {}", offset)
                 return None
-            resp_slot = response[2]
-            resp_off = response[3] | (response[4] << 8)
-            resp_len = response[5]
-            resp_data = response[6:6+resp_len]
+            resp_slot = response[1]
+            resp_off = response[2] | (response[3] << 8)
+            resp_len = response[4]
+            resp_data = response[5:5+resp_len]
             if resp_slot != slot_id or resp_off != offset or len(resp_data) < resp_len:
                 self.dbg.tr("E", "keyb_read_module_binary: slot/offset mismatch slot={} off={} exp=({},{})",
                              resp_slot, resp_off, slot_id, offset)
