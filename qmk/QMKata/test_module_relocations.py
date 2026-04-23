@@ -144,6 +144,64 @@ class ModuleRelocationsTest(unittest.TestCase):
             self.assertFalse(is_bl_w,
                 f"patch site 0x{off:x} holds a BL.W instruction pair (word=0x{word:08x})")
 
+    def test_apply_relocations_and_crc_rebases_and_finalises(self):
+        """Host helper must rebase ABS32 targets by slot_addr and embed the
+        final CRC so firmware sees identical bytes at load and boot scan.
+        See docs/plans/2026-04-23-module-host-side-relocations.md Task 1."""
+        import zlib
+        import struct
+        from ModuleBuild import ModuleBuild, MODULE_HEADER_SIZE, MODULE_FLASH_SLOT_SIZE
+
+        # Firmware MODULE_FLASH_BASE; constant added to ModuleBuild in Task 2.
+        MODULE_FLASH_BASE = 0x08008000
+
+        builder = ModuleBuild(
+            GccToolchain(KeychronQ3Max.TOOLCHAIN, firmware_path=str(FIRMWARE_ROOT)),
+            firmware_path=str(FIRMWARE_ROOT),
+        )
+        null_src = ROOT / "module_examples" / "null_module.c"
+        result = builder.build(str(null_src))
+        self.assertIsNotNone(result, builder.last_error)
+
+        # Task 2 will add 'relocs' to the result dict.
+        self.assertIn('relocs', result)
+        relocs = result['relocs']
+        self.assertGreater(len(relocs), 0,
+            "null_module has at least one literal-pool entry; empty relocs "
+            "means _extract_relocations regressed or _assemble didn't pass "
+            "them through")
+
+        slot_id = 0
+        slot_addr = MODULE_FLASH_BASE + slot_id * MODULE_FLASH_SLOT_SIZE
+
+        # Snapshot pre-reloc target values.
+        pre_targets = [
+            struct.unpack_from("<I", result['binary'], off)[0]
+            for off in relocs
+        ]
+
+        prepared = builder.apply_relocations_and_crc(
+            result['binary'], relocs, slot_addr
+        )
+
+        # Each reloc target now holds (original + slot_addr) mod 2**32.
+        for off, pre in zip(relocs, pre_targets):
+            post = struct.unpack_from("<I", prepared, off)[0]
+            self.assertEqual(post, (pre + slot_addr) & 0xFFFFFFFF,
+                f"reloc at offset 0x{off:x}: expected 0x{(pre+slot_addr)&0xFFFFFFFF:08x}, "
+                f"got 0x{post:08x}")
+
+        # Stored CRC matches zlib.crc32 of prepared-with-crc-zeroed.
+        crc_off = MODULE_HEADER_SIZE - 4
+        stored_crc = struct.unpack_from("<I", prepared, crc_off)[0]
+        verify = bytearray(prepared)
+        struct.pack_into("<I", verify, crc_off, 0)
+        computed_crc = zlib.crc32(bytes(verify)) & 0xFFFFFFFF
+        self.assertEqual(stored_crc, computed_crc,
+            f"prepared binary CRC mismatch: stored=0x{stored_crc:08x} "
+            f"computed=0x{computed_crc:08x} (zlib.crc32 of prepared with "
+            f"crc field zeroed)")
+
 
 if __name__ == "__main__":
     unittest.main()
