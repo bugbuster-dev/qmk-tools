@@ -1734,12 +1734,16 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
             slot_id & 0xFF,
             0x00, 0x00,  # offset = 0 (read first 4 bytes via chunked read)
         ])
-        if not (response := self.send_sysex_wait(QMKataKeybCmd.GET, data)):
+        response = self.send_sysex_wait(QMKataKeybCmd.GET, data)
+        if not response:
             return None
+        # send_sysex_wait returns the tuple (True, stored_buf). For chunked
+        # reads the stored_buf is the full response buffer (post seqnum strip).
+        buf = response[1]
         # Response: [ID_MODULE, slot_id, off_lo, off_hi, chunk_len, data...]
-        if len(response) < 10 or response[0] != QMKataKeybCmd.ID_MODULE:
+        if len(buf) < 10 or buf[0] != QMKataKeybCmd.ID_MODULE:
             return None
-        magic = response[5] | (response[6] << 8) | (response[7] << 16) | (response[8] << 24)
+        magic = buf[5] | (buf[6] << 8) | (buf[7] << 16) | (buf[8] << 24)
         return magic
 
     def keyb_read_module_binary(self, slot_id, size=0x1000):
@@ -1762,18 +1766,20 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 offset & 0xFF,
                 (offset >> 8) & 0xFF,
             ])
-            if not (response := self.send_sysex_wait(QMKataKeybCmd.GET, data)):
+            response = self.send_sysex_wait(QMKataKeybCmd.GET, data)
+            if not response:
                 self.dbg.tr("E", "keyb_read_module_binary: GET failed at offset {}", offset)
                 return None
-            # Response (buf after seqnum stripped):
-            # [ID_MODULE, slot_id, off_lo, off_hi, chunk_len, data...]
-            if len(response) < 6 or response[0] != QMKataKeybCmd.ID_MODULE:
+            # response is (True, stored_buf); stored_buf is full response
+            # after seqnum strip: [ID_MODULE, slot_id, off_lo, off_hi, chunk_len, data...]
+            buf = response[1]
+            if len(buf) < 6 or buf[0] != QMKataKeybCmd.ID_MODULE:
                 self.dbg.tr("E", "keyb_read_module_binary: bad response at offset {}", offset)
                 return None
-            resp_slot = response[1]
-            resp_off = response[2] | (response[3] << 8)
-            resp_len = response[4]
-            resp_data = response[5:5+resp_len]
+            resp_slot = buf[1]
+            resp_off = buf[2] | (buf[3] << 8)
+            resp_len = buf[4]
+            resp_data = buf[5:5+resp_len]
             if resp_slot != slot_id or resp_off != offset or len(resp_data) < resp_len:
                 self.dbg.tr("E", "keyb_read_module_binary: slot/offset mismatch slot={} off={} exp=({},{})",
                              resp_slot, resp_off, slot_id, offset)
