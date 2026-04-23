@@ -869,6 +869,13 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
                     self.sysex_response_seq[seqnum] = buf[1]
                     dbg("module ACK response: {}, rc={}", buf, buf[1])
                     return
+                if len(buf) > 5 and buf[1] != 0xFF:
+                    # Chunked binary read response:
+                    # [ID_MODULE, slot_id, off_lo, off_hi, chunk_len, data...]
+                    self.sysex_response_seq[seqnum] = buf
+                    dbg("module binary chunk: slot={} off={} len={}",
+                        buf[1], buf[2] | (buf[3] << 8), buf[4])
+                    return
                 if buf[1] == 0xFF:
                     # GET summary response
                     payload_len = len(buf) - 2
@@ -1690,4 +1697,103 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
         if response[1] != 0:
             self.dbg.tr("E", "keyb_del_module: error {}", response[1])
             return False
+        return True
+
+    # -----------------------------------------------------------------------
+    # Sector-preserving module reload helpers
+    # -----------------------------------------------------------------------
+
+    def keyb_read_module_binary(self, slot_id, size=0x1000):
+        """Read full module binary from a slot via chunked GET.
+
+        Returns bytes (size bytes) or None on failure.
+        Wire format per chunk request:
+            [ID_MODULE, slot_id, off_lo, off_hi]
+        Response per chunk:
+            [ID_MODULE, slot_id, off_lo, off_hi, chunk_len, data...]
+        """
+        self.dbg.tr("SYSEX_COMMAND", "keyb_read_module_binary: slot={} size={}", slot_id, size)
+        CHUNK = 48  # matches firmware max chunk size
+        result = bytearray()
+
+        offset = 0
+        while offset < size:
+            request_len = min(CHUNK, size - offset)
+            data = bytearray([
+                QMKataKeybCmd.ID_MODULE,
+                slot_id & 0xFF,
+                offset & 0xFF,
+                (offset >> 8) & 0xFF,
+            ])
+            if not (response := self.send_sysex_wait(QMKataKeybCmd.GET, data)):
+                self.dbg.tr("E", "keyb_read_module_binary: GET failed at offset {}", offset)
+                return None
+            # Response (buf after seqnum stripped):
+            # [ID_MODULE, slot_id, off_lo, off_hi, chunk_len, data...]
+            if len(response) < 6 or response[0] != QMKataKeybCmd.ID_MODULE:
+                self.dbg.tr("E", "keyb_read_module_binary: bad response at offset {}", offset)
+                return None
+            resp_off = response[2] | (response[3] << 8)
+            resp_len = response[4]
+            resp_data = response[5:5+resp_len]
+            if resp_off != offset or len(resp_data) < resp_len:
+                self.dbg.tr("E", "keyb_read_module_binary: offset mismatch off={} exp={}", resp_off, offset)
+                return None
+            result.extend(resp_data[:resp_len])
+            offset += resp_len
+
+        return bytes(result)
+
+    def keyb_erase_module_sector(self, sector_id):
+        """Erase an entire module flash sector (16 KB).
+
+        sector_id: 0 = Sector 2 (slots 0-3), 1 = Sector 3 (slots 4-7).
+        Returns True on success.
+
+        Wire: SET [ID_MODULE, 0xFE, sector_id, 0x00, 0x00, 0x00]
+        """
+        self.dbg.tr("SYSEX_COMMAND", "keyb_erase_module_sector: sector={}", sector_id)
+        data = bytearray([
+            QMKataKeybCmd.ID_MODULE,
+            0xFE,                   # special slot_id = sector erase
+            sector_id & 0xFF,       # sector_id in buf[1] → offset hi byte
+            0x00,                   # offset lo
+            0x00,                   # declared_len = 0
+        ])
+        if not (response := self.send_sysex_wait(QMKataKeybCmd.SET, data)):
+            self.dbg.tr("E", "keyb_erase_module_sector: send failed")
+            return False
+        if response[1] != 0:
+            self.dbg.tr("E", "keyb_erase_module_sector: error {}", response[1])
+            return False
+        return True
+
+    def keyb_sector_reload(self, slot_id, sector_binaries):
+        """Reload an entire module sector, preserving sibling modules.
+
+        slot_id: target slot being updated (0-7).
+        sector_binaries: dict {slot_id: bytes} for all 4 slots in the sector.
+
+        Returns True on success.
+        """
+        sector_id = slot_id // 4
+        sector_slots = [sector_id * 4 + i for i in range(4)]
+
+        self.dbg.tr("SYSEX_COMMAND", "keyb_sector_reload: slot={} sector={} slots={}",
+                     slot_id, sector_id, sector_slots)
+
+        # Step 1: erase sector (firmware unloads all slots in sector)
+        if not self.keyb_erase_module_sector(sector_id):
+            return False
+
+        # Step 2: write each slot individually (flash is already erased)
+        for s in sector_slots:
+            binary = sector_binaries.get(s)
+            if binary is None:
+                # Blank slot — pad to 4 KB of zeros
+                binary = b'\x00' * 0x1000
+            if not self.keyb_set_module(s, binary):
+                self.dbg.tr("E", "keyb_sector_reload: failed writing slot {}", s)
+                return False
+
         return True

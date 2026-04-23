@@ -847,8 +847,28 @@ class MainWindow(QMainWindow):
         QtCore.QTimer.singleShot(250, self.module_tab.refresh_slots)
 
     def on_module_load(self, slot_id, binary):
-        if self.keyboard.keyb_set_module(slot_id, binary):
-            self.module_tab.log(f"Load OK: slot {slot_id}")
+        # Sector-preserving reload: read all slots in the sector, replace
+        # the target, then erase+rewrite the entire sector. This prevents
+        # sibling modules from being destroyed by the sector-erase that
+        # flash programming requires.
+        sector_id = slot_id // 4
+        sector_slots = [sector_id * 4 + i for i in range(4)]
+
+        self.module_tab.log(f"Reading sector {sector_id} (slots {sector_slots})...")
+        sector_binaries = {}
+        for s in sector_slots:
+            data = self.keyboard.keyb_read_module_binary(s)
+            if data is None:
+                self.module_tab.log(f"Read FAILED: slot {s}")
+                return
+            sector_binaries[s] = data
+
+        # Replace target slot with new binary
+        sector_binaries[slot_id] = binary
+
+        self.module_tab.log(f"Reloading sector {sector_id}...")
+        if self.keyboard.keyb_sector_reload(slot_id, sector_binaries):
+            self.module_tab.log(f"Load OK: slot {slot_id} (sector {sector_id})")
         else:
             self.module_tab.log(f"Load FAILED: slot {slot_id}")
         self.module_tab.refresh_slots()
