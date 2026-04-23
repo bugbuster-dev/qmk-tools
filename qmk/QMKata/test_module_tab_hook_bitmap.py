@@ -143,7 +143,7 @@ class ModuleTabHookBitmapTest(unittest.TestCase):
 
         builder = ModuleBuild(_FakeToolchain())
 
-        result = builder._assemble(bytes(raw_bin))
+        result = builder._assemble(bytes(raw_bin), [])
 
         self.assertIsNotNone(result)
         self.assertEqual(MODULE_HEADER_MAGIC, struct.unpack_from("<I", result["binary"], 0)[0])
@@ -155,7 +155,9 @@ class ModuleTabHookBitmapTest(unittest.TestCase):
         tab = ModuleTab.__new__(ModuleTab)
         tab.last_build_result = {
             "binary": bytes(MODULE_HEADER_SIZE),
+            "relocs": [],
         }
+        tab.module_build = ModuleBuild(_FakeToolchain())
         tab.hook_checkboxes = [
             ("combo_should_trigger", _FakeCheckBox(True)),
             ("process_combo_event", _FakeCheckBox(False)),
@@ -163,7 +165,7 @@ class ModuleTabHookBitmapTest(unittest.TestCase):
         ]
         tab.log = lambda _message: None
 
-        binary = tab._prepare_binary_for_load()
+        binary = tab._prepare_binary_for_load(0)
 
         self.assertEqual(0x00000005, struct.unpack_from("<I", binary, 12)[0])
 
@@ -175,14 +177,16 @@ class ModuleTabHookBitmapTest(unittest.TestCase):
         tab = ModuleTab.__new__(ModuleTab)
         tab.last_build_result = {
             "binary": bytes(built_binary),
+            "relocs": [],
         }
+        tab.module_build = ModuleBuild(_FakeToolchain())
         tab.hook_checkboxes = [
             ("combo_should_trigger", _FakeCheckBox(False)),
             ("init", _FakeCheckBox(False)),
             ("deinit", _FakeCheckBox(False)),
         ]
 
-        binary = tab._prepare_binary_for_load()
+        binary = tab._prepare_binary_for_load(0)
 
         self.assertEqual(0x00000000, struct.unpack_from("<I", binary, 12)[0])
         self.assertEqual(0x00000000, struct.unpack_from("<I", binary, 20)[0])
@@ -196,13 +200,15 @@ class ModuleTabHookBitmapTest(unittest.TestCase):
         tab = ModuleTab.__new__(ModuleTab)
         tab.last_build_result = {
             "binary": bytes(built_binary),
+            "relocs": [],
         }
+        tab.module_build = ModuleBuild(_FakeToolchain())
         tab.hook_checkboxes = [
             ("init", _FakeCheckBox(True)),
             ("deinit", _FakeCheckBox(True)),
         ]
 
-        binary = tab._prepare_binary_for_load()
+        binary = tab._prepare_binary_for_load(0)
 
         self.assertEqual(0x00000018, struct.unpack_from("<I", binary, 12)[0])
         self.assertEqual(0x00000044, struct.unpack_from("<I", binary, 20)[0])
@@ -237,7 +243,7 @@ class ModuleCrcTest(unittest.TestCase):
         for i in range(body_size):
             raw_bin[MODULE_HEADER_SIZE + i] = (i * 37 + 11) & 0xFF
 
-        result = ModuleBuild(_FakeToolchain())._assemble(bytes(raw_bin))
+        result = ModuleBuild(_FakeToolchain())._assemble(bytes(raw_bin), [])
         self.assertIsNotNone(result)
         binary = result["binary"]
 
@@ -254,11 +260,12 @@ class ModuleCrcTest(unittest.TestCase):
         for i in range(64):
             raw_bin[MODULE_HEADER_SIZE + MODULE_HOOK_MAX * 4 + i] = (i ^ 0x5A) & 0xFF
 
-        built = ModuleBuild(_FakeToolchain())._assemble(bytes(raw_bin))
+        built = ModuleBuild(_FakeToolchain())._assemble(bytes(raw_bin), [])
         self.assertIsNotNone(built)
 
         tab = ModuleTab.__new__(ModuleTab)
         tab.last_build_result = built
+        tab.module_build = ModuleBuild(_FakeToolchain())
         # Deselect init/deinit so _prepare_binary_for_load must zero
         # offsets 20 and 24, exercising the CRC-invalidation path.
         tab.hook_checkboxes = [
@@ -268,7 +275,7 @@ class ModuleCrcTest(unittest.TestCase):
         ]
         tab.log = lambda _message: None
 
-        prepared = tab._prepare_binary_for_load()
+        prepared = tab._prepare_binary_for_load(0)
 
         stored_crc = struct.unpack_from("<I", prepared, MODULE_HEADER_SIZE - 4)[0]
         self.assertEqual(stored_crc, _recompute_crc(prepared))

@@ -1,5 +1,4 @@
 import struct
-import zlib
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -10,7 +9,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QFont, QTextCursor
 
 from DebugTracer import DebugTracer
-from ModuleBuild import ModuleBuild, HOOK_NAMES, MODULE_HEADER_SIZE, hook_name_for_index, hook_index_for_name
+from ModuleBuild import ModuleBuild, HOOK_NAMES, MODULE_HEADER_SIZE, MODULE_FLASH_BASE, MODULE_FLASH_SLOT_SIZE, hook_name_for_index, hook_index_for_name
 
 
 class ModuleTab(QWidget):
@@ -160,7 +159,7 @@ class ModuleTab(QWidget):
                     hook_bitmap |= (1 << hook_idx)
         return hook_bitmap
 
-    def _prepare_binary_for_load(self):
+    def _prepare_binary_for_load(self, slot_id):
         binary = bytearray(self.last_build_result['binary'])
         hook_bitmap = self._selected_hook_bitmap()
         struct.pack_into("<I", binary, 12, hook_bitmap)
@@ -169,18 +168,16 @@ class ModuleTab(QWidget):
         if not (hook_bitmap & (1 << 4)):
             struct.pack_into("<I", binary, 24, 0)
 
-        # We just mutated hook_bitmap / init_off / deinit_off, which
-        # invalidates the CRC written by ModuleBuild._assemble. Recompute
-        # it with the crc32 field (last 4 bytes of the module header)
-        # zeroed so the result matches what validate_module_crc() on the
-        # device will compute. Without this, the firmware rejects any
-        # module whose UI-selected hook set differs from the build-time
-        # default.
-        crc_off = MODULE_HEADER_SIZE - 4
-        struct.pack_into("<I", binary, crc_off, 0)
-        crc_value = zlib.crc32(bytes(binary)) & 0xFFFFFFFF
-        struct.pack_into("<I", binary, crc_off, crc_value)
-        return binary
+        # Delegate reloc apply + final CRC write to ModuleBuild.
+        # apply_relocations_and_crc zeroes the crc field internally before
+        # CRC computation, so the stale provisional CRC from _assemble is
+        # irrelevant here.
+        slot_addr = MODULE_FLASH_BASE + slot_id * MODULE_FLASH_SLOT_SIZE
+        return self.module_build.apply_relocations_and_crc(
+            bytes(binary),
+            self.last_build_result['relocs'],
+            slot_addr,
+        )
 
     def build_module(self):
         """Build module from source file."""
@@ -234,7 +231,7 @@ class ModuleTab(QWidget):
             self.log("Error: No module built yet")
             return
         slot_id = self.slot_combo.currentData()
-        binary = self._prepare_binary_for_load()
+        binary = self._prepare_binary_for_load(slot_id)
         self.log(f"Loading module to slot {slot_id} ({len(binary)} bytes)...")
         self.signal_load_module.emit(slot_id, binary)
 

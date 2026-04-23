@@ -17,6 +17,11 @@ MODULE_HOOK_TABLE_OFF = 40  # Hook table immediately follows header
 MODULE_HOOK_MAX       = 16
 MODULE_FLASH_SLOT_SIZE = 0x1000
 
+# Must match firmware module_flash.h. Duplicated rather than shared via
+# a generated header to keep the build system simple; a mismatch would
+# surface as a CRC failure on the device, which is loud and localised.
+MODULE_FLASH_BASE = 0x08008000
+
 # Hook name → index mapping (human-readable)
 HOOK_NAMES = {
     'combo_should_trigger':         0,
@@ -465,4 +470,43 @@ class ModuleBuild:
             'hooks': hooks,
             'size': len(final_bin),
             'fits_slot': fits_slot,
+            'relocs': list(relocs),  # sorted ascending; apply_relocations_and_crc consumes
         }
+
+    def apply_relocations_and_crc(self, binary, relocs, slot_addr):
+        """Rebase ABS32 targets by slot_addr and embed the final CRC.
+
+        Called from ModuleTab._prepare_binary_for_load at load time, once the
+        user has picked a flash slot. Firmware writes these bytes verbatim
+        and validates the embedded CRC on both module_load (RAM buffer copy)
+        and module_boot_scan (XIP from flash). Because flash bytes equal
+        these bytes, CRC matches on every cold boot.
+
+        Arguments:
+          binary:    bytes/bytearray from _assemble. The crc32 field may hold
+                     a provisional value from _assemble; it is overwritten.
+          relocs:    sorted list of u32 byte offsets into binary, as emitted
+                     by _extract_relocations. Empty list means no literal-pool
+                     ABS32 entries to rebase — still triggers a CRC recompute
+                     because binary may have been mutated by the UI path
+                     (hook_bitmap / init_off / deinit_off patches) before
+                     reaching this helper.
+          slot_addr: firmware MODULE_FLASH_GET_SLOT_ADDR(slot_id) equivalent,
+                     i.e. MODULE_FLASH_BASE + slot_id * MODULE_FLASH_SLOT_SIZE.
+
+        Returns a new bytes object. Does not mutate the input.
+        """
+        out = bytearray(binary)
+        for off in relocs:
+            if off + 4 > len(out):
+                raise ValueError(
+                    f"reloc offset {off} out of range (binary {len(out)} bytes)"
+                )
+            val = struct.unpack_from("<I", out, off)[0]
+            struct.pack_into("<I", out, off, (val + slot_addr) & 0xFFFFFFFF)
+
+        crc_off = MODULE_HEADER_SIZE - 4
+        struct.pack_into("<I", out, crc_off, 0)
+        crc_value = zlib.crc32(bytes(out)) & 0xFFFFFFFF
+        struct.pack_into("<I", out, crc_off, crc_value)
+        return bytes(out)
