@@ -53,14 +53,14 @@ bool combo_should_trigger(uint16_t combo_index, combo_t *combo,
                           uint16_t keycode, keyrecord_t *record) {
     (void)combo;
     (void)record;
-    mprintf("[mod] combo_should_trigger idx=%u kc=%u\n", combo_index, keycode);
+    mprintf("combo_should_trigger idx=%u kc=%u\n", combo_index, keycode);
     return true;
 }
 
 /* Index 1 — called after a combo is recognized. `pressed` is true on
  * press, false on release. Return value is void. */
 void process_combo_event(uint16_t combo_index, bool pressed) {
-    mprintf("[mod] process_combo_event idx=%u pressed=%u\n",
+    mprintf("process_combo_event idx=%u pressed=%u\n",
             combo_index, (unsigned)pressed);
 }
 
@@ -68,7 +68,7 @@ void process_combo_event(uint16_t combo_index, bool pressed) {
  * within which all combo keys must be pressed. */
 uint16_t get_combo_term(uint16_t index, combo_t *combo) {
     (void)combo;
-    mprintf("[mod] get_combo_term idx=%u\n", index);
+    mprintf("get_combo_term idx=%u\n", index);
     return COMBO_TERM;
 }
 
@@ -79,7 +79,7 @@ uint16_t get_combo_term(uint16_t index, combo_t *combo) {
  * the call reached module code; any other value is logged as a
  * mismatch warning. */
 static uint32_t module_init(void) {
-    mprintf("[mod] init\n");
+    mprintf("init\n");
     return MODULE_INIT_MAGIC;
 }
 
@@ -88,7 +88,7 @@ static uint32_t module_init(void) {
  * Use for cleanup that does not touch flash. Return value is logged
  * by the firmware but not checked; 0 is conventional. */
 static uint32_t module_deinit(void) {
-    mprintf("[mod] deinit\n");
+    mprintf("deinit\n");
     return 0;
 }
 
@@ -96,7 +96,7 @@ static uint32_t module_deinit(void) {
  * the combo keys to be held (not tapped) for the combo to fire. */
 bool get_combo_must_hold(uint16_t index, combo_t *combo) {
     (void)combo;
-    mprintf("[mod] get_combo_must_hold idx=%u\n", index);
+    mprintf("get_combo_must_hold idx=%u\n", index);
     return false;
 }
 
@@ -104,7 +104,7 @@ bool get_combo_must_hold(uint16_t index, combo_t *combo) {
  * the combo keys to be tapped (not held) for the combo to fire. */
 bool get_combo_must_tap(uint16_t index, combo_t *combo) {
     (void)combo;
-    mprintf("[mod] get_combo_must_tap idx=%u\n", index);
+    mprintf("get_combo_must_tap idx=%u\n", index);
     return false;
 }
 
@@ -112,7 +112,7 @@ bool get_combo_must_tap(uint16_t index, combo_t *combo) {
  * require combo keys to be pressed in the order they are declared. */
 bool get_combo_must_press_in_order(uint16_t index, combo_t *combo) {
     (void)combo;
-    mprintf("[mod] get_combo_must_press_in_order idx=%u\n", index);
+    mprintf("get_combo_must_press_in_order idx=%u\n", index);
     return true;
 }
 
@@ -121,7 +121,7 @@ bool get_combo_must_press_in_order(uint16_t index, combo_t *combo) {
 bool process_combo_key_release(uint16_t index, combo_t *combo,
                                uint8_t key_index, uint16_t keycode) {
     (void)combo;
-    mprintf("[mod] process_combo_key_release idx=%u key=%u kc=%u\n",
+    mprintf("process_combo_key_release idx=%u key=%u kc=%u\n",
             index, key_index, keycode);
     return false;
 }
@@ -131,7 +131,7 @@ bool process_combo_key_release(uint16_t index, combo_t *combo,
 bool process_combo_key_repress(uint16_t index, combo_t *combo,
                                uint8_t key_index, uint16_t keycode) {
     (void)combo;
-    mprintf("[mod] process_combo_key_repress idx=%u key=%u kc=%u\n",
+    mprintf("process_combo_key_repress idx=%u key=%u kc=%u\n",
             index, key_index, keycode);
     return false;
 }
@@ -140,7 +140,7 @@ bool process_combo_key_repress(uint16_t index, combo_t *combo,
  * given active layer. Return the layer whose combos should apply;
  * returning `layer` unchanged means no remapping. */
 uint8_t combo_ref_from_layer(uint8_t layer) {
-    mprintf("[mod] combo_ref_from_layer layer=%u\n", layer);
+    mprintf("combo_ref_from_layer layer=%u\n", layer);
     return layer;
 }
 

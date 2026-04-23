@@ -25,7 +25,7 @@
 #include "module_api.h"
 
 static uint32_t module_init(void) {
-    mprintf("[mod] null_module init\n");
+    mprintf("null_module init\n");
     return MODULE_INIT_MAGIC;
 }
 

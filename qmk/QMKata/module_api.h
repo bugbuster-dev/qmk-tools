@@ -45,10 +45,11 @@
    #include quantum/logging/print.h here — it pulls in firmware-only
    headers that break the module build.
 
-   Use mprintf for routine diagnostics that shouldn't spam the console
-   by default. Modules that need unconditional output (e.g. fatal
-   error paths) can still extern-declare printf directly, which
-   bypasses the gate. */
+   Output is automatically prefixed with "[mod] " so module console
+   output is distinguishable from firmware core output. Use mprintf
+   for routine diagnostics that shouldn't spam the console by default.
+   Modules that need unconditional output (e.g. fatal error paths) can
+   still extern-declare printf directly, which bypasses the gate. */
 extern void mprintf(const char *fmt, ...);
 
 /* Place the hook table in the .hook_table section */
