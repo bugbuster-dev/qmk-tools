@@ -32,6 +32,25 @@
    Init must return this magic; deinit's return is logged by the firmware but not checked. */
 #define MODULE_INIT_MAGIC                         0x600DBEEFu
 
+/* mprintf: gated diagnostic print for module code.
+
+   Signature is printf-compatible (except the return type is void).
+   No-op unless the user sets debug_config_user.module = 1 on the
+   device; otherwise forwards to the firmware's printf (the same
+   console endpoint used by QMK core).
+
+   Why not use QMK's xprintf() directly? xprintf is a preprocessor
+   macro that expands to printf, not a real symbol, so modules cannot
+   resolve it through the host's .map-based symbol linkage. Do not
+   #include quantum/logging/print.h here — it pulls in firmware-only
+   headers that break the module build.
+
+   Use mprintf for routine diagnostics that shouldn't spam the console
+   by default. Modules that need unconditional output (e.g. fatal
+   error paths) can still extern-declare printf directly, which
+   bypasses the gate. */
+extern void mprintf(const char *fmt, ...);
+
 /* Place the hook table in the .hook_table section */
 #define MODULE_HOOK_TABLE __attribute__((section(".hook_table"), used))
 

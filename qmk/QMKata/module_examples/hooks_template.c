@@ -6,7 +6,7 @@
  *   - a body that returns the same default the firmware dispatcher
  *     returns when no module claims the hook (so leaving a hook's
  *     skeleton body in place is behaviourally a no-op),
- *   - a printf() trace line so you can confirm on the console that
+ *   - an mprintf() trace line so you can confirm on the console that
  *     the firmware is actually calling the hook.
  *
  * Usage:
@@ -15,7 +15,7 @@
  *   3. Build + load via the QMKata "modules" tab.
  *
  * Prerequisites for the trace output:
- *   - Firmware built with CONSOLE_ENABLE = yes (so printf is linked
+ *   - Firmware built with CONSOLE_ENABLE = yes (so mprintf is linked
  *     into the firmware's .map and the host builder can resolve it).
  *   - A console reader attached: hid_listen, or the QMKata "console"
  *     tab.
@@ -28,16 +28,6 @@
  */
 
 #include "module_api.h"
-
-/* printf is provided by the firmware (CONSOLE_ENABLE=yes, via
- * lib/printf/printf.c). The host module builder resolves this symbol
- * against the firmware .map file and emits its absolute address in
- * symbols.ld at link time.
- *
- * Note: QMK's xprintf() is a preprocessor macro that expands to
- * printf(), not a real symbol. Modules must call printf() directly —
- * QMK headers like quantum/logging/print.h are not included here. */
-extern int printf(const char *fmt, ...);
 
 /* Local prototypes for init/deinit — module_api.h does not declare
  * them since they are module-local names, not part of the public API. */
@@ -63,14 +53,14 @@ bool combo_should_trigger(uint16_t combo_index, combo_t *combo,
                           uint16_t keycode, keyrecord_t *record) {
     (void)combo;
     (void)record;
-    printf("[mod] combo_should_trigger idx=%u kc=%u\n", combo_index, keycode);
+    mprintf("[mod] combo_should_trigger idx=%u kc=%u\n", combo_index, keycode);
     return true;
 }
 
 /* Index 1 — called after a combo is recognized. `pressed` is true on
  * press, false on release. Return value is void. */
 void process_combo_event(uint16_t combo_index, bool pressed) {
-    printf("[mod] process_combo_event idx=%u pressed=%u\n",
+    mprintf("[mod] process_combo_event idx=%u pressed=%u\n",
             combo_index, (unsigned)pressed);
 }
 
@@ -78,7 +68,7 @@ void process_combo_event(uint16_t combo_index, bool pressed) {
  * within which all combo keys must be pressed. */
 uint16_t get_combo_term(uint16_t index, combo_t *combo) {
     (void)combo;
-    printf("[mod] get_combo_term idx=%u\n", index);
+    mprintf("[mod] get_combo_term idx=%u\n", index);
     return COMBO_TERM;
 }
 
@@ -89,7 +79,7 @@ uint16_t get_combo_term(uint16_t index, combo_t *combo) {
  * the call reached module code; any other value is logged as a
  * mismatch warning. */
 static uint32_t module_init(void) {
-    printf("[mod] init\n");
+    mprintf("[mod] init\n");
     return MODULE_INIT_MAGIC;
 }
 
@@ -98,7 +88,7 @@ static uint32_t module_init(void) {
  * Use for cleanup that does not touch flash. Return value is logged
  * by the firmware but not checked; 0 is conventional. */
 static uint32_t module_deinit(void) {
-    printf("[mod] deinit\n");
+    mprintf("[mod] deinit\n");
     return 0;
 }
 
@@ -106,7 +96,7 @@ static uint32_t module_deinit(void) {
  * the combo keys to be held (not tapped) for the combo to fire. */
 bool get_combo_must_hold(uint16_t index, combo_t *combo) {
     (void)combo;
-    printf("[mod] get_combo_must_hold idx=%u\n", index);
+    mprintf("[mod] get_combo_must_hold idx=%u\n", index);
     return false;
 }
 
@@ -114,7 +104,7 @@ bool get_combo_must_hold(uint16_t index, combo_t *combo) {
  * the combo keys to be tapped (not held) for the combo to fire. */
 bool get_combo_must_tap(uint16_t index, combo_t *combo) {
     (void)combo;
-    printf("[mod] get_combo_must_tap idx=%u\n", index);
+    mprintf("[mod] get_combo_must_tap idx=%u\n", index);
     return false;
 }
 
@@ -122,7 +112,7 @@ bool get_combo_must_tap(uint16_t index, combo_t *combo) {
  * require combo keys to be pressed in the order they are declared. */
 bool get_combo_must_press_in_order(uint16_t index, combo_t *combo) {
     (void)combo;
-    printf("[mod] get_combo_must_press_in_order idx=%u\n", index);
+    mprintf("[mod] get_combo_must_press_in_order idx=%u\n", index);
     return true;
 }
 
@@ -131,7 +121,7 @@ bool get_combo_must_press_in_order(uint16_t index, combo_t *combo) {
 bool process_combo_key_release(uint16_t index, combo_t *combo,
                                uint8_t key_index, uint16_t keycode) {
     (void)combo;
-    printf("[mod] process_combo_key_release idx=%u key=%u kc=%u\n",
+    mprintf("[mod] process_combo_key_release idx=%u key=%u kc=%u\n",
             index, key_index, keycode);
     return false;
 }
@@ -141,7 +131,7 @@ bool process_combo_key_release(uint16_t index, combo_t *combo,
 bool process_combo_key_repress(uint16_t index, combo_t *combo,
                                uint8_t key_index, uint16_t keycode) {
     (void)combo;
-    printf("[mod] process_combo_key_repress idx=%u key=%u kc=%u\n",
+    mprintf("[mod] process_combo_key_repress idx=%u key=%u kc=%u\n",
             index, key_index, keycode);
     return false;
 }
@@ -150,7 +140,7 @@ bool process_combo_key_repress(uint16_t index, combo_t *combo,
  * given active layer. Return the layer whose combos should apply;
  * returning `layer` unchanged means no remapping. */
 uint8_t combo_ref_from_layer(uint8_t layer) {
-    printf("[mod] combo_ref_from_layer layer=%u\n", layer);
+    mprintf("[mod] combo_ref_from_layer layer=%u\n", layer);
     return layer;
 }
 
