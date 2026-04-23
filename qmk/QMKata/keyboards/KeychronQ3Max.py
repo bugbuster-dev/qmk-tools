@@ -239,6 +239,7 @@ class KeychronQ3Max:
             1: "qmkata",
             2: "stats",
             3: "user animation",
+            4: "module",
         }
         CONFIG_RGB = {
             1: "enable",
