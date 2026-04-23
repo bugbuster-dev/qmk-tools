@@ -84,24 +84,20 @@ const void *module_hook_table[MODULE_HOOK_MAX] = {
     def test_header_field_order_for_null_module(self):
         """Pin exact init_off and deinit_off values for null_module.
 
-        Rationale (Task 1 review I3 carry-forward): _Static_assert on
-        sizeof(module_header_t) catches header size drift, but cannot
-        catch two same-typed fields being swapped between the C struct
-        declaration order and the Python struct.pack format string.
-        This test pins concrete VALUES for two adjacent uint32_t fields
-        so a swap shows up immediately as a test failure.
+        Rationale: _Static_assert on sizeof(module_header_t) catches
+        header size drift but cannot catch two same-typed fields being
+        swapped between the C struct declaration order and the Python
+        struct.pack format string. This test pins concrete VALUES for
+        two adjacent uint32_t fields so a swap shows up immediately as
+        a test failure.
 
         Expected values for null_module:
-          - init_off = 137: the only function in the module is
-            module_init. The linker script currently produces a
-            104-byte .hook_table section (see the deferred linker-script
-            finding, Task 5 of the current plan): `. = 40 + 64;` is
-            interpreted section-relative, so .hook_table spans VMA
-            32..136, leaving 40 bytes of unused padding between the real
-            hook slots (32..96) and .text. module_init therefore lands at
-            VMA 136 and the Thumb bit is set on function pointers:
-            136 | 1 = 137. **When Task 5 fixes the padding this assertion
-            must be updated to 97** (96 | 1).
+          - init_off = 97: the only function in the module is
+            module_init. The linker script produces a 64-byte
+            .hook_table section (MODULE_HOOK_MAX * 4), packed right
+            after the 32-byte header, so .text starts at VMA 96.
+            module_init lands at .text base (VMA 96) and the Thumb
+            bit is set on function pointers: 96 | 1 = 97.
           - deinit_off = 0: null_module declares no deinit hook, so
             the hook table slot at MODULE_HOOK_DEINIT stays NULL and
             _assemble() leaves deinit_off unset.
@@ -116,8 +112,8 @@ const void *module_hook_table[MODULE_HOOK_MAX] = {
         init_off = int.from_bytes(binary[20:24], "little")
         deinit_off = int.from_bytes(binary[24:28], "little")
         self.assertEqual(
-            137, init_off,
-            "init_off must point at module_init at .text base (136) with Thumb bit set",
+            97, init_off,
+            "init_off must point at module_init at .text base (96) with Thumb bit set",
         )
         self.assertEqual(
             0, deinit_off,

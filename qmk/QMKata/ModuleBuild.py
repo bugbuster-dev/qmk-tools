@@ -360,14 +360,12 @@ class ModuleBuild:
         load time, when the target slot's absolute XIP address is known.
         """
         # The binary starts at offset 0:
-        #   [0..31]    = header space (32 bytes, filled by linker with zeros)
-        #   [32..135]  = .hook_table section (linker reserves 104 bytes due
-        #                to section-relative `. = 40 + 64;` in module_linker.ld;
-        #                only bytes 32..95 hold real hook slots, 96..135 is
-        #                padding — Task 5 drops the padding)
-        #   [136..]    = code (.text + merged .rodata). No reloc table is
-        #                appended; relocs are returned in result['relocs'] and
-        #                consumed by apply_relocations_and_crc at load time.
+        #   [0..31]  = header space (32 bytes, filled by linker with zeros)
+        #   [32..95] = .hook_table section (64 bytes, MODULE_HOOK_MAX * 4 slots)
+        #   [96..]   = code (.text + merged .rodata). No reloc table is
+        #              appended; relocs are returned in result['relocs']
+        #              and consumed by apply_relocations_and_crc at load
+        #              time.
 
         if len(raw_bin) < MODULE_HEADER_SIZE + MODULE_HOOK_MAX * 4:
             print(f"E: binary too small ({len(raw_bin)} bytes)")

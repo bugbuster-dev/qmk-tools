@@ -11,7 +11,6 @@ SECTIONS {
     .hook_table : ALIGN(4) {
         KEEP(*(.hook_table))
         . = ALIGN(4);
-        . = 40 + 64;  /* Force hook table to end at offset 104 (40-byte header + 64-byte table) */
     } > MODULE
     .text : ALIGN(4) {
         *(.text*)

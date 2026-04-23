@@ -54,13 +54,13 @@ class ModuleRelocationsTest(unittest.TestCase):
         # Offsets must be 4-byte aligned
         for off in relocs:
             self.assertEqual(0, off % 4, f"offset 0x{off:x} not word-aligned")
-        # Offsets must fall within .text (i.e. >= hook_table_end = 104)
+        # Offsets must fall within .text (i.e. >= hook_table_end = 96)
         # AND must index inside the emitted binary — not past its end.
         # This catches the class of bugs where offset arithmetic
         # double-counts section base vs r_offset (r_offset is already the
         # VMA for ET_EXEC output).
         for off in relocs:
-            self.assertGreaterEqual(off, 104, f"offset 0x{off:x} overlaps header/hook_table")
+            self.assertGreaterEqual(off, 96, f"offset 0x{off:x} overlaps header/hook_table")
             self.assertLessEqual(off + 4, len(bin_bytes),
                 f"offset 0x{off:x} past bin end 0x{len(bin_bytes):x}")
             # Each patch site holds the link-time absolute address of a

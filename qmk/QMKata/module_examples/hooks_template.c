@@ -21,8 +21,8 @@
  *     tab.
  *
  * Size budget reminder:
- *   - A slot is 4096 bytes. The header (40 B) and hook table (64 B)
- *     consume a fixed 104 B, leaving ~3992 B for code + rodata. The
+ *   - A slot is 4096 bytes. The header (32 B) and hook table (64 B)
+ *     consume a fixed 96 B, leaving ~4000 B for code + rodata. The
  *     trace strings below cost a few hundred bytes of .rodata; trim
  *     them if you're close to the ceiling.
  */
