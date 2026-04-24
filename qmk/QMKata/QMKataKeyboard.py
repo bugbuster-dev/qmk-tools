@@ -1830,8 +1830,9 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
 
         Returns True on success.
         """
-        sector_id = slot_id // 4
-        sector_slots = [sector_id * 4 + i for i in range(4)]
+        slots_per_sector = getattr(self.keyboardModel, "MODULE_FLASH_SLOTS_PER_SECTOR", 4)
+        sector_id = slot_id // slots_per_sector
+        sector_slots = [sector_id * slots_per_sector + i for i in range(slots_per_sector)]
 
         self.dbg.tr("SYSEX_COMMAND", "keyb_sector_reload: slot={} sector={} slots={}",
                      slot_id, sector_id, sector_slots)

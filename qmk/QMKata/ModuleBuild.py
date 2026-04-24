@@ -15,12 +15,16 @@ MODULE_HEADER_VERSION = 1
 MODULE_HEADER_SIZE    = 32
 MODULE_HOOK_TABLE_OFF = 32  # Hook table immediately follows header
 MODULE_HOOK_MAX       = 16
-MODULE_FLASH_SLOT_SIZE = 0x1000
 
-# Must match firmware module_flash.h. Duplicated rather than shared via
-# a generated header to keep the build system simple; a mismatch would
-# surface as a CRC failure on the device, which is loud and localised.
-MODULE_FLASH_BASE = 0x08008000
+# Flash layout defaults — the authoritative source is the keyboard class
+# (see keyboards/*.py module_flash_layout()), which derives values from
+# the MCU hardware profile in qmk/QMKata/hw/. These module-level
+# constants are kept for legacy callers (tests, standalone scripts
+# without a keyboard context) and default to Keychron Q3 Max (STM32F401xC,
+# module loader sectors 2-3). Any caller that has a keyboard should use
+# keyboard.module_flash_layout() instead.
+MODULE_FLASH_SLOT_SIZE = 0x1000
+MODULE_FLASH_BASE      = 0x08008000
 
 # Hook name → index mapping (human-readable)
 HOOK_NAMES = {

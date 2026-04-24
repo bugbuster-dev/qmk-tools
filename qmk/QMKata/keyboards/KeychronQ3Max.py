@@ -2,7 +2,7 @@ class KeychronQ3Max:
     NAME = "keychron q3 max"
     VID = 0x3434
     PID = 0x0830
-    MCU = "STM32F402", "cortex-m4", "le32"
+    MCU = "STM32F401xC", "cortex-m4", "le32"
     PORT_TYPE = "rawhid"
 
     MAXTRIX_W = 17
@@ -14,6 +14,17 @@ class KeychronQ3Max:
 
     DEFAULT_LAYER = {"m": 0, "w": 2}
     NUM_LAYERS = 8
+
+    # ---------------------------------------------------------------------------
+    # Module loader flash layout (must match firmware module_flash.h).
+    # The firmware reserves two 16 KB flash sectors (2 and 3 in the MCU's
+    # sector table) and divides each into four 4 KB slots, giving 8 slots
+    # total. sector_id in the wire protocol is an index into this range
+    # (0 = MCU sector 2, 1 = MCU sector 3), not the MCU sector index.
+    MODULE_FLASH_FIRST_SECTOR   = 2
+    MODULE_FLASH_SECTOR_COUNT   = 2
+    MODULE_FLASH_SLOTS_PER_SECTOR = 4
+    MODULE_FLASH_SLOT_SIZE      = 0x1000
     # ---------------------------------------------------------------------------
     KEY_LAYOUT = {
         "win": [
@@ -101,6 +112,43 @@ class KeychronQ3Max:
     @classmethod
     def num_layers(cls):
         return cls.NUM_LAYERS
+
+    @classmethod
+    def hw(cls):
+        """Return the MCU hardware profile (flash/RAM layout) or None.
+
+        The MCU name is the first element of the MCU tuple; the hardware
+        database (qmk/QMKata/hw/) is keyed on that name.
+        """
+        from qmk.QMKata import hw
+        return hw.get(cls.MCU[0])
+
+    @classmethod
+    def module_flash_layout(cls):
+        """Return list of (slot_id, slot_base_addr, slot_size) for every
+        module flash slot defined by this keyboard's module loader config.
+
+        Derived from the MCU sector table + per-keyboard MODULE_FLASH_*
+        constants, so the data comes from a single source of truth
+        (the MCU profile) rather than being hardcoded twice.
+        """
+        profile = cls.hw()
+        if profile is None:
+            return []
+        slots = []
+        slot_id = 0
+        for sector_idx in range(
+            cls.MODULE_FLASH_FIRST_SECTOR,
+            cls.MODULE_FLASH_FIRST_SECTOR + cls.MODULE_FLASH_SECTOR_COUNT,
+        ):
+            sector = profile.sector_by_index(sector_idx)
+            if sector is None:
+                continue
+            for slot_in_sector in range(cls.MODULE_FLASH_SLOTS_PER_SECTOR):
+                base = sector.base + slot_in_sector * cls.MODULE_FLASH_SLOT_SIZE
+                slots.append((slot_id, base, cls.MODULE_FLASH_SLOT_SIZE))
+                slot_id += 1
+        return slots
 
     # pixel position to (rgb) led index
     @staticmethod

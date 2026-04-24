@@ -12,6 +12,22 @@ from DebugTracer import DebugTracer
 from ModuleBuild import ModuleBuild, HOOK_NAMES, MODULE_HEADER_SIZE, MODULE_FLASH_BASE, MODULE_FLASH_SLOT_SIZE, hook_name_for_index, hook_index_for_name
 
 
+def _slot_base_addr(keyboard_model, slot_id):
+    """Resolve slot_id to its absolute flash address via keyboard hardware layout.
+
+    Falls back to the legacy MODULE_FLASH_BASE + slot_id * MODULE_FLASH_SLOT_SIZE
+    formula when the keyboard class does not expose module_flash_layout()
+    (older keyboard definitions without an MCU profile). The authoritative
+    source is keyboard.module_flash_layout() which derives the address
+    from the MCU's flash sector table + per-keyboard module sector config.
+    """
+    if keyboard_model is not None and hasattr(keyboard_model, "module_flash_layout"):
+        for sid, base, _size in keyboard_model.module_flash_layout():
+            if sid == slot_id:
+                return base
+    return MODULE_FLASH_BASE + slot_id * MODULE_FLASH_SLOT_SIZE
+
+
 class ModuleTab(QWidget):
     """Tab for building, loading, and unloading keyboard modules."""
 
@@ -172,7 +188,9 @@ class ModuleTab(QWidget):
         # apply_relocations_and_crc zeroes the crc field internally before
         # CRC computation, so the stale provisional CRC from _assemble is
         # irrelevant here.
-        slot_addr = MODULE_FLASH_BASE + slot_id * MODULE_FLASH_SLOT_SIZE
+        kb = getattr(self, "keyboard", None)
+        keyboard_model = getattr(kb, "keyboardModel", None) if kb is not None else None
+        slot_addr = _slot_base_addr(keyboard_model, slot_id)
         return self.module_build.apply_relocations_and_crc(
             bytes(binary),
             self.last_build_result['relocs'],

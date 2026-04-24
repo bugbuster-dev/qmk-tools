@@ -851,10 +851,16 @@ class MainWindow(QMainWindow):
         # slots back. Flash erase is sector-granular (16 KB = 4 slots), so
         # loading into any slot would otherwise destroy its 3 siblings.
         MODULE_HEADER_MAGIC = 0x4D4F444C  # 'MODL'
-        MODULE_FLASH_SLOT_SIZE = 0x1000
 
-        sector_id = slot_id // 4
-        sector_slots = [sector_id * 4 + i for i in range(4)]
+        # Pull slot size + slots-per-sector from the keyboard's module flash
+        # layout (derived from the MCU hardware profile). Fall back to the
+        # legacy Q3 Max defaults for keyboard classes that don't expose it.
+        kb_model = getattr(self.keyboard, "keyboardModel", None)
+        slots_per_sector = getattr(kb_model, "MODULE_FLASH_SLOTS_PER_SECTOR", 4)
+        slot_size = getattr(kb_model, "MODULE_FLASH_SLOT_SIZE", 0x1000)
+
+        sector_id = slot_id // slots_per_sector
+        sector_slots = [sector_id * slots_per_sector + i for i in range(slots_per_sector)]
 
         # Read magic for each sibling to decide which ones need preservation.
         # Blank slots (0xFFFFFFFF) and invalidated slots (0x00000000) are
@@ -873,8 +879,8 @@ class MainWindow(QMainWindow):
                 self.module_tab.log(f"  slot {s}: blank/invalid (magic=0x{magic:08x}), skipping")
                 continue
             # Occupied sibling — read its full binary
-            self.module_tab.log(f"  slot {s}: occupied, reading {MODULE_FLASH_SLOT_SIZE} bytes...")
-            data = self.keyboard.keyb_read_module_binary(s, MODULE_FLASH_SLOT_SIZE)
+            self.module_tab.log(f"  slot {s}: occupied, reading {slot_size} bytes...")
+            data = self.keyboard.keyb_read_module_binary(s, slot_size)
             if data is None:
                 self.module_tab.log(f"Read FAILED: slot {s}")
                 return
