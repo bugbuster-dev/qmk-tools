@@ -120,7 +120,9 @@ class KeychronQ3Max:
         The MCU name is the first element of the MCU tuple; the hardware
         database (qmk/QMKata/hw/) is keyed on that name.
         """
-        from qmk.QMKata import hw
+        # Flat import: qmk/QMKata is added to sys.path directly (not as a
+        # package), so sibling modules are imported by bare name.
+        import hw
         return hw.get(cls.MCU[0])
 
     @classmethod
