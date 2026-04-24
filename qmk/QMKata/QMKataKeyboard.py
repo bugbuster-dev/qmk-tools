@@ -1805,8 +1805,8 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
         data = bytearray([
             QMKataKeybCmd.ID_MODULE,
             0xFE,                   # special slot_id = sector erase
-            sector_id & 0xFF,       # sector_id in buf[1] → offset hi byte
             0x00,                   # offset lo
+            sector_id & 0xFF,       # offset hi → firmware reads sector_id here
             0x00,                   # declared_len = 0
         ])
         if not (response := self.send_sysex_wait(QMKataKeybCmd.SET, data, timeout_s=3.0)):
@@ -1850,6 +1850,29 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 continue
             if not self.keyb_set_module(s, binary):
                 self.dbg.tr("E", "keyb_sector_reload: failed writing slot {}", s)
+                # Clear the firmware's erase-skip flag even on failure so a
+                # later retry or independent load erases normally. Without
+                # this, a stale flag would cause the next load to skip the
+                # erase and corrupt data (flash can't program 0→1).
+                self.keyb_sector_reload_done()
                 return False
 
+        # Signal firmware that sector-preserving reload is complete.
+        # This clears the erase-skip flag so the next independent load
+        # to the same sector will erase normally.
+        self.keyb_sector_reload_done()
+
         return True
+
+    def keyb_sector_reload_done(self):
+        """Tell firmware that sector-preserving reload is complete.
+
+        Clears the firmware's erase-skip flag so the next independent
+        module load erases the sector normally. Wire: DEL [ID_MODULE, 0xFD].
+        """
+        self.dbg.tr("SYSEX_COMMAND", "keyb_sector_reload_done")
+        data = bytearray([
+            QMKataKeybCmd.ID_MODULE,
+            0xFD,                   # special slot_id = reload done
+        ])
+        self.send_sysex_wait(QMKataKeybCmd.DEL, data)
