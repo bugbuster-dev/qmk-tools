@@ -11,10 +11,10 @@ from GccMapfile import GccMapfile
 
 # Must match firmware module_loader.h
 MODULE_HEADER_MAGIC   = 0x4D4F444C  # "MODL" as uint32 (bytes on disk: 4C 44 4F 4D)
-MODULE_HEADER_VERSION = 1
+MODULE_HEADER_VERSION = 2
 MODULE_HEADER_SIZE    = 32
 MODULE_HOOK_TABLE_OFF = 32  # Hook table immediately follows header
-MODULE_HOOK_MAX       = 16
+MODULE_HOOK_MAX       = 32
 
 # Flash layout defaults — the authoritative source is the keyboard class
 # (see keyboards/*.py module_flash_layout()), which derives values from
@@ -26,17 +26,29 @@ MODULE_HOOK_MAX       = 16
 MODULE_FLASH_SLOT_SIZE = 0x1000
 MODULE_FLASH_BASE      = 0x08008000
 
-# Hook name → index mapping (human-readable)
+# Hook name → index mapping (human-readable). Keys are the QMK
+# callback names a module overrides; values are the indices defined
+# in firmware module_loader.h / host module_api.h. The C constants
+# are categorised (MODULE_COMBO_HOOK_*, MODULE_KEY_HOOK_*,
+# MODULE_TAPDANCE_HOOK_*, MODULE_LEADER_HOOK_*) but the underlying
+# index space is flat, so this map stays a single dict.
 HOOK_NAMES = {
-    'combo_should_trigger':         0,
-    'process_combo_event':          1,
-    'get_combo_term':               2,
-    'get_combo_must_hold':          5,
-    'get_combo_must_tap':           6,
+    'combo_should_trigger':          0,
+    'process_combo_event':           1,
+    'get_combo_term':                2,
+    'get_combo_must_hold':           5,
+    'get_combo_must_tap':            6,
     'get_combo_must_press_in_order': 7,
-    'process_combo_key_release':    8,
-    'process_combo_key_repress':    9,
-    'combo_ref_from_layer':         10,
+    'process_combo_key_release':     8,
+    'process_combo_key_repress':     9,
+    'combo_ref_from_layer':          10,
+    'process_record_user':           11,
+    'tap_dance_on_each_tap':         12,
+    'tap_dance_on_dance_finished':   13,
+    'tap_dance_on_reset':            14,
+    'leader_start':                  15,
+    'leader_end':                    16,
+    'layer_state_set':               17,
 }
 
 RESERVED_HOOK_NAMES = {
@@ -364,9 +376,9 @@ class ModuleBuild:
         load time, when the target slot's absolute XIP address is known.
         """
         # The binary starts at offset 0:
-        #   [0..31]  = header space (32 bytes, filled by linker with zeros)
-        #   [32..95] = .hook_table section (64 bytes, MODULE_HOOK_MAX * 4 slots)
-        #   [96..]   = code (.text + merged .rodata). No reloc table is
+        #   [0..31]   = header space (32 bytes, filled by linker with zeros)
+        #   [32..159] = .hook_table section (128 bytes, MODULE_HOOK_MAX * 4 slots)
+        #   [160..]   = code (.text + merged .rodata). No reloc table is
         #              appended; relocs are returned in result['relocs']
         #              and consumed by apply_relocations_and_crc at load
         #              time.
@@ -414,7 +426,7 @@ class ModuleBuild:
         #                                by apply_relocations_and_crc)
         header = struct.pack("<I H H I I I I I I",
             MODULE_HEADER_MAGIC,       # magic
-            MODULE_HEADER_VERSION,     # version = 1
+            MODULE_HEADER_VERSION,     # version = 2
             0x0000,                    # flags: reserved (firmware ignores)
             len(raw_bin),              # code_size
             hook_bitmap,               # hook_bitmap

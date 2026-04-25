@@ -4,19 +4,41 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-/* Hook indices - must match firmware module_loader.h */
-#define MODULE_HOOK_COMBO_SHOULD_TRIGGER           0
-#define MODULE_HOOK_PROCESS_COMBO_EVENT            1
-#define MODULE_HOOK_GET_COMBO_TERM                 2
+/* Hook indices - must match firmware module_loader.h.
+
+   Hook constants are grouped by feature category via an infix tag
+   (COMBO, KEY, TAPDANCE, LEADER) so the namespace stays self-
+   documenting as it grows. Lifecycle hooks (INIT/DEINIT) are
+   universal and use the unqualified MODULE_HOOK_ prefix. The
+   namespace is flat: a single global hook table indexed by these
+   values, with one-hook-one-owner enforced at load time. */
+
+/* Combo hooks */
+#define MODULE_COMBO_HOOK_SHOULD_TRIGGER           0
+#define MODULE_COMBO_HOOK_PROCESS_EVENT            1
+#define MODULE_COMBO_HOOK_GET_TERM                 2
+/* Lifecycle hooks (universal) */
 #define MODULE_HOOK_INIT                           3
 #define MODULE_HOOK_DEINIT                         4
-#define MODULE_HOOK_GET_COMBO_MUST_HOLD            5
-#define MODULE_HOOK_GET_COMBO_MUST_TAP             6
-#define MODULE_HOOK_GET_COMBO_MUST_PRESS_IN_ORDER  7
-#define MODULE_HOOK_PROCESS_COMBO_KEY_RELEASE      8
-#define MODULE_HOOK_PROCESS_COMBO_KEY_REPRESS      9
-#define MODULE_HOOK_COMBO_REF_FROM_LAYER          10
-#define MODULE_HOOK_MAX                           16
+/* Combo hooks (continued) */
+#define MODULE_COMBO_HOOK_GET_MUST_HOLD            5
+#define MODULE_COMBO_HOOK_GET_MUST_TAP             6
+#define MODULE_COMBO_HOOK_GET_MUST_PRESS_IN_ORDER  7
+#define MODULE_COMBO_HOOK_PROCESS_KEY_RELEASE      8
+#define MODULE_COMBO_HOOK_PROCESS_KEY_REPRESS      9
+#define MODULE_COMBO_HOOK_REF_FROM_LAYER          10
+/* Key processing hooks */
+#define MODULE_KEY_HOOK_PROCESS_RECORD_USER       11
+#define MODULE_KEY_HOOK_LAYER_STATE_SET           17
+/* Tap dance hooks */
+#define MODULE_TAPDANCE_HOOK_ON_EACH_TAP          12
+#define MODULE_TAPDANCE_HOOK_ON_DANCE_FINISHED    13
+#define MODULE_TAPDANCE_HOOK_ON_RESET             14
+/* Leader hooks */
+#define MODULE_LEADER_HOOK_START                  15
+#define MODULE_LEADER_HOOK_END                    16
+
+#define MODULE_HOOK_MAX                           32
 
 /* Value a module's init function must return for the firmware loader
    to consider the init call successful. Must match the firmware's

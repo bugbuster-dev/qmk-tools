@@ -153,15 +153,15 @@ uint8_t combo_ref_from_layer(uint8_t layer) {
  * ------------------------------------------------------------------ */
 MODULE_HOOK_TABLE
 const void *module_hook_table[MODULE_HOOK_MAX] = {
-    [MODULE_HOOK_COMBO_SHOULD_TRIGGER]          = combo_should_trigger,
-    [MODULE_HOOK_PROCESS_COMBO_EVENT]           = process_combo_event,
-    [MODULE_HOOK_GET_COMBO_TERM]                = get_combo_term,
+    [MODULE_COMBO_HOOK_SHOULD_TRIGGER]          = combo_should_trigger,
+    [MODULE_COMBO_HOOK_PROCESS_EVENT]           = process_combo_event,
+    [MODULE_COMBO_HOOK_GET_TERM]                = get_combo_term,
     [MODULE_HOOK_INIT]                          = module_init,
     [MODULE_HOOK_DEINIT]                        = module_deinit,
-    [MODULE_HOOK_GET_COMBO_MUST_HOLD]           = get_combo_must_hold,
-    [MODULE_HOOK_GET_COMBO_MUST_TAP]            = get_combo_must_tap,
-    [MODULE_HOOK_GET_COMBO_MUST_PRESS_IN_ORDER] = get_combo_must_press_in_order,
-    [MODULE_HOOK_PROCESS_COMBO_KEY_RELEASE]     = process_combo_key_release,
-    [MODULE_HOOK_PROCESS_COMBO_KEY_REPRESS]     = process_combo_key_repress,
-    [MODULE_HOOK_COMBO_REF_FROM_LAYER]          = combo_ref_from_layer,
+    [MODULE_COMBO_HOOK_GET_MUST_HOLD]           = get_combo_must_hold,
+    [MODULE_COMBO_HOOK_GET_MUST_TAP]            = get_combo_must_tap,
+    [MODULE_COMBO_HOOK_GET_MUST_PRESS_IN_ORDER] = get_combo_must_press_in_order,
+    [MODULE_COMBO_HOOK_PROCESS_KEY_RELEASE]     = process_combo_key_release,
+    [MODULE_COMBO_HOOK_PROCESS_KEY_REPRESS]     = process_combo_key_repress,
+    [MODULE_COMBO_HOOK_REF_FROM_LAYER]          = combo_ref_from_layer,
 };

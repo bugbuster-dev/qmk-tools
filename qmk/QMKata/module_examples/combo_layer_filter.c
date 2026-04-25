@@ -15,5 +15,5 @@ bool combo_should_trigger(uint16_t combo_index, combo_t *combo,
 
 MODULE_HOOK_TABLE
 const void *module_hook_table[MODULE_HOOK_MAX] = {
-    [MODULE_HOOK_COMBO_SHOULD_TRIGGER] = combo_should_trigger,
+    [MODULE_COMBO_HOOK_SHOULD_TRIGGER] = combo_should_trigger,
 };

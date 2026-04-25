@@ -45,7 +45,7 @@ bool combo_should_trigger(uint16_t combo_index, combo_t *combo,
 }
 MODULE_HOOK_TABLE
 const void *module_hook_table[MODULE_HOOK_MAX] = {
-    [MODULE_HOOK_COMBO_SHOULD_TRIGGER] = combo_should_trigger,
+    [MODULE_COMBO_HOOK_SHOULD_TRIGGER] = combo_should_trigger,
 };
 """
 
@@ -66,13 +66,13 @@ const void *module_hook_table[MODULE_HOOK_MAX] = {
         result = builder.build(str(EXAMPLE_MODULE))
         self.assertIsNotNone(result, builder.last_error)
         binary = result["binary"]
-        # v1 header is 32 bytes, hook table starts at 32
+        # v2 header is 32 bytes, hook table starts at 32
         magic = int.from_bytes(binary[0:4], "little")
         version = int.from_bytes(binary[4:6], "little")
         hook_table_off = int.from_bytes(binary[16:20], "little")
         crc = int.from_bytes(binary[28:32], "little")
         self.assertEqual(0x4D4F444C, magic)
-        self.assertEqual(1, version)
+        self.assertEqual(2, version)
         self.assertEqual(32, hook_table_off)
         self.assertNotEqual(0, crc)  # provisional CRC should not be zero
         # Relocations are now returned in result['relocs'], not appended
@@ -92,12 +92,12 @@ const void *module_hook_table[MODULE_HOOK_MAX] = {
         a test failure.
 
         Expected values for null_module:
-          - init_off = 97: the only function in the module is
-            module_init. The linker script produces a 64-byte
+          - init_off = 161: the only function in the module is
+            module_init. The linker script produces a 128-byte
             .hook_table section (MODULE_HOOK_MAX * 4), packed right
-            after the 32-byte header, so .text starts at VMA 96.
-            module_init lands at .text base (VMA 96) and the Thumb
-            bit is set on function pointers: 96 | 1 = 97.
+            after the 32-byte header, so .text starts at VMA 160.
+            module_init lands at .text base (VMA 160) and the Thumb
+            bit is set on function pointers: 160 | 1 = 161.
           - deinit_off = 0: null_module declares no deinit hook, so
             the hook table slot at MODULE_HOOK_DEINIT stays NULL and
             _assemble() leaves deinit_off unset.
@@ -112,8 +112,8 @@ const void *module_hook_table[MODULE_HOOK_MAX] = {
         init_off = int.from_bytes(binary[20:24], "little")
         deinit_off = int.from_bytes(binary[24:28], "little")
         self.assertEqual(
-            97, init_off,
-            "init_off must point at module_init at .text base (96) with Thumb bit set",
+            161, init_off,
+            "init_off must point at module_init at .text base (160) with Thumb bit set",
         )
         self.assertEqual(
             0, deinit_off,
@@ -121,9 +121,12 @@ const void *module_hook_table[MODULE_HOOK_MAX] = {
         )
 
     def test_null_module_has_one_reloc_for_init_string(self):
-        """null_module calls printf on one string literal. After the
+        """null_module calls mprintf on one string literal. After the
         build, result['relocs'] should have exactly one entry and the
-        pointed-to word must match the link-time address of that string."""
+        pointed-to word must match the link-time address of that string.
+        The "[mod] " prefix is added at runtime by the firmware's
+        mprintf implementation, not at build time, so the literal in
+        the binary is just the user-supplied format string."""
         builder = ModuleBuild(
             GccToolchain(KeychronQ3Max.TOOLCHAIN, firmware_path=str(FIRMWARE_ROOT)),
             firmware_path=str(FIRMWARE_ROOT),
@@ -134,15 +137,15 @@ const void *module_hook_table[MODULE_HOOK_MAX] = {
         relocs = result["relocs"]
         self.assertEqual(1, len(relocs), f"expected 1 reloc, got {relocs}")
         reloc_off = relocs[0]
-        self.assertGreater(reloc_off, 96)  # past hook table (32-byte hdr + 64-byte table)
+        self.assertGreater(reloc_off, 160)  # past hook table (32-byte hdr + 128-byte table)
         self.assertLessEqual(reloc_off + 4, len(b))
         # The reloc site holds a literal-pool word: the link-time-absolute
-        # address of the "[mod] null_module init" string. Because the
+        # address of the "null_module init\n" string. Because the
         # module is linked at ORIGIN=0, that address is also the offset
         # into the binary where the string bytes live.
         string_off = int.from_bytes(b[reloc_off:reloc_off + 4], "little")
         self.assertLess(string_off, len(b))
-        self.assertEqual(b"[mod]", b[string_off:string_off + 5])
+        self.assertEqual(b"null_module init", b[string_off:string_off + 16])
 
 
 if __name__ == "__main__":

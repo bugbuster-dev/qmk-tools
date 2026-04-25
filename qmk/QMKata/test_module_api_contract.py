@@ -21,25 +21,46 @@ class ModuleApiContractTest(unittest.TestCase):
                 "process_combo_key_release": 8,
                 "process_combo_key_repress": 9,
                 "combo_ref_from_layer": 10,
+                "process_record_user": 11,
+                "tap_dance_on_each_tap": 12,
+                "tap_dance_on_dance_finished": 13,
+                "tap_dance_on_reset": 14,
+                "leader_start": 15,
+                "leader_end": 16,
+                "layer_state_set": 17,
             },
             HOOK_NAMES,
         )
 
     def test_hook_indices_match_module_api_header(self):
-        header = MODULE_API.read_text(encoding="ascii")
+        header = MODULE_API.read_text(encoding="utf-8")
         expected_defines = {
-            "MODULE_HOOK_COMBO_SHOULD_TRIGGER": 0,
-            "MODULE_HOOK_PROCESS_COMBO_EVENT": 1,
-            "MODULE_HOOK_GET_COMBO_TERM": 2,
+            # Combo hooks
+            "MODULE_COMBO_HOOK_SHOULD_TRIGGER": 0,
+            "MODULE_COMBO_HOOK_PROCESS_EVENT": 1,
+            "MODULE_COMBO_HOOK_GET_TERM": 2,
+            # Lifecycle hooks (universal)
             "MODULE_HOOK_INIT": 3,
             "MODULE_HOOK_DEINIT": 4,
-            "MODULE_HOOK_GET_COMBO_MUST_HOLD": 5,
-            "MODULE_HOOK_GET_COMBO_MUST_TAP": 6,
-            "MODULE_HOOK_GET_COMBO_MUST_PRESS_IN_ORDER": 7,
-            "MODULE_HOOK_PROCESS_COMBO_KEY_RELEASE": 8,
-            "MODULE_HOOK_PROCESS_COMBO_KEY_REPRESS": 9,
-            "MODULE_HOOK_COMBO_REF_FROM_LAYER": 10,
-            "MODULE_HOOK_MAX": 16,
+            # Combo hooks (continued)
+            "MODULE_COMBO_HOOK_GET_MUST_HOLD": 5,
+            "MODULE_COMBO_HOOK_GET_MUST_TAP": 6,
+            "MODULE_COMBO_HOOK_GET_MUST_PRESS_IN_ORDER": 7,
+            "MODULE_COMBO_HOOK_PROCESS_KEY_RELEASE": 8,
+            "MODULE_COMBO_HOOK_PROCESS_KEY_REPRESS": 9,
+            "MODULE_COMBO_HOOK_REF_FROM_LAYER": 10,
+            # Key processing hooks
+            "MODULE_KEY_HOOK_PROCESS_RECORD_USER": 11,
+            "MODULE_KEY_HOOK_LAYER_STATE_SET": 17,
+            # Tap dance hooks
+            "MODULE_TAPDANCE_HOOK_ON_EACH_TAP": 12,
+            "MODULE_TAPDANCE_HOOK_ON_DANCE_FINISHED": 13,
+            "MODULE_TAPDANCE_HOOK_ON_RESET": 14,
+            # Leader hooks
+            "MODULE_LEADER_HOOK_START": 15,
+            "MODULE_LEADER_HOOK_END": 16,
+            # Capacity
+            "MODULE_HOOK_MAX": 32,
         }
         import re
         for name, expected in expected_defines.items():
@@ -48,7 +69,7 @@ class ModuleApiContractTest(unittest.TestCase):
             self.assertEqual(expected, int(m.group(1)), f"{name} index mismatch")
 
     def test_module_api_uses_layout_compatible_stubs(self):
-        header = MODULE_API.read_text(encoding="ascii")
+        header = MODULE_API.read_text(encoding="utf-8")
 
         self.assertIn("typedef struct {", header)
         self.assertIn("uint8_t col;", header)
