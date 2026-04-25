@@ -27,16 +27,22 @@
 #define MODULE_COMBO_HOOK_PROCESS_KEY_RELEASE      8
 #define MODULE_COMBO_HOOK_PROCESS_KEY_REPRESS      9
 #define MODULE_COMBO_HOOK_REF_FROM_LAYER          10
-/* Key processing hooks */
-#define MODULE_KEY_HOOK_PROCESS_RECORD_USER       11
+/* Key processing hooks.
+   PRE_PROCESS_RECORD overrides pre_process_record_user (strong).
+   PROCESS_RECORD uses cooperative dispatch (keymap-side call). */
+#define MODULE_KEY_HOOK_PRE_PROCESS_RECORD        11
+#define MODULE_KEY_HOOK_PROCESS_RECORD            18
 #define MODULE_KEY_HOOK_LAYER_STATE_SET           17
-/* Tap dance hooks */
+/* Tap dance hooks — reserved, not currently dispatched */
 #define MODULE_TAPDANCE_HOOK_ON_EACH_TAP          12
 #define MODULE_TAPDANCE_HOOK_ON_DANCE_FINISHED    13
 #define MODULE_TAPDANCE_HOOK_ON_RESET             14
-/* Leader hooks */
+/* Leader hooks — reserved, not currently dispatched */
 #define MODULE_LEADER_HOOK_START                  15
 #define MODULE_LEADER_HOOK_END                    16
+/* Lifecycle hooks (universal) */
+#define MODULE_HOOK_HOUSEKEEPING                  19
+#define MODULE_HOOK_SHUTDOWN                      20
 
 #define MODULE_HOOK_MAX                           32
 

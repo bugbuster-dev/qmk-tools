@@ -21,13 +21,16 @@ class ModuleApiContractTest(unittest.TestCase):
                 "process_combo_key_release": 8,
                 "process_combo_key_repress": 9,
                 "combo_ref_from_layer": 10,
-                "process_record_user": 11,
+                "pre_process_record": 11,
                 "tap_dance_on_each_tap": 12,
                 "tap_dance_on_dance_finished": 13,
                 "tap_dance_on_reset": 14,
                 "leader_start": 15,
                 "leader_end": 16,
                 "layer_state_set": 17,
+                "process_record": 18,
+                "housekeeping": 19,
+                "shutdown": 20,
             },
             HOOK_NAMES,
         )
@@ -50,7 +53,8 @@ class ModuleApiContractTest(unittest.TestCase):
             "MODULE_COMBO_HOOK_PROCESS_KEY_REPRESS": 9,
             "MODULE_COMBO_HOOK_REF_FROM_LAYER": 10,
             # Key processing hooks
-            "MODULE_KEY_HOOK_PROCESS_RECORD_USER": 11,
+            "MODULE_KEY_HOOK_PRE_PROCESS_RECORD": 11,
+            "MODULE_KEY_HOOK_PROCESS_RECORD": 18,
             "MODULE_KEY_HOOK_LAYER_STATE_SET": 17,
             # Tap dance hooks
             "MODULE_TAPDANCE_HOOK_ON_EACH_TAP": 12,
@@ -59,6 +63,9 @@ class ModuleApiContractTest(unittest.TestCase):
             # Leader hooks
             "MODULE_LEADER_HOOK_START": 15,
             "MODULE_LEADER_HOOK_END": 16,
+            # Lifecycle hooks
+            "MODULE_HOOK_HOUSEKEEPING": 19,
+            "MODULE_HOOK_SHUTDOWN": 20,
             # Capacity
             "MODULE_HOOK_MAX": 32,
         }

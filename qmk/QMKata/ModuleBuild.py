@@ -42,13 +42,16 @@ HOOK_NAMES = {
     'process_combo_key_release':     8,
     'process_combo_key_repress':     9,
     'combo_ref_from_layer':          10,
-    'process_record_user':           11,
+    'pre_process_record':            11,
     'tap_dance_on_each_tap':         12,
     'tap_dance_on_dance_finished':   13,
     'tap_dance_on_reset':            14,
     'leader_start':                  15,
     'leader_end':                    16,
     'layer_state_set':               17,
+    'process_record':                18,
+    'housekeeping':                  19,
+    'shutdown':                      20,
 }
 
 RESERVED_HOOK_NAMES = {
