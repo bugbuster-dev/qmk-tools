@@ -1,7 +1,7 @@
 /*
- * hooks_template.c — API-reference skeleton for loadable modules.
+ * combo_hooks_template.c — API-reference skeleton for combo modules.
  *
- * Implements every hook defined in module_api.h with:
+ * Implements every combo hook defined in module_api.h with:
  *   - the correct signature (matches firmware module_dispatch.c),
  *   - a body that returns the same default the firmware dispatcher
  *     returns when no module claims the hook (so leaving a hook's
