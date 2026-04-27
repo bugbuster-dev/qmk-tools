@@ -38,7 +38,7 @@ class KeyMachine:
 
         try:
             # uncomment to enable beep on morse key press
-            #from pysinewave import SineWave
+            from pysinewave import SineWave
             self.morse_beep = SineWave(pitch = 14, pitch_per_second = 10, decibels=-200, decibels_per_second=10000)
             self.morse_beep.play()
         except:
