@@ -276,6 +276,8 @@ class KeybConfigTab(TreeviewWidget):
 
 # -------------------------------------------------------------------------------
 class ComboConfigTab(QWidget):
+    NUM_SLOTS = 10
+
     signal_keyb_get_combo = Signal(int)
     signal_keyb_set_combo = Signal(int, list, int)
 
@@ -305,7 +307,7 @@ class ComboConfigTab(QWidget):
         self.slots_layout = QVBoxLayout(container)
 
         self.slot_widgets = []
-        for i in range(16):
+        for i in range(self.NUM_SLOTS):
             slot_widget = self.create_slot_widget(i)
             self.slot_widgets.append(slot_widget)
             self.slots_layout.addWidget(slot_widget)
@@ -349,7 +351,7 @@ class ComboConfigTab(QWidget):
         return widget
 
     def refresh_all(self):
-        for i in range(16):
+        for i in range(self.NUM_SLOTS):
             self.signal_keyb_get_combo.emit(i)
 
     @staticmethod
@@ -376,7 +378,7 @@ class ComboConfigTab(QWidget):
         if not data:
             return
         slot = data["slot"]
-        if slot < 16:
+        if slot < self.NUM_SLOTS:
             widget = self.slot_widgets[slot]
             keys_str = ", ".join(
                 [self.resolver.value_to_display(k) for k in data["keys"] if k != 0]
@@ -405,7 +407,7 @@ class ComboConfigTab(QWidget):
 class TapDanceConfigTab(QWidget):
     QK_TAP_DANCE = 0x5700
     COLUMNS = ["Slot", "Tap x1", "Tap x2", "Tap x3", "Hold"]
-    NUM_SLOTS = 8
+    NUM_SLOTS = 10
 
     signal_keyb_get_tap_dance = Signal(int)
     signal_keyb_set_tap_dance = Signal(int, int, int, int, int)
@@ -499,7 +501,7 @@ class TapDanceConfigTab(QWidget):
 class LeaderConfigTab(QWidget):
     QK_LEADER = 0x7C58
     COLUMNS = ["Slot", "Seq 1", "Seq 2", "Seq 3", "Seq 4", "Seq 5", "Action"]
-    NUM_SLOTS = 8
+    NUM_SLOTS = 10
 
     signal_keyb_get_leader = Signal(int)
     signal_keyb_set_leader = Signal(int, list, int)
