@@ -11,7 +11,7 @@ from GccMapfile import GccMapfile
 
 # Must match firmware module_loader.h
 MODULE_HEADER_MAGIC   = 0x4D4F444C  # "MODL" as uint32 (bytes on disk: 4C 44 4F 4D)
-MODULE_HEADER_VERSION = 2
+MODULE_HEADER_VERSION = 3
 MODULE_HEADER_SIZE    = 32
 MODULE_HOOK_TABLE_OFF = 32  # Hook table immediately follows header
 MODULE_HOOK_MAX       = 32
@@ -25,6 +25,20 @@ MODULE_HOOK_MAX       = 32
 # keyboard.module_flash_layout() instead.
 MODULE_FLASH_SLOT_SIZE = 0x1000
 MODULE_FLASH_BASE      = 0x08008000
+
+# SRAM target (firmware MODULE_SRAM_ENABLE). Slot IDs >= MODULE_SRAM_SLOT_BASE_ID
+# load into SRAM instead of flash. The host applies relocations against the
+# SRAM slot address (which the firmware exports via the .map file as
+# g_module_sram). For default builds with a single 4 KB SRAM slot, slot 8
+# maps to the start of g_module_sram in RAM. Callers that know the firmware
+# .map can pass the exact address; the constants below are placeholders for
+# tests / standalone use.
+MODULE_SRAM_SLOT_BASE_ID = 8
+MODULE_SRAM_SLOT_SIZE    = 0x1000
+# Default fallback address for an STM32F401xC with 64 KB SRAM and a 4 KB
+# carve-out (g_module_sram at top of .bss). Real builds resolve the exact
+# address from the firmware .map file via GccMapfile. Tests use this.
+MODULE_SRAM_DEFAULT_BASE = 0x2000F000
 
 # Hook name → index mapping (human-readable). Keys are the QMK
 # callback names a module overrides; values are the indices defined
@@ -52,6 +66,7 @@ HOOK_NAMES = {
     'process_record':                18,
     'housekeeping':                  19,
     'shutdown':                      20,
+    'pipeline_get_machine':          21,
 }
 
 RESERVED_HOOK_NAMES = {

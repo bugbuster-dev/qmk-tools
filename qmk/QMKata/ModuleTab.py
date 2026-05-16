@@ -9,18 +9,36 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QFont, QTextCursor
 
 from DebugTracer import DebugTracer
-from ModuleBuild import ModuleBuild, HOOK_NAMES, MODULE_HEADER_SIZE, MODULE_FLASH_BASE, MODULE_FLASH_SLOT_SIZE, hook_name_for_index, hook_index_for_name
+from ModuleBuild import (
+    ModuleBuild, HOOK_NAMES, MODULE_HEADER_SIZE,
+    MODULE_FLASH_BASE, MODULE_FLASH_SLOT_SIZE,
+    MODULE_SRAM_SLOT_BASE_ID, MODULE_SRAM_SLOT_SIZE, MODULE_SRAM_DEFAULT_BASE,
+    hook_name_for_index, hook_index_for_name,
+)
 
 
 def _slot_base_addr(keyboard_model, slot_id):
-    """Resolve slot_id to its absolute flash address via keyboard hardware layout.
+    """Resolve slot_id to its absolute address (flash or SRAM).
 
-    Falls back to the legacy MODULE_FLASH_BASE + slot_id * MODULE_FLASH_SLOT_SIZE
-    formula when the keyboard class does not expose module_flash_layout()
-    (older keyboard definitions without an MCU profile). The authoritative
-    source is keyboard.module_flash_layout() which derives the address
-    from the MCU's flash sector table + per-keyboard module sector config.
+    Flash slots (0..MODULE_SRAM_SLOT_BASE_ID-1): queried via
+    keyboard.module_flash_layout() when available, else falls back to the
+    legacy MODULE_FLASH_BASE + slot_id * MODULE_FLASH_SLOT_SIZE formula.
+
+    SRAM slots (>= MODULE_SRAM_SLOT_BASE_ID): queried via
+    keyboard.module_sram_layout() when available, else falls back to
+    MODULE_SRAM_DEFAULT_BASE + (slot_id - MODULE_SRAM_SLOT_BASE_ID) *
+    MODULE_SRAM_SLOT_SIZE. The default is the top-of-RAM address for an
+    STM32F401xC firmware with a 4 KB carve-out. Real builds should
+    resolve via GccMapfile reading the g_module_sram symbol from the
+    firmware .map.
     """
+    if slot_id >= MODULE_SRAM_SLOT_BASE_ID:
+        if keyboard_model is not None and hasattr(keyboard_model, "module_sram_layout"):
+            for sid, base, _size in keyboard_model.module_sram_layout():
+                if sid == slot_id:
+                    return base
+        return MODULE_SRAM_DEFAULT_BASE + (slot_id - MODULE_SRAM_SLOT_BASE_ID) * MODULE_SRAM_SLOT_SIZE
+
     if keyboard_model is not None and hasattr(keyboard_model, "module_flash_layout"):
         for sid, base, _size in keyboard_model.module_flash_layout():
             if sid == slot_id:
