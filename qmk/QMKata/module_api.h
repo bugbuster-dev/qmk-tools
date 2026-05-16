@@ -44,14 +44,26 @@
 #define MODULE_HOOK_HOUSEKEEPING                  19
 #define MODULE_HOOK_SHUTDOWN                      20
 
+/* Pipeline hooks — for modules that plug into the SM pipeline
+   orchestrator (firmware quantum/pipeline.c). A pipeline module exports
+   a single sm_machine_t* via this hook, then calls env->pipeline_register
+   on it in init. */
+#define MODULE_PIPELINE_HOOK_GET_MACHINE          21
+
 #define MODULE_HOOK_MAX                           32
 
 /* Value a module's init function must return for the firmware loader
    to consider the init call successful. Must match the firmware's
    MODULE_INIT_MAGIC in module_loader.h.
 
-   Init signature:   uint32_t module_init(void)
+   Init signature:   uint32_t module_init(struct pipeline_env *env)
    Deinit signature: uint32_t module_deinit(void)
+
+   `env` is a pointer to a firmware-exported callback table (see
+   pipeline_env_t below). Pipeline modules use it to call
+   pipeline_register, tap_code16, timer_read, etc. Non-pipeline modules
+   (e.g. classic combo hooks) can ignore the argument — it will be NULL
+   on firmware builds without KEY_PROCESSING_SM_ENABLE.
 
    Module code accesses its own .rodata through normal C references;
    the loader has already rebased literal-pool addresses to the slot's
@@ -122,5 +134,56 @@ extern layer_state_t default_layer_state;
 #ifndef COMBO_TERM
 #define COMBO_TERM 50
 #endif
+
+/* ----------------------------------------------------------------------
+   Pipeline module API — for SRAM-loaded pipeline modules.
+
+   Layout-compatible with firmware quantum/pipeline.h and
+   keyboards/keychron/common/module/pipeline_env.h. Modules implement an
+   sm_machine_t with handle/tick/reset callbacks, return it via
+   MODULE_PIPELINE_HOOK_GET_MACHINE, and pipeline_register it from init.
+   ---------------------------------------------------------------------- */
+
+typedef enum {
+    PHASE_PRE_TAP,
+    PHASE_POST_TAP,
+    PHASE_POST_EXEC
+} pipeline_phase_t;
+
+typedef enum {
+    SM_PASS,
+    SM_CONSUME
+} sm_result_t;
+
+typedef struct sm_machine sm_machine_t;
+
+struct sm_machine {
+    void               *instance;
+    sm_result_t         (*handle)(void *self, keyevent_t *event, keyrecord_t *record);
+    void                (*tick)(void *self);
+    void                (*reset)(void *self);
+    const char          *name;
+    pipeline_phase_t    phase;
+    uint8_t             priority;
+};
+
+/* Firmware-exported callback table. Module init receives a pointer to
+   the live g_pipeline_env (or NULL on non-pipeline builds). Store it in
+   module-local state so handlers can route firmware calls through it. */
+typedef struct pipeline_env {
+    void     (*pipeline_register)(sm_machine_t *machine);
+    void     (*pipeline_unregister)(sm_machine_t *machine);
+    void     (*tap_code16)(uint16_t kc);
+    void     (*register_code16)(uint16_t kc);
+    void     (*unregister_code16)(uint16_t kc);
+    void     (*tap_code)(uint8_t kc);
+    void     (*register_code)(uint8_t kc);
+    void     (*unregister_code)(uint8_t kc);
+    uint16_t (*timer_read)(void);
+    uint16_t (*timer_elapsed)(uint16_t since);
+    uint16_t (*get_record_keycode)(keyrecord_t *r, bool update_layer_cache);
+    int      (*xprintf)(const char *fmt, ...);
+    void     *extension;
+} pipeline_env_t;
 
 #endif /* MODULE_API_H */
