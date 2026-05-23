@@ -121,12 +121,15 @@ class ModuleBuild:
         self.module_api_header = os.path.join(os.path.dirname(__file__), "module_api.h")
         self.linker_script = os.path.join(os.path.dirname(__file__), "module_linker.ld")
 
-    def build(self, source_file):
+    def build(self, source_file, target='flash'):
         """Build a module from C source file.
-        
+
         Args:
             source_file: path to .c source file
-            
+            target: 'flash' (default) or 'sram'. SRAM target allows
+                writable sections (.data/.bss) and uses a linker script
+                that keeps them in the module blob.
+
         Returns:
             dict with keys:
                 'binary': bytes - complete module binary (header + hook table + code)
@@ -148,18 +151,40 @@ class ModuleBuild:
                 self.last_error = "compile failed"
                 return None
 
-            # Step 1.5: Reject writable module sections (.data/.bss/etc.)
-            if not self._validate_no_writable_sections(obj_file):
-                return None
+            # Step 1.5: Reject writable module sections for flash modules.
+            # SRAM modules need .data/.bss for persistent state across callbacks.
+            if target == 'flash':
+                if not self._validate_no_writable_sections(obj_file):
+                    return None
 
             # Step 2: Resolve external symbols → generate symbol .ld file
             sym_ld_file = os.path.join(tmpdir, "symbols.ld")
             if not self._resolve_symbols(obj_file, sym_ld_file):
                 return None
 
+            # Step 2.5: For SRAM target, generate a linker script that keeps
+            # .data and .bss in the module blob (flash modules discard them).
+            linker_script = self.linker_script
+            if target == 'sram':
+                sram_ld = os.path.join(tmpdir, "module_linker_sram.ld")
+                with open(self.linker_script) as f:
+                    orig_ld = f.read()
+                sram_ld_content = orig_ld.replace(
+                    "/DISCARD/ : {\n        *(.data*)\n        *(.bss*)\n",
+                    "    .data : ALIGN(4) {\n        *(.data*)\n        . = ALIGN(4);\n    } > MODULE\n"
+                    "    .bss : ALIGN(4) {\n        *(.bss*)\n        . = ALIGN(4);\n    } > MODULE\n"
+                    "    /DISCARD/ : {\n"
+                )
+                if sram_ld_content == orig_ld:
+                    self.last_error = "failed to generate SRAM linker script"
+                    return None
+                with open(sram_ld, 'w') as f:
+                    f.write(sram_ld_content)
+                linker_script = sram_ld
+
             # Step 3: Link
             extra_ld = [sym_ld_file] if os.path.exists(sym_ld_file) else None
-            if not self.toolchain.link(obj_file, self.linker_script, elf_file, extra_ld):
+            if not self.toolchain.link(obj_file, linker_script, elf_file, extra_ld):
                 self.last_error = "link failed"
                 return None
 

@@ -244,7 +244,10 @@ class ModuleTab(QWidget):
                 self.log(f"Error initializing build system: {e}")
                 return
 
-        result = self.module_build.build(source)
+          # Determine build target from selected slot.
+        selected_slot = self.slot_combo.currentData()
+        build_target = 'sram' if selected_slot >= MODULE_SRAM_SLOT_BASE_ID else 'flash'
+        result = self.module_build.build(source, target=build_target)
         if result is None:
             if self.module_build.last_error:
                 self.log(f"Build FAILED: {self.module_build.last_error}")
