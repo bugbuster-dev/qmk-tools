@@ -112,6 +112,7 @@ class ModuleBuild:
         """
         self.toolchain = toolchain
         self.mapfile = mapfile
+        self.firmware_path = firmware_path
         if not self.mapfile and firmware_path:
             try:
                 self.mapfile = GccMapfile(firmware_path=firmware_path)
