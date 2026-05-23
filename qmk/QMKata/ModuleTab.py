@@ -91,6 +91,7 @@ class ModuleTab(QWidget):
         self.slot_combo = QComboBox()
         for i in range(8):
             self.slot_combo.addItem(f"Slot {i}", i)
+        self.slot_combo.addItem("Slot 8 (SRAM)", 8)
         slot_layout.addWidget(self.slot_combo)
         self.load_button = QPushButton("Load to Slot")
         self.load_button.clicked.connect(self.load_module)
@@ -118,7 +119,7 @@ class ModuleTab(QWidget):
         self.status_grid.addWidget(QLabel("Status"), 0, 1)
         self.status_grid.addWidget(QLabel("Hooks"), 0, 2)
         self.slot_labels = []
-        for i in range(8):
+        for i in range(9):
             slot_label = QLabel(f"{i}")
             status_label = QLabel("—")
             hooks_label = QLabel("—")
