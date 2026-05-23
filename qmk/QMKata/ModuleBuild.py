@@ -208,7 +208,7 @@ class ModuleBuild:
             # Step 6: Generate header and assemble final binary
             return self._assemble(raw_bin, relocs)
 
-   def _compile(self, source_file, obj_file):
+    def _compile(self, source_file, obj_file):
         """Compile with module-specific options (-fPIC forces literal pools for all addresses)."""
         opts = CompilerOptions()
         # Core ARM options
