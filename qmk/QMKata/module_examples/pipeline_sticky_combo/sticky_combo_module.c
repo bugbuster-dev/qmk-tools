@@ -182,8 +182,7 @@ static void sticky_reset(void *self) {
 }
 
 static sm_machine_t *machine_get(void) {
-    uintptr_t base = g_state.env ? g_state.env->module_base : 0;
-    return (sm_machine_t *)((uintptr_t)&g_machine + base);
+    return &g_machine;
 }
 
  /* ---- lifecycle ---- */
@@ -191,13 +190,15 @@ static sm_machine_t *machine_get(void) {
 static uint32_t module_init(pipeline_env_t *env) {
     if (!env) return 0xDEADBEEFu;  /* firmware built without pipeline support */
 
-    /* -fPIC forces literal pools for all addresses → compile-time offsets.
-       Add env->module_base to get runtime SRAM addresses. */
+    /* Compute pointers once; compiler may use ADR (runtime) or literal pool
+       (compile-time offset). Use the SAME pointer for all accesses so
+       reads and writes go to the same location. Function pointers from
+       literal pools need base added; data pointers from ADR don't. */
     uintptr_t base = env->module_base;
-    sm_machine_t *mach = (sm_machine_t *)((uintptr_t)&g_machine + base);
-    sticky_state_t *st = (sticky_state_t *)((uintptr_t)&g_state + base);
+    sm_machine_t *mach = &g_machine;
+    sticky_state_t *st = &g_state;
 
-    g_state.env = env;  /* for deinit at compile-time addr */
+    g_state.env = env;  /* for deinit */
     st->env = env;
     StickyCombo_ctor(&st->sm);
     StickyCombo_start(&st->sm);
@@ -220,8 +221,7 @@ static uint32_t module_init(pipeline_env_t *env) {
 
 static uint32_t module_deinit(void) {
     if (g_state.env) {
-        uintptr_t base = g_state.env->module_base;
-        g_state.env->pipeline_unregister((sm_machine_t *)((uintptr_t)&g_machine + base));
+        g_state.env->pipeline_unregister(&g_machine);
     }
     return 0;
 }
