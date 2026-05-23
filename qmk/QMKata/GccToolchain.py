@@ -128,7 +128,7 @@ class GccToolchain:
             print(f"E: compilation nok: {e.stderr.decode()}")
             return False
 
-     def link(self, object_files, linker_script, output_file, extra_ld_files=None):
+    def link(self, object_files, linker_script, output_file, extra_ld_files=None):
         """Link object files with a linker script.
 
         Args:
