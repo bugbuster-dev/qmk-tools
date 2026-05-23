@@ -229,3 +229,14 @@ flags — the resulting module will not work at the SRAM load address.
 * `qmk/QMKata/module_examples/pipeline_sticky_combo/` — working SRAM module
 * `keyboards/keychron/common/module/module_loader.c` — firmware loader
 * `keyboards/keychron/common/module/pipeline_env.c` — firmware env table
+
+## Known follow-ups
+
+The sticky-combo example module loads and runs correctly under the
+loader described above, but its own *combo state-machine logic* has a
+bug (the first key of a combo is leaked to the host before the module
+knows whether the partner key will follow within the window). The same
+bug is present in the firmware-built `quantum/features/sticky_combo_adapter.c`.
+See `docs/plans/sticky-combo-fix.md` for the analysis and a recommended
+implementation plan. That bug is independent of everything described
+in *this* document.
