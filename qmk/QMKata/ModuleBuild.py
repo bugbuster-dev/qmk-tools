@@ -183,10 +183,9 @@ class ModuleBuild:
                     f.write(sram_ld_content)
                 linker_script = sram_ld
 
-            # Step 3: Link (use PIE so linker keeps R_ARM_ABS32 relocations
-            # for literal-pool addresses that the host must rebase at load time).
+                    # Step 3: Link
             extra_ld = [sym_ld_file] if os.path.exists(sym_ld_file) else None
-            if not self.toolchain.link(obj_file, linker_script, elf_file, extra_ld, pie=True):
+            if not self.toolchain.link(obj_file, linker_script, elf_file, extra_ld):
                 self.last_error = "link failed"
                 return None
 
@@ -210,7 +209,7 @@ class ModuleBuild:
             return self._assemble(raw_bin, relocs)
 
     def _compile(self, source_file, obj_file):
-        """Compile with module-specific options (-fPIC for position-independent code)."""
+        """Compile with module-specific options (no -fPIC, add -ffreestanding)."""
         opts = CompilerOptions()
         # Core ARM options
         opts.options([
@@ -224,7 +223,6 @@ class ModuleBuild:
             "-ffunction-sections",
             "-fdata-sections",
             "-fno-common",
-            "-fPIC",
             # Suppress exception unwind metadata. The module linker script
             # discards .ARM.exidx/.ARM.extab, so any compiler-emitted
             # unwind references would become dangling at runtime. These
@@ -406,15 +404,18 @@ class ModuleBuild:
         or literal-pool rebasing will silently break.
         """
         from elftools.elf.elffile import ELFFile
-        from elftools.elf.relocation import RelocationSection
+           from elftools.elf.relocation import RelocationSection
         from elftools.elf.enums import ENUM_RELOC_TYPE_ARM
 
         R_ARM_ABS32 = ENUM_RELOC_TYPE_ARM['R_ARM_ABS32']
         offsets = []
         with open(elf_file, "rb") as f:
             elf = ELFFile(f)
-            # module_linker.ld uses ORIGIN=0, so VMA always equals file
-            # offset into the raw binary for both ET_EXEC and ET_DYN (PIE).
+            # For ET_EXEC (our case — module_linker.ld produces an executable
+            # with ORIGIN=0), r_offset is already the VMA, which for us
+            # equals the file offset into the raw binary. For ET_REL we'd
+            # add sh_addr, but we never link modules with -r.
+            is_exec = elf['e_type'] == 'ET_EXEC'
             for sec in elf.iter_sections():
                 if not isinstance(sec, RelocationSection):
                     continue
@@ -423,10 +424,11 @@ class ModuleBuild:
                     # Skip .hook_table and any other targets. Hook-table
                     # relocations are intentionally offset-based.
                     continue
+                base = 0 if is_exec else target['sh_addr']
                 for r in sec.iter_relocations():
                     if r['r_info_type'] != R_ARM_ABS32:
                         continue
-                    offsets.append(r['r_offset'])
+                    offsets.append(base + r['r_offset'])
         return sorted(offsets)
 
     def _assemble(self, raw_bin, relocs):

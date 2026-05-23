@@ -184,6 +184,7 @@ typedef struct pipeline_env {
     uint16_t (*get_record_keycode)(keyrecord_t *r, bool update_layer_cache);
     int      (*xprintf)(const char *fmt, ...);
     void     *extension;
+    uintptr_t module_base;
 } pipeline_env_t;
 
 #endif /* MODULE_API_H */

@@ -182,10 +182,11 @@ static void sticky_reset(void *self) {
 }
 
 static sm_machine_t *machine_get(void) {
-    return &g_machine;
+    uintptr_t base = g_state.env ? g_state.env->module_base : 0;
+    return (sm_machine_t *)((uintptr_t)&g_machine + base);
 }
 
-/* ---- lifecycle ---- */
+ /* ---- lifecycle ---- */
 
 static uint32_t module_init(pipeline_env_t *env) {
     if (!env) return 0xDEADBEEFu;  /* firmware built without pipeline support */
@@ -198,21 +199,24 @@ static uint32_t module_init(pipeline_env_t *env) {
     g_state.key1_held = false;
     g_state.key2_held = false;
 
-    g_machine.instance = &g_state;
-    g_machine.handle   = sticky_handle;
-    g_machine.tick     = sticky_tick;
-    g_machine.reset    = sticky_reset;
+    /* Rebase internal pointers: compiled at ORIGIN=0, runtime at env->module_base */
+    uintptr_t base = env->module_base;
+    g_machine.instance = (void *)((uintptr_t)&g_state + base);
+    g_machine.handle   = (sm_result_t (*)(void *, keyevent_t *, keyrecord_t *))((uintptr_t)sticky_handle + base);
+    g_machine.tick     = (void (*)(void *))((uintptr_t)sticky_tick + base);
+    g_machine.reset    = (void (*)(void *))((uintptr_t)sticky_reset + base);
     g_machine.name     = "sticky_combo_sram";
     g_machine.phase    = PHASE_PRE_TAP;
     g_machine.priority = 40;
 
-    env->pipeline_register(&g_machine);
+    env->pipeline_register((sm_machine_t *)((uintptr_t)&g_machine + base));
     return MODULE_INIT_MAGIC;
 }
 
 static uint32_t module_deinit(void) {
     if (g_state.env) {
-        g_state.env->pipeline_unregister(&g_machine);
+        uintptr_t base = g_state.env->module_base;
+        g_state.env->pipeline_unregister((sm_machine_t *)((uintptr_t)&g_machine + base));
     }
     return 0;
 }
