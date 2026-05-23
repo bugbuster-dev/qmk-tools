@@ -136,14 +136,14 @@ class GccToolchain:
             linker_script: path to .ld linker script
             output_file: path for output .elf file
             extra_ld_files: optional list of additional .ld files (e.g., symbol definitions)
-            pie: if True, link as position-independent executable (keeps relocations)
+            pie: if True, link as shared object (ET_DYN) to keep relocations
         Returns:
             True on success, False on failure
         """
         gcc = self.tool["gcc"]
         link_command = [gcc, "-nostdlib", "-nostartfiles", "-Wl,-q"]
         if pie:
-            link_command.append("-pie")
+            link_command.append("-shared")
         link_command.extend(["-T", linker_script])
         if extra_ld_files:
             for ld_file in extra_ld_files:
