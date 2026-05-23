@@ -404,7 +404,7 @@ class ModuleBuild:
         or literal-pool rebasing will silently break.
         """
         from elftools.elf.elffile import ELFFile
-           from elftools.elf.relocation import RelocationSection
+        from elftools.elf.relocation import RelocationSection
         from elftools.elf.enums import ENUM_RELOC_TYPE_ARM
 
         R_ARM_ABS32 = ENUM_RELOC_TYPE_ARM['R_ARM_ABS32']
