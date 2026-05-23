@@ -58,6 +58,8 @@ static sm_result_t sticky_handle(void *self, keyevent_t *event, keyrecord_t *rec
     sticky_state_t *st = (sticky_state_t *)self;
     pipeline_env_t *env = st->env;
     uint16_t kc = env->get_record_keycode(record, true);
+    env->xprintf("stick: kc=0x%04x rec_kc=0x%04x p=%d state=%d\n",
+                 kc, record->keycode, event->pressed, st->sm.state_id);
 
      /* IDLE */
     if (st->sm.state_id == StickyCombo_StateId_IDLE) {
