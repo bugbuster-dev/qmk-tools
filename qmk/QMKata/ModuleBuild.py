@@ -208,8 +208,8 @@ class ModuleBuild:
             # Step 6: Generate header and assemble final binary
             return self._assemble(raw_bin, relocs)
 
-    def _compile(self, source_file, obj_file):
-        """Compile with module-specific options (no -fPIC, add -ffreestanding)."""
+   def _compile(self, source_file, obj_file):
+        """Compile with module-specific options (-fPIC forces literal pools for all addresses)."""
         opts = CompilerOptions()
         # Core ARM options
         opts.options([
@@ -223,6 +223,7 @@ class ModuleBuild:
             "-ffunction-sections",
             "-fdata-sections",
             "-fno-common",
+            "-fPIC",
             # Suppress exception unwind metadata. The module linker script
             # discards .ARM.exidx/.ARM.extab, so any compiler-emitted
             # unwind references would become dangling at runtime. These
