@@ -302,6 +302,32 @@ class ModuleBuild:
             else:
                 unresolved.append(sym)
 
+        # Fallback: resolve unresolved symbols via nm on the firmware ELF.
+        # Libc/libgcc symbols (memset, memcpy, etc.) come from prebuilt
+        # static libs and don't appear in the .map file's function table.
+        if unresolved and self.firmware_path:
+            # Find the firmware ELF
+            import glob as glob_mod
+            elf_paths = glob_mod.glob(os.path.join(self.firmware_path, ".build", "*.elf"))
+            if not elf_paths:
+                elf_paths = glob_mod.glob(os.path.join(self.firmware_path, "*.elf"))
+            if elf_paths:
+                nm_result = subprocess.run(
+                    [nm_tool, elf_paths[0]],
+                    capture_output=True, text=True
+                )
+                if nm_result.returncode == 0:
+                    elf_symbols = {}
+                    for line in nm_result.stdout.strip().split('\n'):
+                        parts = line.split()
+                        if len(parts) >= 3:
+                            elf_symbols[parts[-1]] = int(parts[0], 16)
+                    for sym in list(unresolved):
+                        if sym in elf_symbols:
+                            resolved.append((sym, elf_symbols[sym]))
+                            unresolved.remove(sym)
+                            print(f"  pre-seeded libc symbol: {sym} -> 0x{elf_symbols[sym]:08x}")
+
         if unresolved:
             print(f"E: cannot resolve symbols: {unresolved}")
             self.last_error = "symbol resolution failed"
