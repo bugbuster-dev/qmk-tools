@@ -209,7 +209,31 @@ class ModuleBuild:
             return self._assemble(raw_bin, relocs)
 
     def _compile(self, source_file, obj_file):
-        """Compile with module-specific options (-fPIC forces literal pools for all addresses)."""
+        """Compile module C source to object file.
+
+        -fPIC is REQUIRED for SRAM modules that hold static state
+        (e.g. sm_machine_t / sticky_state_t) and reference internal
+        symbols by address. Without it, the compiler emits a mix of
+        ADR / literal-pool-absolute / MOVW-MOVT for symbol addresses,
+        and the linker resolves them to ORIGIN=0 offsets that are
+        wrong at any runtime SRAM load address.
+
+        With -fPIC, GCC on Cortex-M Thumb-2 emits the GOT-less PIC
+        pattern "LDR rX,[pc,#N]; ADD rX,pc" for every symbol address.
+        The literal pool holds a PC-delta, not an absolute address,
+        so &g_machine, sticky_handle, etc. all evaluate to the correct
+        runtime SRAM address regardless of where the module was loaded
+        — without any host-side relocation pass and without any
+        runtime rebasing in the module.
+
+        Flash modules don't need -fPIC since they reject .data/.bss
+        sections and only export hook offsets (which the firmware
+        dispatcher rebases at call time), but applying it uniformly
+        keeps the build pipeline simple and PIC code is essentially
+        free on Cortex-M Thumb-2.
+
+        See docs/sram-module-compilation.md for the full rationale.
+        """
         opts = CompilerOptions()
         # Core ARM options
         opts.options([
@@ -223,6 +247,7 @@ class ModuleBuild:
             "-ffunction-sections",
             "-fdata-sections",
             "-fno-common",
+            # See docstring: PIC is load-bearing for SRAM modules with state.
             "-fPIC",
             # Suppress exception unwind metadata. The module linker script
             # discards .ARM.exidx/.ARM.extab, so any compiler-emitted
