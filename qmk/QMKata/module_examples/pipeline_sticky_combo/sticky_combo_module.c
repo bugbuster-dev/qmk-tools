@@ -190,32 +190,28 @@ static sm_machine_t *machine_get(void) {
 static uint32_t module_init(pipeline_env_t *env) {
     if (!env) return 0xDEADBEEFu;  /* firmware built without pipeline support */
 
-    /* Compute pointers once; compiler may use ADR (runtime) or literal pool
-       (compile-time offset). Use the SAME pointer for all accesses so
-       reads and writes go to the same location. Function pointers from
-       literal pools need base added; data pointers from ADR don't. */
-    uintptr_t base = env->module_base;
-    sm_machine_t *mach = &g_machine;
-    sticky_state_t *st = &g_state;
+    /* With -fPIC, GCC emits "LDR + ADD pc" for every symbol reference, so
+       &g_machine, sticky_handle, etc. evaluate to the actual runtime SRAM
+       address at any load offset. No manual rebasing via env->module_base
+       is needed (or correct — adding base would double-count and land in
+       the peripheral region around 0x40xxxxxx). */
+    g_state.env = env;
+    StickyCombo_ctor(&g_state.sm);
+    StickyCombo_start(&g_state.sm);
+    g_state.active_combo = -1;
+    g_state.pending_combo = -1;
+    g_state.key1_held = false;
+    g_state.key2_held = false;
 
-    g_state.env = env;  /* for deinit */
-    st->env = env;
-    StickyCombo_ctor(&st->sm);
-    StickyCombo_start(&st->sm);
-    st->active_combo = -1;
-    st->pending_combo = -1;
-    st->key1_held = false;
-    st->key2_held = false;
+    g_machine.instance = &g_state;
+    g_machine.handle   = sticky_handle;
+    g_machine.tick     = sticky_tick;
+    g_machine.reset    = sticky_reset;
+    g_machine.name     = "sticky_combo_sram";
+    g_machine.phase    = PHASE_PRE_TAP;
+    g_machine.priority = 40;
 
-    mach->instance = st;
-    mach->handle   = (sm_result_t (*)(void *, keyevent_t *, keyrecord_t *))((uintptr_t)sticky_handle + base);
-    mach->tick     = (void (*)(void *))((uintptr_t)sticky_tick + base);
-    mach->reset    = (void (*)(void *))((uintptr_t)sticky_reset + base);
-    mach->name     = "sticky_combo_sram";
-    mach->phase    = PHASE_PRE_TAP;
-    mach->priority = 40;
-
-    env->pipeline_register(mach);
+    env->pipeline_register(&g_machine);
     return MODULE_INIT_MAGIC;
 }
 
