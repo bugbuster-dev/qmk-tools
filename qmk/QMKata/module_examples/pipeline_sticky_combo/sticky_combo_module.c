@@ -193,6 +193,10 @@ static uint32_t module_init(pipeline_env_t *env) {
     if (!env) return 0xDEADBEEFu;  /* firmware built without pipeline support */
 
     uintptr_t base = env->module_base;
+    env->xprintf("init: base=0x%lx gm=0x%lx st=0x%lx\n",
+        (unsigned long)base,
+        (unsigned long)(uintptr_t)&g_machine,
+        (unsigned long)(uintptr_t)&g_state);
     sm_machine_t *mach = (sm_machine_t *)((uintptr_t)&g_machine + base);
     sticky_state_t *st = (sticky_state_t *)((uintptr_t)&g_state + base);
 
@@ -212,7 +216,8 @@ static uint32_t module_init(pipeline_env_t *env) {
     mach->name     = "sticky_combo_sram";
     mach->phase    = PHASE_PRE_TAP;
     mach->priority = 40;
-
+    env->xprintf("init: mach=%p handle=%p tick=%p phase=%d\n",
+        mach, (void*)mach->handle, (void*)mach->tick, mach->phase);
     env->pipeline_register(mach);
     return MODULE_INIT_MAGIC;
 }
