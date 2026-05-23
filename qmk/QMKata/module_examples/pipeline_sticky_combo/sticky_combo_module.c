@@ -192,25 +192,28 @@ static sm_machine_t *machine_get(void) {
 static uint32_t module_init(pipeline_env_t *env) {
     if (!env) return 0xDEADBEEFu;  /* firmware built without pipeline support */
 
-    g_state.env = env;
-    StickyCombo_ctor(&g_state.sm);
-    StickyCombo_start(&g_state.sm);
-    g_state.active_combo = -1;
-    g_state.pending_combo = -1;
-    g_state.key1_held = false;
-    g_state.key2_held = false;
-
-    /* Rebase internal pointers: compiled at ORIGIN=0, runtime at env->module_base */
     uintptr_t base = env->module_base;
-    g_machine.instance = (void *)((uintptr_t)&g_state + base);
-    g_machine.handle   = (sm_result_t (*)(void *, keyevent_t *, keyrecord_t *))((uintptr_t)sticky_handle + base);
-    g_machine.tick     = (void (*)(void *))((uintptr_t)sticky_tick + base);
-    g_machine.reset    = (void (*)(void *))((uintptr_t)sticky_reset + base);
-    g_machine.name     = "sticky_combo_sram";
-    g_machine.phase    = PHASE_PRE_TAP;
-    g_machine.priority = 40;
+    sm_machine_t *mach = (sm_machine_t *)((uintptr_t)&g_machine + base);
+    sticky_state_t *st = (sticky_state_t *)((uintptr_t)&g_state + base);
 
-    env->pipeline_register((sm_machine_t *)((uintptr_t)&g_machine + base));
+    g_state.env = env;  /* write at compile-time addr so deinit can read it */
+    st->env = env;
+    StickyCombo_ctor(&st->sm);
+    StickyCombo_start(&st->sm);
+    st->active_combo = -1;
+    st->pending_combo = -1;
+    st->key1_held = false;
+    st->key2_held = false;
+
+    mach->instance = st;
+    mach->handle   = (sm_result_t (*)(void *, keyevent_t *, keyrecord_t *))((uintptr_t)sticky_handle + base);
+    mach->tick     = (void (*)(void *))((uintptr_t)sticky_tick + base);
+    mach->reset    = (void (*)(void *))((uintptr_t)sticky_reset + base);
+    mach->name     = "sticky_combo_sram";
+    mach->phase    = PHASE_PRE_TAP;
+    mach->priority = 40;
+
+    env->pipeline_register(mach);
     return MODULE_INIT_MAGIC;
 }
 
