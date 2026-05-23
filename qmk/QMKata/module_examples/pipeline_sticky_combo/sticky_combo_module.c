@@ -57,9 +57,10 @@ static int8_t find_combo_for_key(uint16_t kc, bool *is_key1, bool *is_key2) {
 static sm_result_t sticky_handle(void *self, keyevent_t *event, keyrecord_t *record) {
     sticky_state_t *st = (sticky_state_t *)self;
     pipeline_env_t *env = st->env;
+    env->xprintf("stick: kc=0x%04x p=%d\n", record->keycode, event->pressed);
     uint16_t kc = env->get_record_keycode(record, true);
 
-    /* IDLE */
+     /* IDLE */
     if (st->sm.state_id == StickyCombo_StateId_IDLE) {
         if (!event->pressed) return SM_PASS;
 
