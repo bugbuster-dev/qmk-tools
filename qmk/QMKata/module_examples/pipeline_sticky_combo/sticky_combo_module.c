@@ -57,7 +57,6 @@ static int8_t find_combo_for_key(uint16_t kc, bool *is_key1, bool *is_key2) {
 static sm_result_t sticky_handle(void *self, keyevent_t *event, keyrecord_t *record) {
     sticky_state_t *st = (sticky_state_t *)self;
     pipeline_env_t *env = st->env;
-    env->xprintf("stick: kc=0x%04x p=%d\n", record->keycode, event->pressed);
     uint16_t kc = env->get_record_keycode(record, true);
 
      /* IDLE */
@@ -193,10 +192,6 @@ static uint32_t module_init(pipeline_env_t *env) {
     if (!env) return 0xDEADBEEFu;  /* firmware built without pipeline support */
 
     uintptr_t base = env->module_base;
-    env->xprintf("init: base=0x%lx gm=0x%lx st=0x%lx\n",
-        (unsigned long)base,
-        (unsigned long)(uintptr_t)&g_machine,
-        (unsigned long)(uintptr_t)&g_state);
     sm_machine_t *mach = (sm_machine_t *)((uintptr_t)&g_machine + base);
     sticky_state_t *st = (sticky_state_t *)((uintptr_t)&g_state + base);
 
@@ -209,15 +204,13 @@ static uint32_t module_init(pipeline_env_t *env) {
     st->key1_held = false;
     st->key2_held = false;
 
-    mach->instance = st;
+     mach->instance = st;
     mach->handle   = (sm_result_t (*)(void *, keyevent_t *, keyrecord_t *))((uintptr_t)sticky_handle + base);
     mach->tick     = (void (*)(void *))((uintptr_t)sticky_tick + base);
     mach->reset    = (void (*)(void *))((uintptr_t)sticky_reset + base);
     mach->name     = "sticky_combo_sram";
     mach->phase    = PHASE_PRE_TAP;
     mach->priority = 40;
-    env->xprintf("init: mach=%p handle=%p tick=%p phase=%d\n",
-        mach, (void*)mach->handle, (void*)mach->tick, mach->phase);
     env->pipeline_register(mach);
     return MODULE_INIT_MAGIC;
 }
