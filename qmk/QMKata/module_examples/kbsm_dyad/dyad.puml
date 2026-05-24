@@ -1,0 +1,23 @@
+@startuml Dyad
+' Dyad — hold primary key, tap secondary key, fire arbitrary output keycode.
+' 2D lookup table indexed on (primary, secondary).
+' See docs/plans/2026-05-24-dyad-design.md in the firmware repo for full design.
+
+state idle
+state primary_held
+state armed
+
+[*] -> idle
+
+idle         --> primary_held : on_primary_press
+primary_held --> armed        : on_secondary_match
+primary_held --> idle         : on_primary_release
+primary_held --> idle         : on_other_key
+
+armed --> armed : on_secondary_repeat
+armed --> idle  : on_primary_release
+
+/'! $CONFIG : toml
+SmRunnerSettings.transpilerId = "C99"
+'/
+@enduml
