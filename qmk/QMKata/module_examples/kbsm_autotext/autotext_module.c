@@ -99,6 +99,8 @@ static int8_t find_trigger(void) {
 
 /* Send backspaces to delete the typed trigger, then send the expansion. */
 static void fire_trigger(const char *expansion) {
+    mprintf("[autotext] fire: %d backspaces, expansion='%s'\n",
+            g_state.buffer_len, expansion);
     /* Send backspaces to delete the trigger */
     for (uint8_t i = 0; i < g_state.buffer_len; i++) {
         g_state.env->tap_code16(KC_BSPC);
@@ -125,11 +127,15 @@ static kbsm_result_t autotext_handle(void *self, keyevent_t *event, keyrecord_t 
 
     /* Convert keycode to ASCII character */
     char ch = keycode_to_ascii(kc);
+    mprintf("[autotext] press kc=0x%04X ch='%c' buf_len=%d state=%s\n",
+            kc, ch, st->buffer_len,
+            st->sm.state_id == Autotext_StateId_IDLE ? "IDLE" : "ACCUM");
 
     /* Handle backspace: truncate buffer by one */
     if (ch == '\b') {
         if (st->buffer_len > 0) {
             st->buffer_len--;
+            mprintf("[autotext] backspace -> buf_len=%d\n", st->buffer_len);
         }
         return KBSM_PASS;
     }
@@ -138,6 +144,7 @@ static kbsm_result_t autotext_handle(void *self, keyevent_t *event, keyrecord_t 
     if (ch == 0 || ch == '\t' || ch == '\n' || ch == '\x7f') {
         /* Non-printable character — break any partial match */
         if (st->buffer_len > 0) {
+            mprintf("[autotext] non-printable, break match\n");
             Autotext_dispatch_event(&st->sm, Autotext_EventId_ON_BREAK_MATCH);
             reset_buffer();
         }
@@ -147,6 +154,7 @@ static kbsm_result_t autotext_handle(void *self, keyevent_t *event, keyrecord_t 
     /* Append character to buffer */
     if (st->buffer_len >= AUTOTEXT_MAX_TRIGGER_LEN) {
         /* Buffer overflow — force reset */
+        mprintf("[autotext] buffer overflow, reset\n");
         Autotext_dispatch_event(&st->sm, Autotext_EventId_ON_BREAK_MATCH);
         reset_buffer();
         return KBSM_PASS;
@@ -160,11 +168,14 @@ static kbsm_result_t autotext_handle(void *self, keyevent_t *event, keyrecord_t 
 
     if (result >= 0) {
         /* Exact match — fire the trigger */
+        mprintf("[autotext] EXACT MATCH '%s' -> '%s'\n",
+                st->buffer, module_autotext[result].expansion);
         fire_trigger(module_autotext[result].expansion);
         Autotext_dispatch_event(&st->sm, Autotext_EventId_ON_FULL_MATCH);
         reset_buffer();
     } else if (result == -1) {
         /* Prefix match — still accumulating */
+        mprintf("[autotext] prefix match '%.*s'\n", st->buffer_len, st->buffer);
         if (st->buffer_len == 1) {
             Autotext_dispatch_event(&st->sm, Autotext_EventId_ON_FIRST_MATCH_CHAR);
         } else {
@@ -172,6 +183,7 @@ static kbsm_result_t autotext_handle(void *self, keyevent_t *event, keyrecord_t 
         }
     } else {
         /* No match — break and check if this char starts a new match */
+        mprintf("[autotext] no match '%.*s', break\n", st->buffer_len, st->buffer);
         Autotext_dispatch_event(&st->sm, Autotext_EventId_ON_BREAK_MATCH);
 
         /* Check if this character alone starts any trigger */
@@ -187,6 +199,7 @@ static kbsm_result_t autotext_handle(void *self, keyevent_t *event, keyrecord_t 
             /* This character starts a new match — keep it in buffer */
             st->buffer[0] = ch;
             st->buffer_len = 1;
+            mprintf("[autotext] new match start '%c'\n", ch);
             Autotext_dispatch_event(&st->sm, Autotext_EventId_ON_FIRST_MATCH_CHAR);
         } else {
             /* No match — clear buffer */
@@ -213,6 +226,9 @@ static kbsm_t *machine_get(void) {
 static uint32_t module_init(kbsm_env_t *env) {
     if (!env) return 0xDEADBEEFu;  /* firmware built without kbsm support */
 
+    mprintf("[autotext] init: env=0x%lx, send_string=0x%lx\n",
+            (unsigned long)env, (unsigned long)env->send_string);
+
     g_state.env = env;
     Autotext_ctor(&g_state.sm);
     Autotext_start(&g_state.sm);
@@ -227,6 +243,7 @@ static uint32_t module_init(kbsm_env_t *env) {
     g_machine.priority = 70;  /* below dyad (60), sticky_combo (40), vim_modal (50) */
 
     env->kbsm_register(&g_machine);
+    mprintf("[autotext] registered %d triggers\n", MODULE_AUTOTEXT_COUNT);
     return MODULE_INIT_MAGIC;
 }
 
