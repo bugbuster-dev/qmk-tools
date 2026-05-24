@@ -212,7 +212,7 @@ class ModuleBuild:
         """Compile module C source to object file.
 
         -fPIC is REQUIRED for SRAM modules that hold static state
-        (e.g. sm_machine_t / sticky_state_t) and reference internal
+        (e.g. kbsm_t / sticky_state_t) and reference internal
         symbols by address. Without it, the compiler emits a mix of
         ADR / literal-pool-absolute / MOVW-MOVT for symbol addresses,
         and the linker resolves them to ORIGIN=0 offsets that are

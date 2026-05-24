@@ -83,7 +83,7 @@ the same function:
 
 Because the choice is not predictable, even a single function can
 contain a mix: writes to `g_machine.field` might go to one address while
-`&g_machine` passed to `pipeline_register()` goes to another. The
+`&g_machine` passed to `kbsm_register()` goes to another. The
 module then registers a "machine" pointer that is correctly readable
 by the firmware while the module's own writes silently land somewhere
 else (often in the peripheral region above `0x40000000`, with no fault
@@ -225,10 +225,10 @@ flags — the resulting module will not work at the SRAM load address.
 * `qmk/QMKata/ModuleBuild.py` — build pipeline
 * `qmk/QMKata/GccToolchain.py` — wraps `gcc` / `ld` / `objcopy` invocations
 * `qmk/QMKata/module_linker.ld` — linker script
-* `qmk/QMKata/module_api.h` — module-side API (`pipeline_env_t`, hook IDs)
-* `qmk/QMKata/module_examples/pipeline_sticky_combo/` — working SRAM module
+* `qmk/QMKata/module_api.h` — module-side API (`kbsm_env_t`, hook IDs)
+* `qmk/QMKata/module_examples/kbsm_sticky_combo/` — working SRAM module
 * `keyboards/keychron/common/module/module_loader.c` — firmware loader
-* `keyboards/keychron/common/module/pipeline_env.c` — firmware env table
+* `keyboards/keychron/common/module/kbsm_env.c` — firmware env table
 
 ## Sticky-combo state-machine fix (resolved)
 
