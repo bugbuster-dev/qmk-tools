@@ -31,6 +31,8 @@ typedef struct {
     int8_t   pending_combo;
     bool     pending_is_key1;
     uint16_t pending_time;
+    uint16_t pending_keycode;
+    bool     pending_pressed_on_host;
 } sticky_state_t;
 
 #ifndef STICKY_COMBO_WINDOW_MS
@@ -61,11 +63,31 @@ static sm_result_t sticky_handle(void *self, keyevent_t *event, keyrecord_t *rec
 
      /* IDLE */
     if (st->sm.state_id == StickyCombo_StateId_IDLE) {
-        if (!event->pressed) return SM_PASS;
+        if (!event->pressed) {
+            if (st->pending_combo >= 0 && kc == st->pending_keycode) {
+                if (st->pending_pressed_on_host) {
+                    env->unregister_code16(kc);
+                } else {
+                    env->tap_code16(kc);
+                }
+                st->pending_combo = -1;
+                st->pending_pressed_on_host = false;
+                return SM_CONSUME;
+            }
+            return SM_PASS;
+        }
 
         bool is_key1 = false, is_key2 = false;
         int8_t combo = find_combo_for_key(kc, &is_key1, &is_key2);
-        if (combo < 0) return SM_PASS;
+
+        if (combo < 0) {
+            if (st->pending_combo >= 0 && !st->pending_pressed_on_host) {
+                env->register_code16(st->pending_keycode);
+                st->pending_pressed_on_host = true;
+            }
+            st->pending_combo = -1;
+            return SM_PASS;
+        }
 
         if (st->pending_combo == combo &&
             (env->timer_elapsed(st->pending_time) <= STICKY_COMBO_WINDOW_MS) &&
@@ -74,6 +96,7 @@ static sm_result_t sticky_handle(void *self, keyevent_t *event, keyrecord_t *rec
             st->key1_held = true;
             st->key2_held = true;
             st->pending_combo = -1;
+            st->pending_pressed_on_host = false;
 
             uint16_t action = module_sticky_combos[combo].combo_action;
             if (action != KC_NO) env->tap_code16(action);
@@ -82,10 +105,21 @@ static sm_result_t sticky_handle(void *self, keyevent_t *event, keyrecord_t *rec
             return SM_CONSUME;
         }
 
+        if (st->pending_combo >= 0) {
+            if (!st->pending_pressed_on_host) {
+                env->register_code16(st->pending_keycode);
+                st->pending_pressed_on_host = true;
+            }
+            st->pending_combo = -1;
+            st->pending_pressed_on_host = false;
+        }
+
         st->pending_combo = combo;
+        st->pending_keycode = kc;
         st->pending_is_key1 = is_key1;
         st->pending_time = env->timer_read();
-        return SM_PASS;
+        st->pending_pressed_on_host = false;
+        return SM_CONSUME;
     }
 
     /* ARMED_BOTH */
@@ -165,9 +199,11 @@ static sm_result_t sticky_handle(void *self, keyevent_t *event, keyrecord_t *rec
 
 static void sticky_tick(void *self) {
     sticky_state_t *st = (sticky_state_t *)self;
-    if (st->pending_combo >= 0 &&
-        st->env->timer_elapsed(st->pending_time) > STICKY_COMBO_WINDOW_MS) {
-        st->pending_combo = -1;
+    if (st->pending_combo < 0) return;
+    if (st->env->timer_elapsed(st->pending_time) <= STICKY_COMBO_WINDOW_MS) return;
+    if (!st->pending_pressed_on_host) {
+        st->env->register_code16(st->pending_keycode);
+        st->pending_pressed_on_host = true;
     }
 }
 
@@ -179,6 +215,7 @@ static void sticky_reset(void *self) {
     st->pending_combo = -1;
     st->key1_held = false;
     st->key2_held = false;
+    st->pending_pressed_on_host = false;
 }
 
 static sm_machine_t *machine_get(void) {
@@ -202,6 +239,7 @@ static uint32_t module_init(pipeline_env_t *env) {
     g_state.pending_combo = -1;
     g_state.key1_held = false;
     g_state.key2_held = false;
+    g_state.pending_pressed_on_host = false;
 
     g_machine.instance = &g_state;
     g_machine.handle   = sticky_handle;
