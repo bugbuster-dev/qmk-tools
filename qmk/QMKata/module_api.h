@@ -45,7 +45,7 @@
 #define MODULE_HOOK_SHUTDOWN                      20
 
 /* kbsm hooks — for modules that plug into the kbsm
-   orchestrator (firmware quantum/pipeline.c). A behavior module exports
+   orchestrator (firmware quantum/kbsm.c). A behavior module exports
    a single kbsm_t* via this hook, then calls env->kbsm_register
    on it in init. */
 #define MODULE_KBSM_HOOK_GET_MACHINE          21
@@ -145,9 +145,10 @@ extern layer_state_t default_layer_state;
    ---------------------------------------------------------------------- */
 
 typedef enum {
-    KBSM_PHASE_PRE_TAP,
-    KBSM_PHASE_POST_TAP,
-    KBSM_PHASE_POST_EXEC
+    KBSM_PHASE_PRE_TAP
+    /* KBSM_PHASE_POST_TAP and KBSM_PHASE_POST_EXEC are reserved for future
+       expansion; add them here when kbsm_process_post_tap() gets a real
+       call site. */
 } kbsm_phase_t;
 
 typedef enum {
@@ -159,16 +160,16 @@ typedef struct kbsm kbsm_t;
 
 struct kbsm {
     void               *instance;
-    kbsm_result_t         (*handle)(void *self, keyevent_t *event, keyrecord_t *record);
+    kbsm_result_t       (*handle)(void *self, keyevent_t *event, keyrecord_t *record);
     void                (*tick)(void *self);
     void                (*reset)(void *self);
     const char          *name;
-    kbsm_phase_t    phase;
+    kbsm_phase_t        phase;
     uint8_t             priority;
 };
 
 /* Firmware-exported callback table. Module init receives a pointer to
-   the live g_pipeline_env (or NULL on non-pipeline builds). Store it in
+   the live g_kbsm_env (or NULL on non-kbsm builds). Store it in
    module-local state so handlers can route firmware calls through it. */
 typedef struct kbsm_env {
     void     (*kbsm_register)(kbsm_t *machine);

@@ -1,4 +1,4 @@
-/* pipeline_sticky_combo — SRAM-loadable pipeline module.
+/* kbsm_sticky_combo — SRAM-loadable behavior module.
  *
  * Mirrors the firmware-built sticky_combo feature in
  * quantum/features/sticky_combo_adapter.c, but routes all firmware
@@ -7,7 +7,7 @@
  * are baked into the module at build time.
  *
  * Slot 8 (default SRAM slot) on Keychron Q3 Max with MODULE_SRAM_ENABLE.
- * Header v3 — module_init_fn takes kbsm_env_t*.
+ * Header v4 — module_init_fn takes kbsm_env_t*.
  */
 
 #include "module_api.h"
@@ -224,7 +224,7 @@ static kbsm_t *machine_get(void) {
  /* ---- lifecycle ---- */
 
 static uint32_t module_init(kbsm_env_t *env) {
-    if (!env) return 0xDEADBEEFu;  /* firmware built without pipeline support */
+    if (!env) return 0xDEADBEEFu;  /* firmware built without kbsm support */
 
     /* With -fPIC, GCC emits "LDR + ADD pc" for every symbol reference, so
        &g_machine, sticky_handle, etc. evaluate to the actual runtime SRAM
@@ -259,11 +259,11 @@ static uint32_t module_deinit(void) {
     return 0;
 }
 
-/* Hook table. Pipeline modules export an kbsm_t* via GET_MACHINE
+/* Hook table. Behavior modules export a kbsm_t* via GET_MACHINE
    for firmware introspection; the actual registration happens in init. */
 MODULE_HOOK_TABLE
 const void *module_hook_table[MODULE_HOOK_MAX] = {
     [MODULE_HOOK_INIT]                       = module_init,
     [MODULE_HOOK_DEINIT]                     = module_deinit,
-    [MODULE_KBSM_HOOK_GET_MACHINE]       = machine_get,
+    [MODULE_KBSM_HOOK_GET_MACHINE] = machine_get,
 };
