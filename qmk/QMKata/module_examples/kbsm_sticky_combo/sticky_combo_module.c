@@ -12,6 +12,7 @@
 
 #include "module_api.h"
 #include "StickyCombo.h"
+#include "StickyCombo.c"
 #include "combos_def.h"
 
 #ifndef QK_LEADER
