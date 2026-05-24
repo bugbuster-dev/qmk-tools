@@ -1,0 +1,22 @@
+@startuml Autotext
+' Autotext — abbreviation expansion at the firmware level.
+' Watch typed sequences, match against a trigger table, replace with expansions.
+' 2-state SM: IDLE (no partial match) vs ACCUMULATING (partial match in progress).
+' See docs/plans/2026-05-24-autotext-design.md in the firmware repo for full design.
+
+state idle
+state accumulating
+
+[*] -> idle
+
+idle --> accumulating : on_first_match_char
+idle --> idle         : on_non_match_char
+
+accumulating --> accumulating : on_extend_match
+accumulating --> idle         : on_full_match
+accumulating --> idle         : on_break_match
+
+/'! $CONFIG : toml
+SmRunnerSettings.transpilerId = "C99"
+'/
+@enduml

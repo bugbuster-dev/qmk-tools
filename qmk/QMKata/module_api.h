@@ -184,6 +184,7 @@ typedef struct kbsm_env {
     uint16_t (*timer_elapsed)(uint16_t since);
     uint16_t (*get_record_keycode)(keyrecord_t *r, bool update_layer_cache);
     int      (*xprintf)(const char *fmt, ...);
+    void     (*send_string)(const char *str);  /* ABI v5+ */
     void     *extension;
     uintptr_t module_base;
 } kbsm_env_t;
