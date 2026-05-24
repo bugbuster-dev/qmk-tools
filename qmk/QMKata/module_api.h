@@ -44,11 +44,11 @@
 #define MODULE_HOOK_HOUSEKEEPING                  19
 #define MODULE_HOOK_SHUTDOWN                      20
 
-/* Pipeline hooks — for modules that plug into the SM pipeline
-   orchestrator (firmware quantum/pipeline.c). A pipeline module exports
-   a single sm_machine_t* via this hook, then calls env->pipeline_register
+/* kbsm hooks — for modules that plug into the kbsm
+   orchestrator (firmware quantum/pipeline.c). A behavior module exports
+   a single kbsm_t* via this hook, then calls env->kbsm_register
    on it in init. */
-#define MODULE_PIPELINE_HOOK_GET_MACHINE          21
+#define MODULE_KBSM_HOOK_GET_MACHINE          21
 
 #define MODULE_HOOK_MAX                           32
 
@@ -56,14 +56,14 @@
    to consider the init call successful. Must match the firmware's
    MODULE_INIT_MAGIC in module_loader.h.
 
-   Init signature:   uint32_t module_init(struct pipeline_env *env)
+   Init signature:   uint32_t module_init(struct kbsm_env *env)
    Deinit signature: uint32_t module_deinit(void)
 
    `env` is a pointer to a firmware-exported callback table (see
-   pipeline_env_t below). Pipeline modules use it to call
-   pipeline_register, tap_code16, timer_read, etc. Non-pipeline modules
+   kbsm_env_t below). kbsm modules use it to call
+   kbsm_register, tap_code16, timer_read, etc. Non-behavior modules
    (e.g. classic combo hooks) can ignore the argument — it will be NULL
-   on firmware builds without KEY_PROCESSING_SM_ENABLE.
+   on firmware builds without KEY_BEHAVIOR_SM_ENABLE.
 
    Module code accesses its own .rodata through normal C references;
    the loader has already rebased literal-pool addresses to the slot's
@@ -136,43 +136,43 @@ extern layer_state_t default_layer_state;
 #endif
 
 /* ----------------------------------------------------------------------
-   Pipeline module API — for SRAM-loaded pipeline modules.
+   kbsm module API — for SRAM-loaded behavior modules.
 
-   Layout-compatible with firmware quantum/pipeline.h and
-   keyboards/keychron/common/module/pipeline_env.h. Modules implement an
-   sm_machine_t with handle/tick/reset callbacks, return it via
-   MODULE_PIPELINE_HOOK_GET_MACHINE, and pipeline_register it from init.
+   Layout-compatible with firmware quantum/kbsm.h and
+   keyboards/keychron/common/module/kbsm_env.h. Modules implement an
+   kbsm_t with handle/tick/reset callbacks, return it via
+   MODULE_KBSM_HOOK_GET_MACHINE, and kbsm_register it from init.
    ---------------------------------------------------------------------- */
 
 typedef enum {
-    PHASE_PRE_TAP,
-    PHASE_POST_TAP,
-    PHASE_POST_EXEC
-} pipeline_phase_t;
+    KBSM_PHASE_PRE_TAP,
+    KBSM_PHASE_POST_TAP,
+    KBSM_PHASE_POST_EXEC
+} kbsm_phase_t;
 
 typedef enum {
-    SM_PASS,
-    SM_CONSUME
-} sm_result_t;
+    KBSM_PASS,
+    KBSM_CONSUME
+} kbsm_result_t;
 
-typedef struct sm_machine sm_machine_t;
+typedef struct kbsm kbsm_t;
 
-struct sm_machine {
+struct kbsm {
     void               *instance;
-    sm_result_t         (*handle)(void *self, keyevent_t *event, keyrecord_t *record);
+    kbsm_result_t         (*handle)(void *self, keyevent_t *event, keyrecord_t *record);
     void                (*tick)(void *self);
     void                (*reset)(void *self);
     const char          *name;
-    pipeline_phase_t    phase;
+    kbsm_phase_t    phase;
     uint8_t             priority;
 };
 
 /* Firmware-exported callback table. Module init receives a pointer to
    the live g_pipeline_env (or NULL on non-pipeline builds). Store it in
    module-local state so handlers can route firmware calls through it. */
-typedef struct pipeline_env {
-    void     (*pipeline_register)(sm_machine_t *machine);
-    void     (*pipeline_unregister)(sm_machine_t *machine);
+typedef struct kbsm_env {
+    void     (*kbsm_register)(kbsm_t *machine);
+    void     (*kbsm_unregister)(kbsm_t *machine);
     void     (*tap_code16)(uint16_t kc);
     void     (*register_code16)(uint16_t kc);
     void     (*unregister_code16)(uint16_t kc);
@@ -185,6 +185,6 @@ typedef struct pipeline_env {
     int      (*xprintf)(const char *fmt, ...);
     void     *extension;
     uintptr_t module_base;
-} pipeline_env_t;
+} kbsm_env_t;
 
 #endif /* MODULE_API_H */

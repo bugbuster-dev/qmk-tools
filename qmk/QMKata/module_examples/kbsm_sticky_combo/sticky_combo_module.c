@@ -12,7 +12,6 @@
 
 #include "module_api.h"
 #include "StickyCombo.h"
-#include "StickyCombo.c"
 #include "combos_def.h"
 
 #ifndef QK_LEADER
@@ -266,5 +265,5 @@ MODULE_HOOK_TABLE
 const void *module_hook_table[MODULE_HOOK_MAX] = {
     [MODULE_HOOK_INIT]                       = module_init,
     [MODULE_HOOK_DEINIT]                     = module_deinit,
-    [MODULE_PIPELINE_HOOK_GET_MACHINE]       = machine_get,
+    [MODULE_KBSM_HOOK_GET_MACHINE]       = machine_get,
 };
