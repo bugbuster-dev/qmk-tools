@@ -31,6 +31,7 @@ class ModuleApiContractTest(unittest.TestCase):
                 "process_record": 18,
                 "housekeeping": 19,
                 "shutdown": 20,
+                "pipeline_get_machine": 21,
             },
             HOOK_NAMES,
         )
@@ -66,6 +67,8 @@ class ModuleApiContractTest(unittest.TestCase):
             # Lifecycle hooks
             "MODULE_HOOK_HOUSEKEEPING": 19,
             "MODULE_HOOK_SHUTDOWN": 20,
+            # Pipeline hooks
+            "MODULE_PIPELINE_HOOK_GET_MACHINE": 21,
             # Capacity
             "MODULE_HOOK_MAX": 32,
         }
