@@ -66,7 +66,7 @@ HOOK_NAMES = {
     'process_record':                18,
     'housekeeping':                  19,
     'shutdown':                      20,
-    'pipeline_get_machine':          21,
+    'kbsm_get_machine':              21,
 }
 
 RESERVED_HOOK_NAMES = {
