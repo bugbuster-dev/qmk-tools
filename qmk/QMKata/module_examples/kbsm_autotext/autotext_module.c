@@ -92,6 +92,14 @@ static int8_t find_trigger(void) {
         }
     }
 
+    /* Debug: dump first trigger's first char if no match found */
+    if (exact_match < 0 && !has_prefix && g_state.buffer_len == 1) {
+        mprintf("[autotext] diag: buf[0]='%c' (%02x), trigger[0][0]='%c' (%02x), ptr=%p\n",
+                g_state.buffer[0], (uint8_t)g_state.buffer[0],
+                module_autotext[0].trigger[0], (uint8_t)module_autotext[0].trigger[0],
+                (void *)module_autotext[0].trigger);
+    }
+
     if (exact_match >= 0) return exact_match;
     if (has_prefix) return -1;
     return -2;
@@ -181,9 +189,9 @@ static kbsm_result_t autotext_handle(void *self, keyevent_t *event, keyrecord_t 
         } else {
             Autotext_dispatch_event(&st->sm, Autotext_EventId_ON_EXTEND_MATCH);
         }
-    } else {
-        /* No match — break and check if this char starts a new match */
-        mprintf("[autotext] no match '%.*s', break\n", st->buffer_len, st->buffer);
+  } else {
+        /* No match — break and check if this char starts any trigger */
+        mprintf("[autotext] no match '%.*s' (find_trigger=%d), break\n", st->buffer_len, st->buffer, result);
         Autotext_dispatch_event(&st->sm, Autotext_EventId_ON_BREAK_MATCH);
 
         /* Check if this character alone starts any trigger */
@@ -244,6 +252,11 @@ static uint32_t module_init(kbsm_env_t *env) {
 
     env->kbsm_register(&g_machine);
     mprintf("[autotext] registered %d triggers\n", MODULE_AUTOTEXT_COUNT);
+    /* Diagnostic: dump trigger table to verify string pointers resolve */
+    for (uint8_t i = 0; i < MODULE_AUTOTEXT_COUNT; i++) {
+        mprintf("[autotext] trigger[%d]: '%s' -> '%s'\n",
+                i, module_autotext[i].trigger, module_autotext[i].expansion);
+    }
     return MODULE_INIT_MAGIC;
 }
 
