@@ -230,13 +230,11 @@ flags — the resulting module will not work at the SRAM load address.
 * `keyboards/keychron/common/module/module_loader.c` — firmware loader
 * `keyboards/keychron/common/module/pipeline_env.c` — firmware env table
 
-## Known follow-ups
+## Sticky-combo state-machine fix (resolved)
 
-The sticky-combo example module loads and runs correctly under the
-loader described above, but its own *combo state-machine logic* has a
-bug (the first key of a combo is leaked to the host before the module
-knows whether the partner key will follow within the window). The same
-bug is present in the firmware-built `quantum/features/sticky_combo_adapter.c`.
-See `docs/plans/sticky-combo-fix.md` for the analysis and a recommended
-implementation plan. That bug is independent of everything described
-in *this* document.
+The sticky-combo module had a bug where the first key of a combo was
+leaked to the host before the module knew whether the partner key would
+follow within the window. This was fixed by deferring the first press
+(via `SM_CONSUME`) and flushing on window expiry or third-key arrival.
+The same fix was applied to both the SRAM module and the firmware-built
+adapter. See `docs/plans/sticky-combo-fix.md` for the full analysis.

@@ -1,5 +1,8 @@
 # Plan: Fix the sticky-combo SRAM module
 
+> **Status: RESOLVED** — Merged to `main` (QMKata) and `2025q3_q3_max` (firmware).
+> All 8 gtests pass. Verified on hardware.
+
 This document captures the remaining work needed to make the
 `module_examples/pipeline_sticky_combo/` example actually behave like a
 sticky combo (arm on simultaneous press, then act on follow-up taps
