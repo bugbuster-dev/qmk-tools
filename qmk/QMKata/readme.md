@@ -64,6 +64,15 @@ see kb_scripts dir for examples.
 for compile and execute function example install "GNU Arm Embedded Toolchain",
 see: https://developer.arm.com/downloads/-/gnu-rm and modify KeychronQ3Max.TOOLCHAIN to change path, includes/options, ... as needed.
 
+SRAM modules
+------------
+
+QMKata can build and upload dynamically-loaded modules into a reserved
+SRAM region on the keyboard (currently slot 8 on the Keychron Q3 Max).
+See `module_examples/` for working examples, `module_api.h` for the
+module-side API, and `docs/sram-module-compilation.md` for the
+compilation flow and the rationale behind the `-fPIC` requirement.
+
 demo videos
 -----------
 

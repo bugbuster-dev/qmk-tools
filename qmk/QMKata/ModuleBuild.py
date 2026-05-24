@@ -11,7 +11,7 @@ from GccMapfile import GccMapfile
 
 # Must match firmware module_loader.h
 MODULE_HEADER_MAGIC   = 0x4D4F444C  # "MODL" as uint32 (bytes on disk: 4C 44 4F 4D)
-MODULE_HEADER_VERSION = 2
+MODULE_HEADER_VERSION = 3
 MODULE_HEADER_SIZE    = 32
 MODULE_HOOK_TABLE_OFF = 32  # Hook table immediately follows header
 MODULE_HOOK_MAX       = 32
@@ -25,6 +25,20 @@ MODULE_HOOK_MAX       = 32
 # keyboard.module_flash_layout() instead.
 MODULE_FLASH_SLOT_SIZE = 0x1000
 MODULE_FLASH_BASE      = 0x08008000
+
+# SRAM target (firmware MODULE_SRAM_ENABLE). Slot IDs >= MODULE_SRAM_SLOT_BASE_ID
+# load into SRAM instead of flash. The host applies relocations against the
+# SRAM slot address (which the firmware exports via the .map file as
+# g_module_sram). For default builds with a single 4 KB SRAM slot, slot 8
+# maps to the start of g_module_sram in RAM. Callers that know the firmware
+# .map can pass the exact address; the constants below are placeholders for
+# tests / standalone use.
+MODULE_SRAM_SLOT_BASE_ID = 8
+MODULE_SRAM_SLOT_SIZE    = 0x1000
+# Default fallback address for an STM32F401xC with 64 KB SRAM and a 4 KB
+# carve-out (g_module_sram at top of .bss). Real builds resolve the exact
+# address from the firmware .map file via GccMapfile. Tests use this.
+MODULE_SRAM_DEFAULT_BASE = 0x2000F000
 
 # Hook name → index mapping (human-readable). Keys are the QMK
 # callback names a module overrides; values are the indices defined
@@ -52,6 +66,7 @@ HOOK_NAMES = {
     'process_record':                18,
     'housekeeping':                  19,
     'shutdown':                      20,
+    'pipeline_get_machine':          21,
 }
 
 RESERVED_HOOK_NAMES = {
@@ -97,6 +112,7 @@ class ModuleBuild:
         """
         self.toolchain = toolchain
         self.mapfile = mapfile
+        self.firmware_path = firmware_path
         if not self.mapfile and firmware_path:
             try:
                 self.mapfile = GccMapfile(firmware_path=firmware_path)
@@ -106,12 +122,15 @@ class ModuleBuild:
         self.module_api_header = os.path.join(os.path.dirname(__file__), "module_api.h")
         self.linker_script = os.path.join(os.path.dirname(__file__), "module_linker.ld")
 
-    def build(self, source_file):
+    def build(self, source_file, target='flash'):
         """Build a module from C source file.
-        
+
         Args:
             source_file: path to .c source file
-            
+            target: 'flash' (default) or 'sram'. SRAM target allows
+                writable sections (.data/.bss) and uses a linker script
+                that keeps them in the module blob.
+
         Returns:
             dict with keys:
                 'binary': bytes - complete module binary (header + hook table + code)
@@ -133,18 +152,40 @@ class ModuleBuild:
                 self.last_error = "compile failed"
                 return None
 
-            # Step 1.5: Reject writable module sections (.data/.bss/etc.)
-            if not self._validate_no_writable_sections(obj_file):
-                return None
+            # Step 1.5: Reject writable module sections for flash modules.
+            # SRAM modules need .data/.bss for persistent state across callbacks.
+            if target == 'flash':
+                if not self._validate_no_writable_sections(obj_file):
+                    return None
 
             # Step 2: Resolve external symbols → generate symbol .ld file
             sym_ld_file = os.path.join(tmpdir, "symbols.ld")
             if not self._resolve_symbols(obj_file, sym_ld_file):
                 return None
 
-            # Step 3: Link
+            # Step 2.5: For SRAM target, generate a linker script that keeps
+            # .data and .bss in the module blob (flash modules discard them).
+            linker_script = self.linker_script
+            if target == 'sram':
+                sram_ld = os.path.join(tmpdir, "module_linker_sram.ld")
+                with open(self.linker_script) as f:
+                    orig_ld = f.read()
+                sram_ld_content = orig_ld.replace(
+                    "/DISCARD/ : {\n        *(.data*)\n        *(.bss*)\n",
+                    "    .data : ALIGN(4) {\n        *(.data*)\n        . = ALIGN(4);\n    } > MODULE\n"
+                    "    .bss : ALIGN(4) {\n        *(.bss*)\n        . = ALIGN(4);\n    } > MODULE\n"
+                    "    /DISCARD/ : {\n"
+                )
+                if sram_ld_content == orig_ld:
+                    self.last_error = "failed to generate SRAM linker script"
+                    return None
+                with open(sram_ld, 'w') as f:
+                    f.write(sram_ld_content)
+                linker_script = sram_ld
+
+                    # Step 3: Link
             extra_ld = [sym_ld_file] if os.path.exists(sym_ld_file) else None
-            if not self.toolchain.link(obj_file, self.linker_script, elf_file, extra_ld):
+            if not self.toolchain.link(obj_file, linker_script, elf_file, extra_ld):
                 self.last_error = "link failed"
                 return None
 
@@ -168,7 +209,31 @@ class ModuleBuild:
             return self._assemble(raw_bin, relocs)
 
     def _compile(self, source_file, obj_file):
-        """Compile with module-specific options (no -fPIC, add -ffreestanding)."""
+        """Compile module C source to object file.
+
+        -fPIC is REQUIRED for SRAM modules that hold static state
+        (e.g. sm_machine_t / sticky_state_t) and reference internal
+        symbols by address. Without it, the compiler emits a mix of
+        ADR / literal-pool-absolute / MOVW-MOVT for symbol addresses,
+        and the linker resolves them to ORIGIN=0 offsets that are
+        wrong at any runtime SRAM load address.
+
+        With -fPIC, GCC on Cortex-M Thumb-2 emits the GOT-less PIC
+        pattern "LDR rX,[pc,#N]; ADD rX,pc" for every symbol address.
+        The literal pool holds a PC-delta, not an absolute address,
+        so &g_machine, sticky_handle, etc. all evaluate to the correct
+        runtime SRAM address regardless of where the module was loaded
+        — without any host-side relocation pass and without any
+        runtime rebasing in the module.
+
+        Flash modules don't need -fPIC since they reject .data/.bss
+        sections and only export hook offsets (which the firmware
+        dispatcher rebases at call time), but applying it uniformly
+        keeps the build pipeline simple and PIC code is essentially
+        free on Cortex-M Thumb-2.
+
+        See docs/sram-module-compilation.md for the full rationale.
+        """
         opts = CompilerOptions()
         # Core ARM options
         opts.options([
@@ -182,6 +247,8 @@ class ModuleBuild:
             "-ffunction-sections",
             "-fdata-sections",
             "-fno-common",
+            # See docstring: PIC is load-bearing for SRAM modules with state.
+            "-fPIC",
             # Suppress exception unwind metadata. The module linker script
             # discards .ARM.exidx/.ARM.extab, so any compiler-emitted
             # unwind references would become dangling at runtime. These
@@ -261,6 +328,32 @@ class ModuleBuild:
                 resolved.append((sym, addr))
             else:
                 unresolved.append(sym)
+
+        # Fallback: resolve unresolved symbols via nm on the firmware ELF.
+        # Libc/libgcc symbols (memset, memcpy, etc.) come from prebuilt
+        # static libs and don't appear in the .map file's function table.
+        if unresolved and self.firmware_path:
+            # Find the firmware ELF
+            import glob as glob_mod
+            elf_paths = glob_mod.glob(os.path.join(self.firmware_path, ".build", "*.elf"))
+            if not elf_paths:
+                elf_paths = glob_mod.glob(os.path.join(self.firmware_path, "*.elf"))
+            if elf_paths:
+                nm_result = subprocess.run(
+                    [nm_tool, elf_paths[0]],
+                    capture_output=True, text=True
+                )
+                if nm_result.returncode == 0:
+                    elf_symbols = {}
+                    for line in nm_result.stdout.strip().split('\n'):
+                        parts = line.split()
+                        if len(parts) >= 3:
+                            elf_symbols[parts[-1]] = int(parts[0], 16)
+                    for sym in list(unresolved):
+                        if sym in elf_symbols:
+                            resolved.append((sym, elf_symbols[sym]))
+                            unresolved.remove(sym)
+                            print(f"  pre-seeded libc symbol: {sym} -> 0x{elf_symbols[sym]:08x}")
 
         if unresolved:
             print(f"E: cannot resolve symbols: {unresolved}")

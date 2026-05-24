@@ -130,7 +130,7 @@ class GccToolchain:
 
     def link(self, object_files, linker_script, output_file, extra_ld_files=None):
         """Link object files with a linker script.
-        
+
         Args:
             object_files: list of .o file paths
             linker_script: path to .ld linker script

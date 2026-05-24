@@ -60,6 +60,7 @@ from RGBAudioTab import RGBAudioTab
 from RGBAnimationTab import RGBAnimationTab, CodeTextEdit
 from RGBDynLDAnimationTab import RGBDynLDAnimationTab
 from ModuleTab import ModuleTab
+from ModuleBuild import MODULE_SRAM_SLOT_BASE_ID
 from LayerAutoSwitchTab import LayerAutoSwitchTab
 
 if __name__ != "__main__":
@@ -849,6 +850,17 @@ class MainWindow(QMainWindow):
         QtCore.QTimer.singleShot(250, self.module_tab.refresh_slots)
 
     def on_module_load(self, slot_id, binary):
+        # SRAM slots: direct write, no sector erase, no sibling preservation.
+        # SRAM modules are volatile — lost on reset.
+        if slot_id >= MODULE_SRAM_SLOT_BASE_ID:
+            self.module_tab.log(f"Loading SRAM slot {slot_id}...")
+            if self.keyboard.keyb_set_module(slot_id, binary):
+                self.module_tab.log(f"Load OK: SRAM slot {slot_id}")
+            else:
+                self.module_tab.log(f"Load FAILED: SRAM slot {slot_id}")
+            self.module_tab.refresh_slots()
+            return
+
         # Sector-preserving reload: read siblings, erase sector, write all
         # slots back. Flash erase is sector-granular (16 KB = 4 slots), so
         # loading into any slot would otherwise destroy its 3 siblings.
