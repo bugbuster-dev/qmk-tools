@@ -11,7 +11,7 @@ from GccMapfile import GccMapfile
 
 # Must match firmware module_loader.h
 MODULE_HEADER_MAGIC   = 0x4D4F444C  # "MODL" as uint32 (bytes on disk: 4C 44 4F 4D)
-MODULE_HEADER_VERSION = 3
+MODULE_HEADER_VERSION = 4
 MODULE_HEADER_SIZE    = 32
 MODULE_HOOK_TABLE_OFF = 32  # Hook table immediately follows header
 MODULE_HOOK_MAX       = 32

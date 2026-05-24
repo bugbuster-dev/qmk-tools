@@ -1,7 +1,7 @@
-# pipeline_sticky_combo — SRAM-loaded sticky combo module
+# kbsm_sticky_combo — SRAM-loaded sticky combo module
 
 Demonstrates the SRAM module path with a feature that benefits from
-the SM pipeline: sticky combos.
+the kbsm: sticky combos.
 
 ## What it does
 
@@ -27,7 +27,7 @@ Default: `J + K` arms; J-held + tap-K = `Down`, K-held + tap-J = `Up`.
 ## Build & upload
 
 Requires firmware built with:
-- `KEY_PROCESSING_SM_ENABLE = yes`
+- `KEY_BEHAVIOR_SM_ENABLE = yes`
 - `MODULE_SRAM_ENABLE = yes`
 - (Optional) `STICKY_COMBO_ENABLE = no` so the firmware copy doesn't double-register.
 
@@ -41,8 +41,8 @@ STM32F401xC 64 KB SRAM).
 keyboard.module_load_from_source(
     slot_id=8,
     sources=[
-        "module_examples/pipeline_sticky_combo/sticky_combo_module.c",
-        "module_examples/pipeline_sticky_combo/StickyCombo.c",
+        "module_examples/kbsm_sticky_combo/sticky_combo_module.c",
+        "module_examples/kbsm_sticky_combo/StickyCombo.c",
     ],
 )
 ```

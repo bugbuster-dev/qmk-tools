@@ -2,12 +2,12 @@
  *
  * Mirrors the firmware-built sticky_combo feature in
  * quantum/features/sticky_combo_adapter.c, but routes all firmware
- * calls through the pipeline_env_t callback table received in init().
+ * calls through the kbsm_env_t callback table received in init().
  * Sticky combo definitions live in combos_def.h (this directory) and
  * are baked into the module at build time.
  *
  * Slot 8 (default SRAM slot) on Keychron Q3 Max with MODULE_SRAM_ENABLE.
- * Header v3 — module_init_fn takes pipeline_env_t*.
+ * Header v3 — module_init_fn takes kbsm_env_t*.
  */
 
 #include "module_api.h"
@@ -23,7 +23,7 @@
 
 typedef struct {
     StickyCombo sm;
-    pipeline_env_t *env;
+    kbsm_env_t *env;
     int8_t  active_combo;       /* index into module_sticky_combos[], -1 = none */
     bool    key1_held;
     bool    key2_held;
@@ -40,7 +40,7 @@ typedef struct {
 #endif
 
 static sticky_state_t g_state = {.active_combo = -1, .pending_combo = -1};
-static sm_machine_t g_machine;
+static kbsm_t g_machine;
 
 static int8_t find_combo_for_key(uint16_t kc, bool *is_key1, bool *is_key2) {
     for (uint8_t i = 0; i < MODULE_STICKY_COMBO_COUNT; i++) {
@@ -56,9 +56,9 @@ static int8_t find_combo_for_key(uint16_t kc, bool *is_key1, bool *is_key2) {
     return -1;
 }
 
-static sm_result_t sticky_handle(void *self, keyevent_t *event, keyrecord_t *record) {
+static kbsm_result_t sticky_handle(void *self, keyevent_t *event, keyrecord_t *record) {
     sticky_state_t *st = (sticky_state_t *)self;
-    pipeline_env_t *env = st->env;
+    kbsm_env_t *env = st->env;
     uint16_t kc = env->get_record_keycode(record, true);
 
      /* IDLE */
@@ -72,9 +72,9 @@ static sm_result_t sticky_handle(void *self, keyevent_t *event, keyrecord_t *rec
                 }
                 st->pending_combo = -1;
                 st->pending_pressed_on_host = false;
-                return SM_CONSUME;
+                return KBSM_CONSUME;
             }
-            return SM_PASS;
+            return KBSM_PASS;
         }
 
         bool is_key1 = false, is_key2 = false;
@@ -86,7 +86,7 @@ static sm_result_t sticky_handle(void *self, keyevent_t *event, keyrecord_t *rec
                 st->pending_pressed_on_host = true;
             }
             st->pending_combo = -1;
-            return SM_PASS;
+            return KBSM_PASS;
         }
 
         if (st->pending_combo == combo &&
@@ -102,7 +102,7 @@ static sm_result_t sticky_handle(void *self, keyevent_t *event, keyrecord_t *rec
             if (action != KC_NO) env->tap_code16(action);
 
             StickyCombo_dispatch_event(&st->sm, StickyCombo_EventId_ON_COMBO_PRESS);
-            return SM_CONSUME;
+            return KBSM_CONSUME;
         }
 
         if (st->pending_combo >= 0) {
@@ -119,16 +119,16 @@ static sm_result_t sticky_handle(void *self, keyevent_t *event, keyrecord_t *rec
         st->pending_is_key1 = is_key1;
         st->pending_time = env->timer_read();
         st->pending_pressed_on_host = false;
-        return SM_CONSUME;
+        return KBSM_CONSUME;
     }
 
     /* ARMED_BOTH */
     if (st->sm.state_id == StickyCombo_StateId_ARMED_BOTH) {
-        if (st->active_combo < 0) return SM_PASS;
+        if (st->active_combo < 0) return KBSM_PASS;
         uint16_t key1 = module_sticky_combos[st->active_combo].key1;
         uint16_t key2 = module_sticky_combos[st->active_combo].key2;
-        if (kc != key1 && kc != key2) return SM_PASS;
-        if (event->pressed) return SM_CONSUME;
+        if (kc != key1 && kc != key2) return KBSM_PASS;
+        if (event->pressed) return KBSM_CONSUME;
 
         if (kc == key1) {
             st->key1_held = false;
@@ -147,12 +147,12 @@ static sm_result_t sticky_handle(void *self, keyevent_t *event, keyrecord_t *rec
                 st->active_combo = -1;
             }
         }
-        return SM_CONSUME;
+        return KBSM_CONSUME;
     }
 
     /* ARMED_FOR_KEY1: key2 still held; tapping key1 fires tap_action_1 */
     if (st->sm.state_id == StickyCombo_StateId_ARMED_FOR_KEY1) {
-        if (st->active_combo < 0) return SM_PASS;
+        if (st->active_combo < 0) return KBSM_PASS;
         uint16_t key1 = module_sticky_combos[st->active_combo].key1;
         uint16_t key2 = module_sticky_combos[st->active_combo].key2;
         if (kc == key1) {
@@ -161,20 +161,20 @@ static sm_result_t sticky_handle(void *self, keyevent_t *event, keyrecord_t *rec
                 if (action != KC_NO) env->tap_code16(action);
                 StickyCombo_dispatch_event(&st->sm, StickyCombo_EventId_ON_TAP_KEY1);
             }
-            return SM_CONSUME;
+            return KBSM_CONSUME;
         }
         if (kc == key2 && !event->pressed) {
             st->key2_held = false;
             StickyCombo_dispatch_event(&st->sm, StickyCombo_EventId_ON_RELEASE_KEY2);
             st->active_combo = -1;
-            return SM_CONSUME;
+            return KBSM_CONSUME;
         }
-        return SM_PASS;
+        return KBSM_PASS;
     }
 
     /* ARMED_FOR_KEY2: key1 still held; tapping key2 fires tap_action_2 */
     if (st->sm.state_id == StickyCombo_StateId_ARMED_FOR_KEY2) {
-        if (st->active_combo < 0) return SM_PASS;
+        if (st->active_combo < 0) return KBSM_PASS;
         uint16_t key1 = module_sticky_combos[st->active_combo].key1;
         uint16_t key2 = module_sticky_combos[st->active_combo].key2;
         if (kc == key2) {
@@ -183,18 +183,18 @@ static sm_result_t sticky_handle(void *self, keyevent_t *event, keyrecord_t *rec
                 if (action != KC_NO) env->tap_code16(action);
                 StickyCombo_dispatch_event(&st->sm, StickyCombo_EventId_ON_TAP_KEY2);
             }
-            return SM_CONSUME;
+            return KBSM_CONSUME;
         }
         if (kc == key1 && !event->pressed) {
             st->key1_held = false;
             StickyCombo_dispatch_event(&st->sm, StickyCombo_EventId_ON_RELEASE_KEY1);
             st->active_combo = -1;
-            return SM_CONSUME;
+            return KBSM_CONSUME;
         }
-        return SM_PASS;
+        return KBSM_PASS;
     }
 
-    return SM_PASS;
+    return KBSM_PASS;
 }
 
 static void sticky_tick(void *self) {
@@ -218,13 +218,13 @@ static void sticky_reset(void *self) {
     st->pending_pressed_on_host = false;
 }
 
-static sm_machine_t *machine_get(void) {
+static kbsm_t *machine_get(void) {
     return &g_machine;
 }
 
  /* ---- lifecycle ---- */
 
-static uint32_t module_init(pipeline_env_t *env) {
+static uint32_t module_init(kbsm_env_t *env) {
     if (!env) return 0xDEADBEEFu;  /* firmware built without pipeline support */
 
     /* With -fPIC, GCC emits "LDR + ADD pc" for every symbol reference, so
@@ -246,21 +246,21 @@ static uint32_t module_init(pipeline_env_t *env) {
     g_machine.tick     = sticky_tick;
     g_machine.reset    = sticky_reset;
     g_machine.name     = "sticky_combo_sram";
-    g_machine.phase    = PHASE_PRE_TAP;
+    g_machine.phase    = KBSM_PHASE_PRE_TAP;
     g_machine.priority = 40;
 
-    env->pipeline_register(&g_machine);
+    env->kbsm_register(&g_machine);
     return MODULE_INIT_MAGIC;
 }
 
 static uint32_t module_deinit(void) {
     if (g_state.env) {
-        g_state.env->pipeline_unregister(&g_machine);
+        g_state.env->kbsm_unregister(&g_machine);
     }
     return 0;
 }
 
-/* Hook table. Pipeline modules export an sm_machine_t* via GET_MACHINE
+/* Hook table. Pipeline modules export an kbsm_t* via GET_MACHINE
    for firmware introspection; the actual registration happens in init. */
 MODULE_HOOK_TABLE
 const void *module_hook_table[MODULE_HOOK_MAX] = {
