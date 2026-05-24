@@ -20,9 +20,9 @@ Default: `J + K` arms; J-held + tap-K = `Down`, K-held + tap-J = `Up`.
 
 | File | Purpose |
 |------|---------|
-| `combos_def.h` | User-editable: sticky combo array. Edit and rebuild. |
-| `sticky_combo_module.c` | Adapter (port of firmware adapter, env-routed) |
-| `StickyCombo.c/.h` | StateSmith-generated 4-state machine (copied from firmware) |
+| `src/combos_def.h` | User-editable: sticky combo array. Edit and rebuild. |
+| `src/sticky_combo_module.c` | Adapter (port of firmware adapter, env-routed) |
+| `src/StickyCombo.c/.h` | StateSmith-generated 4-state machine (copied from firmware) |
 
 ## Build & upload
 
@@ -41,8 +41,8 @@ STM32F401xC 64 KB SRAM).
 keyboard.module_load_from_source(
     slot_id=8,
     sources=[
-        "module_examples/kbsm_sticky_combo/sticky_combo_module.c",
-        "module_examples/kbsm_sticky_combo/StickyCombo.c",
+        "module_examples/kbsm_sticky_combo/src/sticky_combo_module.c",
+        "module_examples/kbsm_sticky_combo/src/StickyCombo.c",
     ],
 )
 ```
