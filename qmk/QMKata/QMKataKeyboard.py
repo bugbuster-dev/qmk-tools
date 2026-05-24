@@ -28,6 +28,21 @@ from DebugTracer import DebugTracer
 
 
 # -------------------------------------------------------------------------------
+# QMKata host-side protocol compatibility.
+#
+# Tracks the highest firmware-reported QMKATA_MINOR_VERSION this host knows
+# about. Used for informational display only — the host does not gate
+# behavior on this value (firmware additions since 0.4 have all been
+# backward-compatible new sysex IDs). Bump in lockstep with the firmware
+# constant in keyboards/keychron/qmkata/QMKata.h.
+#
+#   0.4 → initial published constant
+#   0.5 → adds COMBO/TAP_DANCE/LEADER/MODULE sysex IDs and module v3 ABI
+QMKATA_HOST_MAJOR_VERSION = 0
+QMKATA_HOST_MINOR_VERSION = 5
+
+
+# -------------------------------------------------------------------------------
 # region list com ports
 def list_com_ports():
     device_list = serial.tools.list_ports.comports()
@@ -686,7 +701,9 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
         print("-" * 80)
         print(f"{self}")
         print(
-            f"qmkata version:{self.firmware} {self.firmware_version}, firmata={self.get_firmata_version()}"
+            f"qmkata version:{self.firmware} {self.firmware_version}, "
+            f"firmata={self.get_firmata_version()}, "
+            f"host={QMKATA_HOST_MAJOR_VERSION}.{QMKATA_HOST_MINOR_VERSION}"
         )
         print(f"mcu:{self.keyboardModel.MCU} {self.pack_endian}")
         print("-" * 80)
