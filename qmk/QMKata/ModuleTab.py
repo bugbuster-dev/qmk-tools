@@ -67,23 +67,6 @@ class ModuleTab(QWidget):
     def init_gui(self):
         layout = QVBoxLayout()
 
-        # --- Source file section ---
-        source_group = QGroupBox("Module Source")
-        source_layout = QHBoxLayout()
-        source_layout.addWidget(QLabel("C source:"))
-        self.source_input = QLineEdit()
-        self.source_input.setPlaceholderText("path/to/module.c")
-        self.source_input.textChanged.connect(self.on_source_changed)
-        source_layout.addWidget(self.source_input)
-        self.browse_button = QPushButton("Browse...")
-        self.browse_button.clicked.connect(self.browse_source)
-        source_layout.addWidget(self.browse_button)
-        self.build_button = QPushButton("Build")
-        self.build_button.clicked.connect(self.build_module)
-        source_layout.addWidget(self.build_button)
-        source_group.setLayout(source_layout)
-        layout.addWidget(source_group)
-
         # --- Slot control section ---
         slot_group = QGroupBox("Module Slots")
         slot_layout = QHBoxLayout()
@@ -105,6 +88,23 @@ class ModuleTab(QWidget):
         slot_layout.addWidget(self.refresh_button)
         slot_group.setLayout(slot_layout)
         layout.addWidget(slot_group)
+
+        # --- Source file section ---
+        source_group = QGroupBox("Module Source")
+        source_layout = QHBoxLayout()
+        source_layout.addWidget(QLabel("C source:"))
+        self.source_input = QLineEdit()
+        self.source_input.setPlaceholderText("path/to/module.c")
+        self.source_input.textChanged.connect(self.on_source_changed)
+        source_layout.addWidget(self.source_input)
+        self.browse_button = QPushButton("Browse...")
+        self.browse_button.clicked.connect(self.browse_source)
+        source_layout.addWidget(self.browse_button)
+        self.build_button = QPushButton("Build")
+        self.build_button.clicked.connect(self.build_module)
+        source_layout.addWidget(self.build_button)
+        source_group.setLayout(source_layout)
+        layout.addWidget(source_group)
 
         self.hooks_group = QGroupBox("Hooks")
         self.hooks_layout = QVBoxLayout()
