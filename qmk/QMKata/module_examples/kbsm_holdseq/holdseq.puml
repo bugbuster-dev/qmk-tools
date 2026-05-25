@@ -1,0 +1,21 @@
+@startuml Holdseq
+
+state idle
+state primary_held
+state collecting
+
+[*] -> idle
+
+idle         --> primary_held : on_primary_press
+primary_held --> collecting   : on_first_secondary
+primary_held --> idle         : on_primary_release
+primary_held --> idle         : on_other_key
+
+collecting   --> collecting   : on_secondary_press
+collecting   --> idle         : on_primary_release
+collecting   --> idle         : on_other_key
+
+/'! $CONFIG : toml
+SmRunnerSettings.transpilerId = "C99"
+'/
+@enduml
