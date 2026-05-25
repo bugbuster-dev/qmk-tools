@@ -125,9 +125,14 @@ static kbsm_result_t autotext_handle(void *self, keyevent_t *event, keyrecord_t 
     int8_t result = find_trigger();
 
     if (result >= 0) {
+        /* Consume the character that completed the match — it never
+         * reaches the host. The backspace count is buffer_len-1 since
+         * this character was never sent. */
+        st->buffer_len--;  /* exclude the consumed char from backspace count */
         fire_trigger(module_autotext[result].expansion);
         Autotext_dispatch_event(&st->sm, Autotext_EventId_ON_FULL_MATCH);
         reset_buffer();
+        return KBSM_CONSUME;  /* consume the matching char */
     } else if (result == -1) {
         if (st->buffer_len == 1) {
             Autotext_dispatch_event(&st->sm, Autotext_EventId_ON_FIRST_MATCH_CHAR);
