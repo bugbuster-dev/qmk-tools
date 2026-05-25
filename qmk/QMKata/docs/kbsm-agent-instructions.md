@@ -340,14 +340,65 @@ Available through `kbsm_env_t *env`:
 ## Module lifecycle
 
 ```
-1. Firmware boots → g_module_hooks[] zeroed
-2. User uploads .bin via QMKata → module_sram_write() copies to SRAM
-3. module_load() → validates header → calls module_init(env)
-4. module_init() → populates kbsm_t → calls env->kbsm_register()
-5. kbsm orchestrator calls handle() on each keyevent
-6. kbsm orchestrator calls tick() each keyboard_task() loop (if set)
-7. User unloads → module_unload() → module_deinit() → kbsm_unregister()
+1. Firmware boots → keyboard_post_init_quantum()
+2.   kbsm_init() — clears all machines        (quantum/keyboard.c:353)
+3.   kbsm_register(sticky_combo_kbsm_get())    (quantum/keyboard.c:358)
+      — firmware-side machines registered here
+4. User uploads .bin via QMKata → module_sram_write() copies to SRAM
+5. module_load() → validates header → calls module_init(env)
+6. module_init() → populates kbsm_t → calls env->kbsm_register()
+    — SRAM module machines registered here
+7. On each keyevent: action_exec() →
+    kbsm_process_pre_tap(&event, &record)      (quantum/action.c:143)
+      → iterates machines by phase+priority
+      → calls handle(instance, event, record)
+      → stops on first KBSM_CONSUME
+8. On each keyboard_task() loop:
+    kbsm_tick()                                (quantum/keyboard.c:698)
+      → calls tick(instance) on each machine
+9. User unloads → module_unload() → module_deinit() → kbsm_unregister()
 ```
+
+### How it works under the hood
+
+The kbsm framework lives in `quantum/kbsm.c` (61 lines). Key implementation
+details:
+
+```c
+// quantum/kbsm.c — machines array, sorted by phase+priority
+static kbsm_t *machines[MAX_MACHINES];
+static int machine_count;
+
+void kbsm_register(kbsm_t *machine) {
+    // appends and insertion-sorts by (phase*256 + priority)
+    // lower priority runs first
+}
+
+bool kbsm_process_pre_tap(keyevent_t *event, keyrecord_t *record) {
+    for (int i = 0; i < machine_count; i++) {
+        if (machines[i]->phase == KBSM_PHASE_PRE_TAP && machines[i]->handle) {
+            if (machines[i]->handle(...) == KBSM_CONSUME) return true; // stop
+        }
+    }
+    return false;
+}
+```
+
+The dispatch at `quantum/action.c:143` runs **before** QMK's tap/hold resolution:
+```c
+// inside action_exec()
+if (kbsm_process_pre_tap(&event, &record)) {
+    return;  // event consumed, skip further QMK processing
+}
+```
+
+This is why `KBSM_CONSUME` is powerful — returning it prevents the keycode
+from ever reaching the host through QMK's normal path. The module can still
+send its own keycodes via `env->tap_code16()` / `env->send_string()`.
+
+`kbsm_tick()` at `quantum/keyboard.c:698` is called every main loop iteration
+from `keyboard_task()`, before the matrix scan. Use `tick()` for timer-driven
+logic (sticky-combo's window timeout, not for key-by-key processing).
 
 ## Hook table pattern (every module uses this)
 
