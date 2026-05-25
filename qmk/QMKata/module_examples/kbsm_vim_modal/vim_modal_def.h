@@ -129,6 +129,23 @@
 #define LSFT(kc)   (0x0200 | (kc))
 #endif
 
+/* ---- Physical Escape key position ----
+ * When Esc is bound to a tap-dance or other quantum keycode,
+ * get_record_keycode() returns the quantum keycode (e.g. TD(x)),
+ * not KC_ESC. The handler falls back to matching by physical
+ * matrix position instead.
+ *
+ * Set to your Esc key's (row, col) on your keyboard. Values of
+ * 0xFF mean "unset / don't match by position."
+ *
+ * Defaults for Keychron Q3 Max ANSI (row 0, col 0). */
+#ifndef VIM_ESC_ROW
+#define VIM_ESC_ROW 0
+#endif
+#ifndef VIM_ESC_COL
+#define VIM_ESC_COL 0
+#endif
+
 /* ---- Config ---- */
 /* Whether vim modal starts enabled on module load. */
 #ifndef VIM_MODAL_DEFAULT_ENABLED

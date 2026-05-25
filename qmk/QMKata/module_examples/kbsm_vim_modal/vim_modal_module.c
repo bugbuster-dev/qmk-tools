@@ -21,6 +21,15 @@ typedef struct {
 static vim_modal_state_t g_state;
 static kbsm_t g_machine;
 
+/* Check if a key event matches Escape by either keycode or physical position.
+ * Needed when Esc is bound to a tap-dance or other quantum keycode — in that
+ * case get_record_keycode() returns the quantum keycode (e.g. TD(x)), not KC_ESC.
+ * The physical row/col fallback is configured via VIM_ESC_ROW / VIM_ESC_COL. */
+static bool is_esc(uint16_t kc, keyrecord_t *r) {
+    if (kc == KC_ESC) return true;
+    return (r->event.key.row == VIM_ESC_ROW && r->event.key.col == VIM_ESC_COL);
+}
+
 static kbsm_result_t handle_normal(vim_modal_state_t *st, uint16_t kc, keyrecord_t *r) {
     if (!r->event.pressed) return KBSM_CONSUME;
     kbsm_env_t *env = st->env;
@@ -60,7 +69,7 @@ static kbsm_result_t handle_normal(vim_modal_state_t *st, uint16_t kc, keyrecord
 }
 
 static kbsm_result_t handle_insert(vim_modal_state_t *st, uint16_t kc, keyrecord_t *r) {
-    if (kc == KC_ESC && r->event.pressed) {
+    if (is_esc(kc, r) && r->event.pressed) {
         VimModal_dispatch_event(&st->sm, VimModal_EventId_ON_ESCAPE);
         return KBSM_CONSUME;
     }
@@ -71,10 +80,12 @@ static kbsm_result_t handle_visual(vim_modal_state_t *st, uint16_t kc, keyrecord
     if (!r->event.pressed) return KBSM_CONSUME;
     kbsm_env_t *env = st->env;
 
+    if (is_esc(kc, r)) {
+        VimModal_dispatch_event(&st->sm, VimModal_EventId_ON_ESCAPE);
+        return KBSM_CONSUME;
+    }
+
     switch (kc) {
-        case KC_ESC:
-            VimModal_dispatch_event(&st->sm, VimModal_EventId_ON_ESCAPE);
-            return KBSM_CONSUME;
         case KC_H: env->tap_code16(LSFT(KC_LEFT));  return KBSM_CONSUME;
         case KC_J: env->tap_code16(LSFT(KC_DOWN));  return KBSM_CONSUME;
         case KC_K: env->tap_code16(LSFT(KC_UP));    return KBSM_CONSUME;
@@ -95,7 +106,7 @@ static kbsm_result_t handle_visual(vim_modal_state_t *st, uint16_t kc, keyrecord
 
 static kbsm_result_t handle_command(vim_modal_state_t *st, uint16_t kc, keyrecord_t *r) {
     if (!r->event.pressed) return KBSM_CONSUME;
-    if (kc == KC_ESC) {
+    if (is_esc(kc, r)) {
         VimModal_dispatch_event(&st->sm, VimModal_EventId_ON_ESCAPE);
     } else if (kc == KC_ENTER) {
         VimModal_dispatch_event(&st->sm, VimModal_EventId_ON_ENTER);
@@ -105,7 +116,7 @@ static kbsm_result_t handle_command(vim_modal_state_t *st, uint16_t kc, keyrecor
 
 static kbsm_result_t handle_replace(vim_modal_state_t *st, uint16_t kc, keyrecord_t *r) {
     if (!r->event.pressed) return KBSM_CONSUME;
-    if (kc == KC_ESC) {
+    if (is_esc(kc, r)) {
         VimModal_dispatch_event(&st->sm, VimModal_EventId_ON_ESCAPE);
         return KBSM_CONSUME;
     }
