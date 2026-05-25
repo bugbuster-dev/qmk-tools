@@ -56,13 +56,14 @@ static int8_t find_trigger(void) {
     int8_t exact_match = -2;
 
     for (uint8_t i = 0; i < MODULE_AUTOTEXT_COUNT; i++) {
-        /* Use volatile to prevent compiler from optimizing away
-         * memory reads through SRAM-relocated string pointers. */
-        volatile const char *trigger = module_autotext[i].trigger;
+        const char *trigger = module_autotext[i].trigger;
         uint8_t trigger_len = 0;
         while (trigger[trigger_len] != 0 && trigger_len < AUTOTEXT_MAX_TRIGGER_LEN) {
             trigger_len++;
         }
+
+        mprintf("[autotext] trigger[%d]: ptr=%p len=%d buf_len=%d\n",
+                i, (void *)trigger, trigger_len, g_state.buffer_len);
 
         /* Check for exact match */
         if (trigger_len == g_state.buffer_len) {
@@ -85,10 +86,14 @@ static int8_t find_trigger(void) {
             for (uint8_t j = 0; j < g_state.buffer_len; j++) {
                 if (trigger[j] != g_state.buffer[j]) {
                     prefix = false;
+                    mprintf("[autotext]   prefix fail at j=%d: trigger[%d]='%c'(%02x) buf[%d]='%c'(%02x)\n",
+                            j, j, trigger[j], (uint8_t)trigger[j],
+                            j, g_state.buffer[j], (uint8_t)g_state.buffer[j]);
                     break;
                 }
             }
             if (prefix) {
+                mprintf("[autotext]   prefix match!\n");
                 has_prefix = true;
             }
         }
