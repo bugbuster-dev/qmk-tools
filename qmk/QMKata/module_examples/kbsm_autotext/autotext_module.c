@@ -21,6 +21,7 @@ typedef struct {
     kbsm_env_t *env;
     char buffer[AUTOTEXT_MAX_TRIGGER_LEN];
     uint8_t buffer_len;
+    bool firing; /* guard: true while tap_code16/send_string in progress */
 } autotext_state_t;
 
 static autotext_state_t g_state;
@@ -73,10 +74,12 @@ static int8_t find_trigger(void) {
 }
 
 static void fire_trigger(const char *expansion) {
+    g_state.firing = true;
     for (uint8_t i = 0; i < g_state.buffer_len; i++) {
         g_state.env->tap_code16(KC_BSPC);
     }
     g_state.env->send_string(expansion);
+    g_state.firing = false;
 }
 
 static void reset_buffer(void) {
@@ -87,6 +90,11 @@ static kbsm_result_t autotext_handle(void *self, keyevent_t *event, keyrecord_t 
     autotext_state_t *st = (autotext_state_t *)self;
     kbsm_env_t *env = st->env;
     uint16_t kc = env->get_record_keycode(record, true);
+
+    /* Guard: fire_trigger() calls tap_code16/send_string which
+     * generate synthetic keyevents that re-enter this handler.
+     * Skip processing while firing to avoid corrupting the buffer. */
+    if (st->firing) return KBSM_PASS;
 
     if (!event->pressed) return KBSM_PASS;
 
