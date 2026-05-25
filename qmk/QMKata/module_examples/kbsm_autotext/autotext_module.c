@@ -86,6 +86,7 @@ static void fire_trigger(const char *expansion) {
 
 static void reset_buffer(void) {
     g_state.buffer_len = 0;
+    g_state.firing = false;
 }
 
 static kbsm_result_t autotext_handle(void *self, keyevent_t *event, keyrecord_t *record) {
@@ -181,6 +182,7 @@ static uint32_t module_init(kbsm_env_t *env) {
     if (!env) return 0xDEADBEEFu;
 
     g_state.env = env;
+    g_state.firing = false;
     Autotext_ctor(&g_state.sm);
     Autotext_start(&g_state.sm);
     reset_buffer();
