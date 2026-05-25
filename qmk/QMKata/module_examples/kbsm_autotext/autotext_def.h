@@ -195,10 +195,16 @@
 
 /* Maximum trigger length. Triggers longer than this are ignored. */
 #define AUTOTEXT_MAX_TRIGGER_LEN 16
+/* Maximum expansion length. Expansions longer than this are truncated. */
+#define AUTOTEXT_MAX_EXPANSION_LEN 128
 
+/* Inline char arrays (not pointers) — string data lives inside the struct
+ * and gets copied to SRAM with it. Pointers to .rodata string literals
+ * are NOT relocated by the SRAM module loader (GCC doesn't emit
+ * R_ARM_ABS32 for .rodata→.rodata references when building modules). */
 typedef struct {
-    const char *trigger;
-    const char *expansion;
+    char trigger[AUTOTEXT_MAX_TRIGGER_LEN];
+    char expansion[AUTOTEXT_MAX_EXPANSION_LEN];
 } autotext_def_t;
 
 /* Edit these definitions and rebuild.
