@@ -74,12 +74,14 @@ static int8_t find_trigger(void) {
 }
 
 static void fire_trigger(const char *expansion) {
+    mprintf("[at] FIRE bs=%d exp='%s'\n", g_state.buffer_len, expansion);
     g_state.firing = true;
     for (uint8_t i = 0; i < g_state.buffer_len; i++) {
         g_state.env->tap_code16(KC_BSPC);
     }
     g_state.env->send_string(expansion);
     g_state.firing = false;
+    mprintf("[at] DONE\n");
 }
 
 static void reset_buffer(void) {
@@ -91,14 +93,18 @@ static kbsm_result_t autotext_handle(void *self, keyevent_t *event, keyrecord_t 
     kbsm_env_t *env = st->env;
     uint16_t kc = env->get_record_keycode(record, true);
 
-    /* Guard: fire_trigger() calls tap_code16/send_string which
-     * generate synthetic keyevents that re-enter this handler.
-     * Skip processing while firing to avoid corrupting the buffer. */
-    if (st->firing) return KBSM_PASS;
+    if (!event->pressed) {
+        if (st->firing) mprintf("[at] release while firing, pass\n");
+        return KBSM_PASS;
+    }
 
-    if (!event->pressed) return KBSM_PASS;
+    if (st->firing) {
+        mprintf("[at] firing guard: pass kc=0x%04X\n", kc);
+        return KBSM_PASS;
+    }
 
     char ch = keycode_to_ascii(kc);
+    mprintf("[at] press kc=0x%04X ch='%c'(%02x) buf=%d\n", kc, ch, (uint8_t)ch, st->buffer_len);
 
     if (ch == '\b') {
         if (st->buffer_len > 0) st->buffer_len--;
@@ -125,15 +131,16 @@ static kbsm_result_t autotext_handle(void *self, keyevent_t *event, keyrecord_t 
     int8_t result = find_trigger();
 
     if (result >= 0) {
-        /* Consume the character that completed the match — it never
-         * reaches the host. The backspace count is buffer_len-1 since
-         * this character was never sent. */
-        st->buffer_len--;  /* exclude the consumed char from backspace count */
+        mprintf("[at] MATCH idx=%d '%s'->'%s' consume, backspaces=%d\n",
+                result, module_autotext[result].trigger,
+                module_autotext[result].expansion, st->buffer_len - 1);
+        st->buffer_len--;
         fire_trigger(module_autotext[result].expansion);
         Autotext_dispatch_event(&st->sm, Autotext_EventId_ON_FULL_MATCH);
         reset_buffer();
-        return KBSM_CONSUME;  /* consume the matching char */
+        return KBSM_CONSUME;
     } else if (result == -1) {
+        mprintf("[at] prefix '%.*s' len=%d\n", st->buffer_len, st->buffer, st->buffer_len);
         if (st->buffer_len == 1) {
             Autotext_dispatch_event(&st->sm, Autotext_EventId_ON_FIRST_MATCH_CHAR);
         } else {
@@ -144,11 +151,10 @@ static kbsm_result_t autotext_handle(void *self, keyevent_t *event, keyrecord_t 
 
         bool starts_match = false;
         for (uint8_t i = 0; i < MODULE_AUTOTEXT_COUNT; i++) {
-            if (module_autotext[i].trigger[0] == ch) {
-                starts_match = true;
-                break;
-            }
+            if (module_autotext[i].trigger[0] == ch) { starts_match = true; break; }
         }
+
+        mprintf("[at] nomatch starts=%d buf='%.*s'\n", starts_match, st->buffer_len, st->buffer);
 
         if (starts_match) {
             st->buffer[0] = ch;
