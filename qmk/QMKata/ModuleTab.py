@@ -86,6 +86,9 @@ class ModuleTab(QWidget):
         self.refresh_button = QPushButton("Refresh")
         self.refresh_button.clicked.connect(self.refresh_slots)
         slot_layout.addWidget(self.refresh_button)
+        self.load_bin_button = QPushButton("Load binary...")
+        self.load_bin_button.clicked.connect(self.load_binary_file)
+        slot_layout.addWidget(self.load_bin_button)
         slot_group.setLayout(slot_layout)
         layout.addWidget(slot_group)
 
@@ -203,16 +206,20 @@ class ModuleTab(QWidget):
         if not (hook_bitmap & (1 << 4)):
             struct.pack_into("<I", binary, 24, 0)
 
-        # Delegate reloc apply + final CRC write to ModuleBuild.
-        # apply_relocations_and_crc zeroes the crc field internally before
-        # CRC computation, so the stale provisional CRC from _assemble is
-        # irrelevant here.
+        relocs = self.last_build_result.get('relocs', [])
+
+        # Pre-built binary: no relocs to apply, CRC already correct.
+        # Just return the modified bytes (hook bitmap may have changed).
+        if not relocs and self.module_build is None:
+            return bytes(binary)
+
+        # Built-in path: apply relocations and recompute CRC.
         kb = getattr(self, "keyboard", None)
         keyboard_model = getattr(kb, "keyboardModel", None) if kb is not None else None
         slot_addr = _slot_base_addr(keyboard_model, slot_id)
         return self.module_build.apply_relocations_and_crc(
             bytes(binary),
-            self.last_build_result['relocs'],
+            relocs,
             slot_addr,
         )
 
@@ -274,6 +281,62 @@ class ModuleTab(QWidget):
         binary = self._prepare_binary_for_load(slot_id)
         self.log(f"Loading module to slot {slot_id} ({len(binary)} bytes)...")
         self.signal_load_module.emit(slot_id, binary)
+
+    def load_binary_file(self):
+        """Browse for a pre-built .bin file and load it directly."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Select Module Binary", "", "Binary Files (*.bin);;All Files (*)"
+        )
+        if not file_path:
+            return
+
+        try:
+            with open(file_path, "rb") as f:
+                binary = f.read()
+        except OSError as e:
+            self.log(f"Error reading file: {e}")
+            return
+
+        if len(binary) < 32:
+            self.log(f"Error: file too small ({len(binary)} bytes), need ≥32 byte header")
+            return
+
+        magic, version, flags, code_size, hook_bitmap, hook_off, init_off, deinit_off, crc = \
+            struct.unpack("<IHHIIIIII", binary[:32])
+
+        if magic != 0x4D4F444C:
+            self.log(f"Error: invalid magic 0x{magic:08X}, expected 0x4D4F444C")
+            return
+
+        slot_id = self.slot_combo.currentData()
+        if slot_id >= MODULE_SRAM_SLOT_BASE_ID and code_size > MODULE_SRAM_SLOT_SIZE:
+            self.log(f"Error: module too large for SRAM slot ({code_size} > {MODULE_SRAM_SLOT_SIZE})")
+            return
+
+        # Decode hook names from bitmap
+        hook_names = []
+        for bit in range(32):
+            if hook_bitmap & (1 << bit):
+                hook_names.append(hook_name_for_index(bit))
+
+        import os
+        self.log(f"Loading binary: {os.path.basename(file_path)}")
+        self.log(f"  version: {version}  size: {code_size}  hooks: {', '.join(hook_names)}")
+        self.log(f"  hook_bitmap: 0x{hook_bitmap:08X}")
+
+        # Store as a pseudo build result so load_module() can use it.
+        # Relocs are already applied at build time; pass empty list.
+        self.last_build_result = {
+            'binary': binary,
+            'hooks': hook_names,
+            'hook_bitmap': hook_bitmap,
+            'size': code_size,
+            'fits_slot': True,
+            'relocs': [],
+        }
+        self._rebuild_hook_checkboxes(hook_names)
+        self.load_button.setEnabled(True)
+        self.log(f"Ready — select slot and click 'Load to Slot'")
 
     def unload_module(self):
         """Unload module from selected slot."""
