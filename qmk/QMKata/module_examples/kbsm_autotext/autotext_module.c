@@ -56,7 +56,9 @@ static int8_t find_trigger(void) {
     int8_t exact_match = -2;
 
     for (uint8_t i = 0; i < MODULE_AUTOTEXT_COUNT; i++) {
-        const char *trigger = module_autotext[i].trigger;
+        /* Use volatile to prevent compiler from optimizing away
+         * memory reads through SRAM-relocated string pointers. */
+        volatile const char *trigger = module_autotext[i].trigger;
         uint8_t trigger_len = 0;
         while (trigger[trigger_len] != 0 && trigger_len < AUTOTEXT_MAX_TRIGGER_LEN) {
             trigger_len++;
@@ -90,14 +92,6 @@ static int8_t find_trigger(void) {
                 has_prefix = true;
             }
         }
-    }
-
-    /* Debug: dump first trigger's first char if no match found */
-    if (exact_match < 0 && !has_prefix && g_state.buffer_len == 1) {
-        mprintf("[autotext] diag: buf[0]='%c' (%02x), trigger[0][0]='%c' (%02x), ptr=%p\n",
-                g_state.buffer[0], (uint8_t)g_state.buffer[0],
-                module_autotext[0].trigger[0], (uint8_t)module_autotext[0].trigger[0],
-                (void *)module_autotext[0].trigger);
     }
 
     if (exact_match >= 0) return exact_match;
