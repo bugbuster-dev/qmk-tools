@@ -155,8 +155,8 @@ class KeybScriptModuleHelpersTest(unittest.TestCase):
     def test_build_module_uses_cached_builder_and_repo_root_relative_paths(self):
         env = self._env()
 
-        first = env.build_module("module_examples/combo_layer_filter.c")
-        second = env.build_module("module_examples/combo_layer_filter.c")
+        first = env.build_module("kbsm_module_examples/combo_layer_filter.c")
+        second = env.build_module("kbsm_module_examples/combo_layer_filter.c")
 
         self.assertEqual(first["binary"], b"BIN")
         self.assertEqual(second["binary"], b"BIN")
@@ -167,15 +167,15 @@ class KeybScriptModuleHelpersTest(unittest.TestCase):
         self.assertEqual(str(ROOT), _FakeModuleBuild.instances[0].firmware_path)
         self.assertEqual(
             [
-                str(ROOT / "module_examples/combo_layer_filter.c"),
-                str(ROOT / "module_examples/combo_layer_filter.c"),
+                str(ROOT / "kbsm_module_examples/combo_layer_filter.c"),
+                str(ROOT / "kbsm_module_examples/combo_layer_filter.c"),
             ],
             _FakeModuleBuild.instances[0].build_calls,
         )
 
     def test_build_module_preserves_absolute_paths(self):
         env = self._env()
-        source = str(ROOT / "module_examples/combo_layer_filter.c")
+        source = str(ROOT / "kbsm_module_examples/combo_layer_filter.c")
 
         result = env.build_module(source)
 
@@ -187,7 +187,7 @@ class KeybScriptModuleHelpersTest(unittest.TestCase):
         env.toolchain = None
 
         self.assertIsNone(env._module_builder())
-        self.assertIsNone(env.build_module("module_examples/combo_layer_filter.c"))
+        self.assertIsNone(env.build_module("kbsm_module_examples/combo_layer_filter.c"))
         self.assertEqual([], _FakeModuleBuild.instances)
 
     def test_load_and_unload_module_forward_to_keyboard(self):

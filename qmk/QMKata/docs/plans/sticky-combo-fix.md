@@ -4,7 +4,7 @@
 > All 8 gtests pass. Verified on hardware.
 
 This document captures the remaining work needed to make the
-`module_examples/pipeline_sticky_combo/` example actually behave like a
+`kbsm_module_examples/pipeline_sticky_combo/` example actually behave like a
 sticky combo (arm on simultaneous press, then act on follow-up taps
 and releases) instead of leaking the first key to the host and never
 recovering.
@@ -240,8 +240,8 @@ adapter. Out of scope for the example module fix.
 
 | File | Change |
 |---|---|
-| `qmk-tools/qmk/QMKata/module_examples/pipeline_sticky_combo/sticky_combo_module.c` | `sticky_handle()` IDLE branch returns `SM_CONSUME`, new `pending_pressed_on_host` field, new logic in `sticky_tick()` to flush after window, release path that emits `tap_code16` or `unregister_code16` |
-| `qmk-tools/qmk/QMKata/module_examples/pipeline_sticky_combo/combos_def.h` | optional: change demo `combo_action` to make arm observable during testing |
+| `qmk-tools/qmk/QMKata/kbsm_module_examples/pipeline_sticky_combo/sticky_combo_module.c` | `sticky_handle()` IDLE branch returns `SM_CONSUME`, new `pending_pressed_on_host` field, new logic in `sticky_tick()` to flush after window, release path that emits `tap_code16` or `unregister_code16` |
+| `qmk-tools/qmk/QMKata/kbsm_module_examples/pipeline_sticky_combo/combos_def.h` | optional: change demo `combo_action` to make arm observable during testing |
 | `keychron_qmk_firmware_emulator/quantum/features/sticky_combo_adapter.c` | same fix, kept in lockstep with the SRAM example |
 | `qmk-tools/qmk/QMKata/test_module_api_contract.py` (new tests) | unit-test the state-machine transitions and env-call sequences |
 

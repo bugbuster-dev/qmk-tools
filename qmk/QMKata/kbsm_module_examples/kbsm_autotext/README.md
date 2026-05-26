@@ -84,7 +84,7 @@ This module's `.puml` lives outside `quantum/features/`, so
 
 ```bash
 ~/.local/bin/statesmith run --lang C99 --no-csx --no-ask \
-    qmk-tools/qmk/QMKata/module_examples/kbsm_autotext/autotext.puml
+    qmk-tools/qmk/QMKata/kbsm_module_examples/kbsm_autotext/autotext.puml
 ```
 
 Then apply the GCC pragma guard (see

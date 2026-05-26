@@ -64,5 +64,5 @@ python3 emulator/scripts/build_sram_module.py --feature vim_modal
 
 ```bash
 ~/.local/bin/statesmith run --lang C99 --no-csx --no-ask \
-    qmk-tools/qmk/QMKata/module_examples/kbsm_vim_modal/vim_modal.puml
+    qmk-tools/qmk/QMKata/kbsm_module_examples/kbsm_vim_modal/vim_modal.puml
 ```

@@ -27,13 +27,13 @@ that shares the most characteristics with the feature. Use these as templates:
 | `kbsm_holdseq` | Medium | Hold primary, variable-length sequence, fire on release |
 | `kbsm_autotext` | High | Abbreviation expansion, observation-only, send_string |
 
-Each lives at `qmk/QMKata/module_examples/kbsm_<name>/`. Copy the closest
+Each lives at `qmk/QMKata/kbsm_module_examples/kbsm_<name>/`. Copy the closest
 one as a starting point.
 
 ## File structure (every module must have)
 
 ```
-qmk-tools/qmk/QMKata/module_examples/kbsm_<name>/
+qmk-tools/qmk/QMKata/kbsm_module_examples/kbsm_<name>/
     <name>.puml          # StateSmith diagram
     <Name>.c             # Generated SM (committed)
     <Name>.h             # Generated SM header (committed)

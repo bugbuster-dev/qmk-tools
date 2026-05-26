@@ -49,7 +49,7 @@ Produces `.build/kbsm_holdseq.bin` (2088 bytes, slot 8).
 
 ```bash
 ~/.local/bin/statesmith run --lang C99 --no-csx --no-ask \
-    qmk-tools/qmk/QMKata/module_examples/kbsm_holdseq/holdseq.puml
+    qmk-tools/qmk/QMKata/kbsm_module_examples/kbsm_holdseq/holdseq.puml
 ```
 
 ## Known limitations (v1)

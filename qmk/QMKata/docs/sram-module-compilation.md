@@ -5,7 +5,7 @@ the compilation flags are chosen the way they are. Knowing the rationale
 matters because picking the wrong flag combination produces modules that
 either crash silently or hang the keyboard, often only at runtime.
 
-If you only want to write a module, see `module_examples/` and the
+If you only want to write a module, see `kbsm_module_examples/` and the
 `module_api.h` API. If you are changing the build pipeline or porting
 the loader to a new MCU, read on.
 
@@ -226,7 +226,7 @@ flags — the resulting module will not work at the SRAM load address.
 * `qmk/QMKata/GccToolchain.py` — wraps `gcc` / `ld` / `objcopy` invocations
 * `qmk/QMKata/module_linker.ld` — linker script
 * `qmk/QMKata/module_api.h` — module-side API (`kbsm_env_t`, hook IDs)
-* `qmk/QMKata/module_examples/kbsm_sticky_combo/` — working SRAM module
+* `qmk/QMKata/kbsm_module_examples/kbsm_sticky_combo/` — working SRAM module
 * `keyboards/keychron/common/module/module_loader.c` — firmware loader
 * `keyboards/keychron/common/module/kbsm_env.c` — firmware env table
 

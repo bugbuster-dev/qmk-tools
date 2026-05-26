@@ -1,4 +1,4 @@
-source = "module_examples/combo_layer_filter.c"
+source = "kbsm_module_examples/combo_layer_filter.c"
 slot_id = 4
 
 print(f"building {source}")

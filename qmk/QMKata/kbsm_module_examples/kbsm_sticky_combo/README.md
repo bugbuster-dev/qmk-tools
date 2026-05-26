@@ -41,8 +41,8 @@ STM32F401xC 64 KB SRAM).
 keyboard.module_load_from_source(
     slot_id=8,
     sources=[
-        "module_examples/kbsm_sticky_combo/sticky_combo_module.c",
-        "module_examples/kbsm_sticky_combo/StickyCombo.c",
+        "kbsm_module_examples/kbsm_sticky_combo/sticky_combo_module.c",
+        "kbsm_module_examples/kbsm_sticky_combo/StickyCombo.c",
     ],
 )
 ```

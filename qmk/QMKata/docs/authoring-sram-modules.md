@@ -8,7 +8,7 @@ patterns and gotchas consolidated in one place.
 The fastest way: copy the smallest module example and adapt it.
 
 ```bash
-cp -r qmk/QMKata/module_examples/kbsm_dyad qmk/QMKata/module_examples/kbsm_mine
+cp -r qmk/QMKata/kbsm_module_examples/kbsm_dyad qmk/QMKata/kbsm_module_examples/kbsm_mine
 ```
 
 ## Step-by-step
