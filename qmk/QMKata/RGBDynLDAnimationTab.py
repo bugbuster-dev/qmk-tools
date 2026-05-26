@@ -165,27 +165,28 @@ class RGBDynLDAnimationTab(QWidget):
             return
 
         self.compile_btn.setEnabled(False)
-        self.dbg.tr('DEBUG', f"Compiling: {source}")
+        self.dbg.tr('DEBUG', f"Building dynld: {source}")
 
         try:
-            result = self.keyboard.kb_script_env.compile(source)
+            builder = self.keyboard.kb_script_env._dynld_builder()
+            bin_data = builder.build_dynld(source)
         except Exception as e:
-            self.dbg.tr('DEBUG', f"Compile FAILED: {e}")
-            QMessageBox.warning(self, "Compile Failed", str(e))
+            self.dbg.tr('DEBUG', f"Build FAILED: {e}")
+            QMessageBox.warning(self, "Build Failed", str(e))
             self.compile_btn.setEnabled(True)
             return
 
-        if result is None or result.get("bin") is None:
-            self.dbg.tr('DEBUG', "Compile FAILED")
-            QMessageBox.warning(self, "Compile Failed", "Compilation returned no output.")
+        if bin_data is None:
+            self.dbg.tr('DEBUG', "Build FAILED")
+            QMessageBox.warning(self, "Build Failed",
+                                builder.last_error or "Build returned no output.")
             self.compile_btn.setEnabled(True)
             return
 
-        bin_data = result["bin"]
         hexbuf = bin_data.hex(' ')
         self.dynld_funtext_edit.setText(hexbuf)
         self.dynld_funtext_edit.formatText()
-        self.dbg.tr('DEBUG', f"Compile OK: {len(bin_data)} bytes — ready to send")
+        self.dbg.tr('DEBUG', f"Build OK: {len(bin_data)} bytes — ready to send")
         self.compile_btn.setEnabled(True)
 
     def send_dynld_animation_func(self):

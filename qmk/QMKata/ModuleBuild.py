@@ -210,6 +210,45 @@ class ModuleBuild:
             # Step 6: Generate header and assemble final binary
             return self._assemble(raw_bin, relocs)
 
+    def build_dynld(self, source_file):
+        """Build a dynld animation via the full ModuleBuild pipeline.
+
+        Uses dynld_linker.ld (no kbsm header/hook table, .text at offset 0).
+        Returns raw code bytes ready for SysEx upload to dynld_func_buf[].
+        Unlike build(), this skips _assemble() and returns just the code.
+        """
+        import os
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="module_build_dynld_") as tmpdir:
+            obj_file = os.path.join(tmpdir, "module.o")
+            elf_file = os.path.join(tmpdir, "module.elf")
+
+            # Step 1: Compile
+            if not self._compile(source_file, obj_file):
+                return None
+
+            # Step 2: Resolve symbols (same as kbsm modules)
+            sym_ld_file = os.path.join(tmpdir, "symbols.ld")
+            if not self._resolve_symbols(obj_file, sym_ld_file):
+                return None
+
+            # Step 3: Link with dynld linker script
+            dynld_ld = os.path.join(os.path.dirname(__file__), "dynld_linker.ld")
+            extra_ld = [sym_ld_file] if os.path.exists(sym_ld_file) else None
+            if not self.toolchain.link(obj_file, dynld_ld, elf_file, extra_ld):
+                self.last_error = "dynld link failed"
+                return None
+
+            # Step 4: objcopy to binary (no _assemble — raw code only)
+            bin_file = os.path.join(tmpdir, "module.bin")
+            if not self.toolchain.elf2bin(elf_file, bin_file):
+                self.last_error = "objcopy failed"
+                return None
+
+            with open(bin_file, "rb") as f:
+                return f.read()
+
     def _compile(self, source_file, obj_file):
         """Compile module C source to object file.
 

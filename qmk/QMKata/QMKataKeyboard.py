@@ -486,6 +486,24 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 )
             return self._module_build
 
+        def _dynld_builder(self):
+            """ModuleBuild instance with dynld-specific include paths."""
+            if not self.toolchain:
+                return None
+            from ModuleBuild import ModuleBuild
+            fw = self.firmware_path or ""
+            return ModuleBuild(
+                self.toolchain,
+                mapfile=self.mapfile,
+                firmware_path=fw,
+                extra_includes=[
+                    os.path.join(fw, "keyboards/keychron/q3_max"),
+                    os.path.join(fw, ".build/obj_keychron_q3_max_ansi_encoder_keychron/src"),
+                    os.path.join(fw, "quantum"),
+                    os.path.join(fw, "quantum/rgb_matrix"),
+                ]
+            )
+
         def build_module(self, source_file):
             builder = self._module_builder()
             if not builder:
