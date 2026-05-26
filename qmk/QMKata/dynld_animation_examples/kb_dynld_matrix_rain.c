@@ -22,3 +22,18 @@ static uint8_t col_trail[MATRIX_COLS];
 static uint8_t frame_counter;
 static uint32_t lcg_seed;
 static bool initialized;
+
+static uint32_t lcg_next(void) {
+    lcg_seed = lcg_seed * 1103515245u + 12345u;
+    return lcg_seed;
+}
+
+static void matrix_init(dynld_custom_animation_env_t *anim_env) {
+    lcg_seed = (uint32_t)anim_env->time ^ 0x4B7E1131u;
+    for (uint8_t c = 0; c < MATRIX_COLS; c++) {
+        col_position[c] = lcg_next() % MATRIX_ROWS;
+        col_speed[c] = (lcg_next() % 3) + 1;
+        col_trail[c] = (lcg_next() % (MATRIX_TRAIL_MAX - MATRIX_TRAIL_MIN + 1)) + MATRIX_TRAIL_MIN;
+    }
+    initialized = true;
+}
