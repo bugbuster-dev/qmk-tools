@@ -492,16 +492,15 @@ class QMKataKeyboard(pyfirmata2.Board, QtCore.QObject):
                 return None
             from ModuleBuild import ModuleBuild
             fw = self.firmware_path or ""
+            # Use the keyboard's TOOLCHAIN includes + .build/ for generated headers
+            toolchain_includes = self.keyboard.keyboardModel.TOOLCHAIN.get("includes", [])
+            extra = [os.path.join(fw, d) for d in toolchain_includes]
+            extra.append(os.path.join(fw, ".build/obj_keychron_q3_max_ansi_encoder_keychron/src"))
             return ModuleBuild(
                 self.toolchain,
                 mapfile=self.mapfile,
                 firmware_path=fw,
-                extra_includes=[
-                    os.path.join(fw, "keyboards/keychron/q3_max"),
-                    os.path.join(fw, ".build/obj_keychron_q3_max_ansi_encoder_keychron/src"),
-                    os.path.join(fw, "quantum"),
-                    os.path.join(fw, "quantum/rgb_matrix"),
-                ]
+                extra_includes=extra,
             )
 
         def build_module(self, source_file):
