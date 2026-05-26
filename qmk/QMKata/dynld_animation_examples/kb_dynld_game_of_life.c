@@ -22,6 +22,15 @@
 
 /* ---- entry point (must be first function in the file) ---- */
 
+/* Forward declarations — helpers are defined below */
+static bool grid_get(uint8_t *buf, uint8_t row, uint8_t col);
+static void grid_set(uint8_t *buf, uint8_t row, uint8_t col, bool alive);
+static uint8_t count_neighbors(uint8_t *buf, uint8_t row, uint8_t col);
+static void life_step(uint8_t *buf);
+static bool grid_has_life(uint8_t *buf);
+static void life_render(dynld_custom_animation_env_t *anim_env, uint8_t *buf);
+static void life_seed(uint8_t *buf, uint32_t seed);
+
 bool effect_runner_dx_dy_dist(dynld_custom_animation_env_t *anim_env,
                                effect_params_t *params) {
     uint8_t *buf = anim_env->buf;
