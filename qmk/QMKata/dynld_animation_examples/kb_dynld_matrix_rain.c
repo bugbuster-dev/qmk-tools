@@ -48,3 +48,38 @@ static void advance_drops(void) {
         }
     }
 }
+
+__attribute__((section(".text.entry")))
+bool effect_runner_func(dynld_custom_animation_env_t *anim_env,
+                         effect_params_t *params) {
+    if (!initialized) matrix_init(anim_env);
+
+    frame_counter++;
+    if (frame_counter >= MATRIX_SPEED) {
+        frame_counter = 0;
+        advance_drops();
+    }
+
+    uint8_t leds = RGB_MATRIX_LED_COUNT;
+    for (uint8_t i = 0; i < leds; i++) {
+        uint8_t col = anim_env->led_config->point[i].x >> 4;
+        if (col >= MATRIX_COLS) col = MATRIX_COLS - 1;
+
+        uint8_t row = anim_env->led_config->point[i].y >> 4;
+        if (row >= MATRIX_ROWS) row = MATRIX_ROWS - 1;
+
+        uint8_t pos = col_position[col];
+        uint8_t trail = col_trail[col];
+
+        uint8_t r = 0, g = 0, b = 0;
+        int8_t diff = (int8_t)pos - (int8_t)row;
+        if (diff >= 0 && diff < (int8_t)trail) {
+            uint8_t brightness = MATRIX_HEAD_BRIGHTNESS / (diff + 1);
+            r = (MATRIX_GREEN_R * brightness) >> 8;
+            g = (MATRIX_GREEN_G * brightness) >> 8;
+            b = (MATRIX_GREEN_B * brightness) >> 8;
+        }
+        anim_env->set_color(i, r, g, b);
+    }
+    return false;
+}
