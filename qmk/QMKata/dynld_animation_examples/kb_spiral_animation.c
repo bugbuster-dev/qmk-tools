@@ -27,7 +27,8 @@ static inline HSV spiral_math(dynld_custom_animation_env_t *env, HSV hsv,
     return hsv;
 }
 
-bool effect_runner_dx_dy_dist(dynld_custom_animation_env_t *anim_env,
+__attribute__((section(".text.entry")))
+bool effect_runner_func(dynld_custom_animation_env_t *anim_env,
                                effect_params_t *params) {
     const led_point_t k_rgb_matrix_center = { 112, 32 };
     uint8_t led_max = RGB_MATRIX_LED_COUNT;

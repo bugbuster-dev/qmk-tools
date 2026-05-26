@@ -1,16 +1,20 @@
 /* Conway's Game of Life dynld animation — ModuleBuild pipeline.
  *
  * 4x15 toroidal grid on matrix rows 2-5.
- * Steps every 10 frames via buf[62] counter.
+ * Steps every LIFE_STEP_INTERVAL frames via buf[62] counter.
  * Seeds once via buf[63] flag. Reseeds when all cells die. */
 
 #include "info_config.h"
 #include "rgb_matrix.h"
 #include "dynld_func.h"
 
-#define LIFE_ROWS  4
-#define LIFE_COLS  15
-#define N_BYTES    (((LIFE_ROWS * LIFE_COLS) + 7) / 8)
+extern void mprintf(const char *fmt, ...);
+
+#define LIFE_ROWS        4
+#define LIFE_COLS        14
+#define LIFE_ROW_OFFSET  1
+#define LIFE_STEP_INTERVAL 200
+#define N_BYTES          (((LIFE_ROWS * LIFE_COLS) + 7) / 8)
 
 static bool grid_get(uint8_t *buf, uint8_t row, uint8_t col) {
     uint8_t idx = row * LIFE_COLS + col;
@@ -53,22 +57,24 @@ static bool any_alive(uint8_t *buf) {
     return false;
 }
 
-bool effect_runner_dx_dy_dist(dynld_custom_animation_env_t *anim_env,
-                               effect_params_t *params) {
+__attribute__((section(".text.entry")))
+bool effect_runner_func(dynld_custom_animation_env_t *anim_env,
+                                 effect_params_t *params) {
     uint8_t *buf = anim_env->buf;
 
     if (buf[63] == 0) {
         buf[63] = 1;
-        uint8_t s = anim_env->time & 0xFF;
+        buf[61] = 0;
+        uint32_t s = (uint32_t)anim_env->time ^ 0x4B7E1131u;
         for (uint8_t row = 0; row < LIFE_ROWS; row++)
             for (uint8_t col = 0; col < LIFE_COLS; col++) {
-                s = s * 1103515245 + 12345;
+                s = s * 1103515245u + 12345u;
                 grid_set(buf, row, col, ((s >> 16) & 3) == 0);
             }
     }
 
     buf[62]++;
-    if (buf[62] >= 200) {
+    if (buf[62] >= LIFE_STEP_INTERVAL) {
         buf[62] = 0;
         life_step(buf);
         for (uint8_t i = 0; i < N_BYTES; i++)
@@ -79,14 +85,14 @@ bool effect_runner_dx_dy_dist(dynld_custom_animation_env_t *anim_env,
             uint8_t b = buf[i];
             while (b) { alive_count += (b & 1); b >>= 1; }
         }
-        anim_env->printf("life: step gen=%d alive=%d\n", buf[61]++, alive_count);
+        mprintf("life: step gen=%d alive=%d\n", buf[61]++, alive_count);
 
         if (!any_alive(buf)) {
-            anim_env->printf("life: all dead, reseeding\n");
-            uint8_t s = anim_env->time & 0xFF;
+            mprintf("life: all dead, reseeding\n");
+            uint32_t s = (uint32_t)anim_env->time ^ 0x4B7E1131u;
             for (uint8_t gr = 0; gr < LIFE_ROWS; gr++)
                 for (uint8_t col = 0; col < LIFE_COLS; col++) {
-                    s = s * 1103515245 + 12345;
+                    s = s * 1103515245u + 12345u;
                     grid_set(buf, gr, col, ((s >> 16) & 3) == 0);
                 }
         }
@@ -98,7 +104,7 @@ bool effect_runner_dx_dy_dist(dynld_custom_animation_env_t *anim_env,
 
     for (uint8_t gr = 0; gr < LIFE_ROWS; gr++) {
         for (uint8_t col = 0; col < LIFE_COLS; col++) {
-            uint8_t led = anim_env->led_config->matrix_co[gr + 2][col];
+            uint8_t led = anim_env->led_config->matrix_co[gr + LIFE_ROW_OFFSET][col];
             if (led == 255) continue;
             bool alive = grid_get(buf, gr, col);
             anim_env->set_color(led, alive ? 0 : 4, alive ? 255 : 4, alive ? 0 : 4);

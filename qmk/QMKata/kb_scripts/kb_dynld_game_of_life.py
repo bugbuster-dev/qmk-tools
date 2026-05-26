@@ -93,7 +93,7 @@ ALWAYS_INLINE void life_seed(uint8_t *buf, uint32_t seed) {{
         buf[NEXT_OFF + i] = buf[GRID_OFF + i];
 }}
 
-bool effect_runner_dx_dy_dist(dynld_custom_animation_env_t *anim_env,
+bool effect_runner_func(dynld_custom_animation_env_t *anim_env,
                                effect_params_t *params) {{
     uint8_t *buf = anim_env->buf;
 

@@ -7,7 +7,7 @@
  * executed from byte 0 by the firmware's SysEx handler.
  */
 
-ENTRY(effect_runner_dx_dy_dist)
+ENTRY(effect_runner_func)
 
 MEMORY
 {

@@ -23,7 +23,7 @@ static inline HSV BAND_SPIRAL_SAT_math(dynld_custom_animation_env_t *anim_env, H
     return hsv;
 }}
 
-bool effect_runner_dx_dy_dist(dynld_custom_animation_env_t *anim_env, effect_params_t* params) {{
+bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t* params) {{
     const led_point_t k_rgb_matrix_center = {{ 112, 32 }};
     uint8_t led_min = 0;
     uint8_t led_max = RGB_MATRIX_LED_COUNT;
