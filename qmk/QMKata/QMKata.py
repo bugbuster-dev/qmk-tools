@@ -69,8 +69,9 @@ if __name__ != "__main__":
 
 # -------------------------------------------------------------------------------
 class RGBMatrixTab(QWidget):
-    def __init__(self, keyboard_model):
+    def __init__(self, keyboard_model, keyboard=None):
         self.keyboard_model = keyboard_model
+        self.keyboard = keyboard
         try:
             self.keyboard_config = self.keyboard_model.keyb_config()
         except:
@@ -724,7 +725,7 @@ class MainWindow(QMainWindow):
         # add tabs
         tab_widget = QTabWidget()
         self.console_tab = ConsoleTab(self.keyboard.keyboardModel)
-        self.rgb_matrix_tab = RGBMatrixTab(self.keyboard.keyboardModel)
+        self.rgb_matrix_tab = RGBMatrixTab(self.keyboard.keyboardModel, keyboard=self.keyboard)
         self.layer_switch_tab = LayerAutoSwitchTab(num_keyb_layers)
         self.keyb_config_tab = KeybConfigTab(self.keyboard.keyboardModel)
         self.keyb_status_tab = KeybStatusTab(self.keyboard.keyboardModel)
