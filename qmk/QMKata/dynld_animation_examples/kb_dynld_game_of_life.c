@@ -1,6 +1,6 @@
 /* Conway's Game of Life dynld animation — ModuleBuild pipeline.
  *
- * 4x15 toroidal grid on matrix rows 2-5.
+ * 4x14 toroidal grid on matrix rows 1-4.
  * Steps every LIFE_STEP_INTERVAL frames via buf[62] counter.
  * Seeds once via buf[63] flag. Reseeds when all cells die. */
 
@@ -13,7 +13,7 @@ extern void mprintf(const char *fmt, ...);
 #define LIFE_ROWS        4
 #define LIFE_COLS        14
 #define LIFE_ROW_OFFSET  1
-#define LIFE_STEP_INTERVAL 200
+#define LIFE_STEP_INTERVAL 30
 #define N_BYTES          (((LIFE_ROWS * LIFE_COLS) + 7) / 8)
 
 static bool grid_get(uint8_t *buf, uint8_t row, uint8_t col) {
@@ -69,7 +69,7 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env,
         for (uint8_t row = 0; row < LIFE_ROWS; row++)
             for (uint8_t col = 0; col < LIFE_COLS; col++) {
                 s = s * 1103515245u + 12345u;
-                grid_set(buf, row, col, ((s >> 16) & 3) == 0);
+                grid_set(buf, row, col, ((s >> 16) & 7) == 0);
             }
     }
 
@@ -87,13 +87,14 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env,
         }
         mprintf("life: step gen=%d alive=%d\n", buf[61]++, alive_count);
 
-        if (!any_alive(buf)) {
+          if (!any_alive(buf)) {
             mprintf("life: all dead, reseeding\n");
+            buf[61] = 0;
             uint32_t s = (uint32_t)anim_env->time ^ 0x4B7E1131u;
             for (uint8_t gr = 0; gr < LIFE_ROWS; gr++)
                 for (uint8_t col = 0; col < LIFE_COLS; col++) {
                     s = s * 1103515245u + 12345u;
-                    grid_set(buf, gr, col, ((s >> 16) & 3) == 0);
+                    grid_set(buf, gr, col, ((s >> 16) & 7) == 0);
                 }
         }
     }
