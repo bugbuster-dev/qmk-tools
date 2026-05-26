@@ -1,15 +1,8 @@
-/* Conway's Game of Life dynld animation for Q3 Max RGB matrix.
+/* Conway's Game of Life dynld animation — built via ModuleBuild pipeline.
  *
- * 4x15 toroidal grid on matrix rows 2-5 (main key area).
- * Each LED = one cell. Green = alive. Speed knob controls
- * generation interval.
- *
- * All helpers are __always_inline__ so the binary contains exactly
- * one function. dynld animations use objcopy -O binary — the entry
- * point is the first byte of .text. Any non-inlined static function
- * before the entry point would be called instead, crashing the keyboard.
- *
- * Compile from QMKata GUI: Browse → Compile → Send to Keyboard.
+ * 4x15 toroidal grid on matrix rows 2-5. Uses proper linking
+ * (dynld_linker.ld) so multiple functions are supported.
+ * Built with: python3 emulator/scripts/build_dynld_animation.py game_of_life
  */
 
 #include "info_config.h"
@@ -18,35 +11,32 @@
 
 #define LIFE_ROWS  4
 #define LIFE_COLS  15
-#define LIFE_CELLS (LIFE_ROWS * LIFE_COLS)
-#define N_BYTES    ((LIFE_CELLS + 7) / 8)
+#define N_BYTES    (((LIFE_ROWS * LIFE_COLS) + 7) / 8)
 
 #define GRID_OFF   0
 #define NEXT_OFF   N_BYTES
 
-#define ALWAYS_INLINE __attribute__((always_inline)) static inline
+/* --- helpers --- */
 
-/* ---- helpers (all inlined into entry point) ---- */
-
-ALWAYS_INLINE bool grid_get(uint8_t *buf, uint8_t row, uint8_t col) {
+static bool grid_get(uint8_t *buf, uint8_t row, uint8_t col) {
     uint8_t idx = row * LIFE_COLS + col;
-    return (buf[idx / 8] >> (idx % 8)) & 1;
+    return (buf[idx >> 3] >> (idx & 7)) & 1;
 }
 
-ALWAYS_INLINE void grid_set(uint8_t *buf, uint8_t row, uint8_t col, bool alive) {
+static void grid_set(uint8_t *buf, uint8_t row, uint8_t col, bool alive) {
     uint8_t idx = row * LIFE_COLS + col;
     if (alive)
-        buf[idx / 8] |= (1 << (idx % 8));
+        buf[idx >> 3] |= (1 << (idx & 7));
     else
-        buf[idx / 8] &= ~(1 << (idx % 8));
+        buf[idx >> 3] &= ~(1 << (idx & 7));
 }
 
-ALWAYS_INLINE uint8_t count_neighbors(uint8_t *buf, uint8_t row, uint8_t col) {
+static uint8_t count_neighbors(uint8_t *buf, uint8_t row, uint8_t col) {
     uint8_t n = 0;
     for (int dr = -1; dr <= 1; dr++) {
         for (int dc = -1; dc <= 1; dc++) {
             if (dr == 0 && dc == 0) continue;
-            uint8_t r = (row + dr + LIFE_ROWS) % LIFE_ROWS;
+            uint8_t r = (row + dr + LIFE_ROWS) & 3;
             uint8_t c = (col + dc + LIFE_COLS) % LIFE_COLS;
             if (grid_get(buf, r, c)) n++;
         }
@@ -54,61 +44,52 @@ ALWAYS_INLINE uint8_t count_neighbors(uint8_t *buf, uint8_t row, uint8_t col) {
     return n;
 }
 
-ALWAYS_INLINE void life_step(uint8_t *buf) {
+static void life_step(uint8_t *buf) {
     for (uint8_t row = 0; row < LIFE_ROWS; row++) {
         for (uint8_t col = 0; col < LIFE_COLS; col++) {
             uint8_t n = count_neighbors(buf + GRID_OFF, row, col);
             bool alive = grid_get(buf + GRID_OFF, row, col);
-            bool next;
-            if (alive)
-                next = (n == 2 || n == 3);
-            else
-                next = (n == 3);
+            bool next = alive ? (n == 2 || n == 3) : (n == 3);
             grid_set(buf + NEXT_OFF, row, col, next);
         }
     }
 }
 
-ALWAYS_INLINE bool grid_has_life(uint8_t *buf) {
+static bool grid_has_life(uint8_t *buf) {
     for (uint8_t i = 0; i < N_BYTES; i++)
         if (buf[i] != 0) return true;
     return false;
 }
 
-ALWAYS_INLINE void life_render(dynld_custom_animation_env_t *anim_env, uint8_t *buf) {
-    uint8_t led_count = RGB_MATRIX_LED_COUNT;
-    for (uint8_t i = 0; i < led_count; i++)
+static void life_render(dynld_custom_animation_env_t *anim_env, uint8_t *buf) {
+    uint8_t leds = RGB_MATRIX_LED_COUNT;
+    for (uint8_t i = 0; i < leds; i++)
         anim_env->set_color(i, 1, 1, 1);
 
     for (uint8_t gr = 0; gr < LIFE_ROWS; gr++) {
         for (uint8_t col = 0; col < LIFE_COLS; col++) {
-            uint8_t row = gr + 2;
-            uint8_t led = anim_env->led_config->matrix_co[row][col];
+            uint8_t led = anim_env->led_config->matrix_co[gr + 2][col];
             if (led == 255) continue;
 
             bool alive = grid_get(buf + GRID_OFF, gr, col);
-            if (alive)
-                anim_env->set_color(led, 0, 255, 0);
-            else
-                anim_env->set_color(led, 4, 4, 4);
+            anim_env->set_color(led, alive ? 0 : 4, alive ? 255 : 4, alive ? 0 : 4);
         }
     }
 }
 
-ALWAYS_INLINE void life_seed(uint8_t *buf, uint32_t seed) {
+static void life_seed(uint8_t *buf, uint32_t seed) {
     uint8_t s = seed & 0xFF;
     for (uint8_t row = 0; row < LIFE_ROWS; row++) {
         for (uint8_t col = 0; col < LIFE_COLS; col++) {
             s = s * 1103515245 + 12345;
-            bool alive = ((s >> 16) & 3) == 0;
-            grid_set(buf, row, col, alive);
+            grid_set(buf, row, col, ((s >> 16) & 3) == 0);
         }
     }
     for (uint8_t i = 0; i < N_BYTES; i++)
         buf[NEXT_OFF + i] = buf[GRID_OFF + i];
 }
 
-/* ---- entry point (the only non-static function — binary entry point) ---- */
+/* --- entry point --- */
 
 bool effect_runner_dx_dy_dist(dynld_custom_animation_env_t *anim_env,
                                effect_params_t *params) {
@@ -136,5 +117,5 @@ bool effect_runner_dx_dy_dist(dynld_custom_animation_env_t *anim_env,
     }
 
     life_render(anim_env, buf);
-    return true;
+    return false;
 }

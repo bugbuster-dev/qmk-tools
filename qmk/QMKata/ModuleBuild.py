@@ -103,16 +103,18 @@ class ModuleBuild:
               objcopy (.elf → .bin) → prepend header → final binary
     """
 
-    def __init__(self, toolchain, mapfile=None, firmware_path=None):
+    def __init__(self, toolchain, mapfile=None, firmware_path=None, extra_includes=None):
         """
         Args:
             toolchain: GccToolchain instance
             mapfile: GccMapfile instance (for external symbol resolution)
             firmware_path: path to QMK firmware root (for auto-discovering .map file)
+            extra_includes: optional list of additional include directories
         """
         self.toolchain = toolchain
         self.mapfile = mapfile
         self.firmware_path = firmware_path
+        self.extra_includes = extra_includes or []
         if not self.mapfile and firmware_path:
             try:
                 self.mapfile = GccMapfile(firmware_path=firmware_path)
@@ -265,6 +267,9 @@ class ModuleBuild:
         # Include path for module_api.h
         api_dir = os.path.dirname(self.module_api_header)
         opts.includes([api_dir + os.sep])
+        # Additional include paths (e.g. dynld animation sources)
+        if self.extra_includes:
+            opts.includes(self.extra_includes)
 
         return self.toolchain.compile(source_file, obj_file, opts)
 
