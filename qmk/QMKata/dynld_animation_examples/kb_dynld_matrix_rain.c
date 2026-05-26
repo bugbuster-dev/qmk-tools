@@ -37,3 +37,14 @@ static void matrix_init(dynld_custom_animation_env_t *anim_env) {
     }
     initialized = true;
 }
+
+static void advance_drops(void) {
+    for (uint8_t c = 0; c < MATRIX_COLS; c++) {
+        uint8_t prev = col_position[c];
+        col_position[c] = (col_position[c] + col_speed[c]) % MATRIX_ROWS;
+        if (col_position[c] < prev) {
+            col_speed[c] = (lcg_next() % 3) + 1;
+            col_trail[c] = (lcg_next() % (MATRIX_TRAIL_MAX - MATRIX_TRAIL_MIN + 1)) + MATRIX_TRAIL_MIN;
+        }
+    }
+}
