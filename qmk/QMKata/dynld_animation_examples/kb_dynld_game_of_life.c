@@ -1,11 +1,4 @@
-/* Conway's Game of Life dynld animation — built via ModuleBuild pipeline.
- *
- * 4x15 toroidal grid on matrix rows 2-5. Built with:
- *   python3 emulator/scripts/build_dynld_animation.py game_of_life
- *
- * All helpers are static — ModuleBuild handles multi-function linking.
- * ENTRY in dynld_linker.ld ensures effect_runner_dx_dy_dist is the
- * first function in .text. return false tells QMK "frame complete." */
+/* Minimal: seed once + step via buf[62] counter (exact working test, with repeat) */
 
 #include "info_config.h"
 #include "rgb_matrix.h"
@@ -14,7 +7,6 @@
 #define LIFE_ROWS  4
 #define LIFE_COLS  15
 #define N_BYTES    (((LIFE_ROWS * LIFE_COLS) + 7) / 8)
-
 #define GRID_OFF   0
 #define NEXT_OFF   N_BYTES
 
@@ -45,10 +37,10 @@ static uint8_t count_neighbors(uint8_t *buf, uint8_t row, uint8_t col) {
 static void life_step(uint8_t *buf) {
     for (uint8_t row = 0; row < LIFE_ROWS; row++) {
         for (uint8_t col = 0; col < LIFE_COLS; col++) {
-            uint8_t n = count_neighbors(buf + GRID_OFF, row, col);
-            bool alive = grid_get(buf + GRID_OFF, row, col);
+            uint8_t n = count_neighbors(buf, row, col);
+            bool alive = grid_get(buf, row, col);
             bool next = alive ? (n == 2 || n == 3) : (n == 3);
-            grid_set(buf + NEXT_OFF, row, col, next);
+            grid_set(buf + N_BYTES, row, col, next);
         }
     }
 }
@@ -59,8 +51,37 @@ static bool grid_has_life(uint8_t *buf) {
     return false;
 }
 
-static void life_render(dynld_custom_animation_env_t *anim_env, uint8_t *buf) {
+bool effect_runner_dx_dy_dist(dynld_custom_animation_env_t *anim_env,
+                               effect_params_t *params) {
+    uint8_t *buf = anim_env->buf;
     uint8_t leds = RGB_MATRIX_LED_COUNT;
+
+    if (buf[63] == 0) {
+        buf[63] = 1;
+        uint8_t s = anim_env->time & 0xFF;
+        for (uint8_t row = 0; row < LIFE_ROWS; row++)
+            for (uint8_t col = 0; col < LIFE_COLS; col++) {
+                s = s * 1103515245 + 12345;
+                grid_set(buf, row, col, ((s >> 16) & 3) == 0);
+            }
+    }
+
+    buf[62]++;
+    if (buf[62] >= 10) {
+        buf[62] = 0;
+        life_step(buf);
+        for (uint8_t i = 0; i < N_BYTES; i++)
+            buf[i] = buf[N_BYTES + i];
+        if (!grid_has_life(buf + GRID_OFF)) {
+            uint8_t s = anim_env->time & 0xFF;
+            for (uint8_t gr = 0; gr < LIFE_ROWS; gr++)
+                for (uint8_t col = 0; col < LIFE_COLS; col++) {
+                    s = s * 1103515245 + 12345;
+                    grid_set(buf, gr, col, ((s >> 16) & 3) == 0);
+                }
+        }
+    }
+
     for (uint8_t i = 0; i < leds; i++)
         anim_env->set_color(i, 1, 1, 1);
 
@@ -68,45 +89,9 @@ static void life_render(dynld_custom_animation_env_t *anim_env, uint8_t *buf) {
         for (uint8_t col = 0; col < LIFE_COLS; col++) {
             uint8_t led = anim_env->led_config->matrix_co[gr + 2][col];
             if (led == 255) continue;
-            bool alive = grid_get(buf + GRID_OFF, gr, col);
+            bool alive = grid_get(buf, gr, col);
             anim_env->set_color(led, alive ? 0 : 4, alive ? 255 : 4, alive ? 0 : 4);
         }
     }
-}
-
-static void life_seed(uint8_t *buf, uint32_t seed) {
-    uint8_t s = seed & 0xFF;
-    for (uint8_t row = 0; row < LIFE_ROWS; row++) {
-        for (uint8_t col = 0; col < LIFE_COLS; col++) {
-            s = s * 1103515245 + 12345;
-            grid_set(buf, row, col, ((s >> 16) & 3) == 0);
-        }
-    }
-    for (uint8_t i = 0; i < N_BYTES; i++)
-        buf[NEXT_OFF + i] = buf[GRID_OFF + i];
-}
-
-bool effect_runner_dx_dy_dist(dynld_custom_animation_env_t *anim_env,
-                               effect_params_t *params) {
-    uint8_t *buf = anim_env->buf;
-
-    if (!grid_has_life(buf + GRID_OFF)) {
-        life_seed(buf, anim_env->time);
-        buf[2*N_BYTES] = 0;
-        buf[2*N_BYTES + 1] = 0;
-    }
-
-    /* Frame-counter based stepping (avoids timer wrap issues) */
-    buf[2*N_BYTES + 2]++;
-    if (buf[2*N_BYTES + 2] >= 10) {
-        buf[2*N_BYTES + 2] = 0;
-        life_step(buf);
-        for (uint8_t i = 0; i < N_BYTES; i++)
-            buf[GRID_OFF + i] = buf[NEXT_OFF + i];
-        if (!grid_has_life(buf + GRID_OFF))
-            life_seed(buf, anim_env->time);
-    }
-
-    life_render(anim_env, buf);
     return false;
 }
