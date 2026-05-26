@@ -1,9 +1,11 @@
 /* Conway's Game of Life dynld animation — built via ModuleBuild pipeline.
  *
- * 4x15 toroidal grid on matrix rows 2-5. Uses proper linking
- * (dynld_linker.ld) so multiple functions are supported.
- * Built with: python3 emulator/scripts/build_dynld_animation.py game_of_life
- */
+ * 4x15 toroidal grid on matrix rows 2-5. Built with:
+ *   python3 emulator/scripts/build_dynld_animation.py game_of_life
+ *
+ * All helpers are static — ModuleBuild handles multi-function linking.
+ * ENTRY in dynld_linker.ld ensures effect_runner_dx_dy_dist is the
+ * first function in .text. return false tells QMK "frame complete." */
 
 #include "info_config.h"
 #include "rgb_matrix.h"
@@ -16,8 +18,6 @@
 #define GRID_OFF   0
 #define NEXT_OFF   N_BYTES
 
-/* --- helpers --- */
-
 static bool grid_get(uint8_t *buf, uint8_t row, uint8_t col) {
     uint8_t idx = row * LIFE_COLS + col;
     return (buf[idx >> 3] >> (idx & 7)) & 1;
@@ -25,10 +25,8 @@ static bool grid_get(uint8_t *buf, uint8_t row, uint8_t col) {
 
 static void grid_set(uint8_t *buf, uint8_t row, uint8_t col, bool alive) {
     uint8_t idx = row * LIFE_COLS + col;
-    if (alive)
-        buf[idx >> 3] |= (1 << (idx & 7));
-    else
-        buf[idx >> 3] &= ~(1 << (idx & 7));
+    if (alive) buf[idx >> 3] |= (1 << (idx & 7));
+    else       buf[idx >> 3] &= ~(1 << (idx & 7));
 }
 
 static uint8_t count_neighbors(uint8_t *buf, uint8_t row, uint8_t col) {
@@ -70,7 +68,6 @@ static void life_render(dynld_custom_animation_env_t *anim_env, uint8_t *buf) {
         for (uint8_t col = 0; col < LIFE_COLS; col++) {
             uint8_t led = anim_env->led_config->matrix_co[gr + 2][col];
             if (led == 255) continue;
-
             bool alive = grid_get(buf + GRID_OFF, gr, col);
             anim_env->set_color(led, alive ? 0 : 4, alive ? 255 : 4, alive ? 0 : 4);
         }
@@ -89,15 +86,9 @@ static void life_seed(uint8_t *buf, uint32_t seed) {
         buf[NEXT_OFF + i] = buf[GRID_OFF + i];
 }
 
-/* --- entry point --- */
-
 bool effect_runner_dx_dy_dist(dynld_custom_animation_env_t *anim_env,
                                effect_params_t *params) {
     uint8_t *buf = anim_env->buf;
-
-    uint8_t speed = anim_env->rgb_config->speed;
-    uint16_t interval = 1024 / (speed + 1);
-    uint32_t elapsed = anim_env->time;
 
     if (!grid_has_life(buf + GRID_OFF)) {
         life_seed(buf, anim_env->time);
@@ -105,13 +96,13 @@ bool effect_runner_dx_dy_dist(dynld_custom_animation_env_t *anim_env,
         buf[2*N_BYTES + 1] = 0;
     }
 
-    uint16_t last_step = (buf[2*N_BYTES + 1] << 8) | buf[2*N_BYTES];
-    if (elapsed - last_step >= interval) {
+    /* Frame-counter based stepping (avoids timer wrap issues) */
+    buf[2*N_BYTES + 2]++;
+    if (buf[2*N_BYTES + 2] >= 10) {
+        buf[2*N_BYTES + 2] = 0;
         life_step(buf);
         for (uint8_t i = 0; i < N_BYTES; i++)
             buf[GRID_OFF + i] = buf[NEXT_OFF + i];
-        buf[2*N_BYTES] = elapsed & 0xFF;
-        buf[2*N_BYTES + 1] = (elapsed >> 8) & 0xFF;
         if (!grid_has_life(buf + GRID_OFF))
             life_seed(buf, anim_env->time);
     }
