@@ -116,7 +116,7 @@ class RGBDynLDAnimationTab(QWidget):
         # dynld animation bin file (pre-built)
         hlayout = QHBoxLayout()
         dynld_bin_label = QLabel("Binary (.bin):")
-        self.dynld_bin_input = QLineEdit("dynld_animation.bin")
+        self.dynld_bin_input = QLineEdit("dynld_animation_examples/dynld_animation.bin")
         hlayout.addWidget(dynld_bin_label)
         hlayout.addWidget(self.dynld_bin_input)
         self.load_button = QPushButton("Load")
