@@ -1,8 +1,8 @@
 /* Conway's Game of Life dynld animation — ModuleBuild pipeline.
  *
  * 4x14 toroidal grid on matrix rows 1-4.
- * Steps every LIFE_STEP_INTERVAL frames via buf[62] counter.
- * Seeds once via buf[63] flag. Reseeds when all cells die. */
+ * Steps every LIFE_STEP_INTERVAL frames. Reseeds when all cells
+ * die or grid is unchanged for LIFE_STAGNATION_LIMIT steps. */
 
 #include "info_config.h"
 #include "rgb_matrix.h"
@@ -10,11 +10,12 @@
 
 extern void mprintf(const char *fmt, ...);
 
-#define LIFE_ROWS        4
-#define LIFE_COLS        14
-#define LIFE_ROW_OFFSET  1
-#define LIFE_STEP_INTERVAL 30
-#define N_BYTES          (((LIFE_ROWS * LIFE_COLS) + 7) / 8)
+#define LIFE_ROWS             4
+#define LIFE_COLS             14
+#define LIFE_ROW_OFFSET       1
+#define LIFE_STEP_INTERVAL    30
+#define LIFE_STAGNATION_LIMIT 10
+#define N_BYTES               (((LIFE_ROWS * LIFE_COLS) + 7) / 8)
 
 static bool grid_get(uint8_t *buf, uint8_t row, uint8_t col) {
     uint8_t idx = row * LIFE_COLS + col;
@@ -57,45 +58,56 @@ static bool any_alive(uint8_t *buf) {
     return false;
 }
 
+static uint8_t grid_checksum(uint8_t *buf) {
+    uint8_t c = 0;
+    for (uint8_t i = 0; i < N_BYTES; i++)
+        c ^= buf[i];
+    return c;
+}
+
 __attribute__((section(".text.entry")))
 bool effect_runner_func(dynld_custom_animation_env_t *anim_env,
-                                 effect_params_t *params) {
-    uint8_t *buf = anim_env->buf;
+                                  effect_params_t *params) {
+    static uint8_t grid[N_BYTES * 2];
+    static uint8_t frame_counter, generation, stagnation, prev_cs;
+    static bool seeded;
 
-    if (buf[63] == 0) {
-        buf[63] = 1;
-        buf[61] = 0;
+    void do_seed(void) {
+        seeded = true;
+        generation = 0;
+        stagnation = 0;
+        prev_cs = 0;
         uint32_t s = (uint32_t)anim_env->time ^ 0x4B7E1131u;
         for (uint8_t row = 0; row < LIFE_ROWS; row++)
             for (uint8_t col = 0; col < LIFE_COLS; col++) {
                 s = s * 1103515245u + 12345u;
-                grid_set(buf, row, col, ((s >> 16) & 7) == 0);
+                grid_set(grid, row, col, ((s >> 16) & 7) == 0);
             }
     }
 
-    buf[62]++;
-    if (buf[62] >= LIFE_STEP_INTERVAL) {
-        buf[62] = 0;
-        life_step(buf);
+    if (!seeded) do_seed();
+
+    frame_counter++;
+    if (frame_counter >= LIFE_STEP_INTERVAL) {
+        frame_counter = 0;
+        life_step(grid);
         for (uint8_t i = 0; i < N_BYTES; i++)
-            buf[i] = buf[N_BYTES + i];
+            grid[i] = grid[N_BYTES + i];
+
+        uint8_t cs = grid_checksum(grid);
+        if (cs == prev_cs) stagnation++;
+        else { prev_cs = cs; stagnation = 0; }
 
         uint8_t alive_count = 0;
         for (uint8_t i = 0; i < N_BYTES; i++) {
-            uint8_t b = buf[i];
+            uint8_t b = grid[i];
             while (b) { alive_count += (b & 1); b >>= 1; }
         }
-        mprintf("life: step gen=%d alive=%d\n", buf[61]++, alive_count);
+        mprintf("life: step gen=%d alive=%d\n", generation++, alive_count);
 
-          if (!any_alive(buf)) {
-            mprintf("life: all dead, reseeding\n");
-            buf[61] = 0;
-            uint32_t s = (uint32_t)anim_env->time ^ 0x4B7E1131u;
-            for (uint8_t gr = 0; gr < LIFE_ROWS; gr++)
-                for (uint8_t col = 0; col < LIFE_COLS; col++) {
-                    s = s * 1103515245u + 12345u;
-                    grid_set(buf, gr, col, ((s >> 16) & 7) == 0);
-                }
+        if (!any_alive(grid) || stagnation >= LIFE_STAGNATION_LIMIT) {
+            mprintf("life: %s, reseeding\n", !any_alive(grid) ? "all dead" : "stagnant");
+            do_seed();
         }
     }
 
@@ -107,7 +119,7 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env,
         for (uint8_t col = 0; col < LIFE_COLS; col++) {
             uint8_t led = anim_env->led_config->matrix_co[gr + LIFE_ROW_OFFSET][col];
             if (led == 255) continue;
-            bool alive = grid_get(buf, gr, col);
+            bool alive = grid_get(grid, gr, col);
             anim_env->set_color(led, alive ? 0 : 4, alive ? 255 : 4, alive ? 0 : 4);
         }
     }

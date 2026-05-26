@@ -214,7 +214,9 @@ class ModuleBuild:
         """Build a dynld animation via the full ModuleBuild pipeline.
 
         Uses dynld_linker.ld (no kbsm header/hook table, .text at offset 0).
-        Returns raw code bytes ready for SysEx upload to dynld_func_buf[].
+        .data and .bss are kept in the binary so static variables work.
+        Returns raw bytes ready for SysEx upload to dynld_func_buf[].
+        The firmware's memset of dynld_func_buf zero-initializes .bss.
         Unlike build(), this skips _assemble() and returns just the code.
         """
         import os
@@ -240,6 +242,21 @@ class ModuleBuild:
                 self.last_error = "dynld link failed"
                 return None
 
+            # Step 3.5: Extract section sizes from ELF for logging
+            try:
+                from elftools.elf.elffile import ELFFile
+                section_sizes = {}
+                with open(elf_file, "rb") as f:
+                    elf = ELFFile(f)
+                    for sec in elf.iter_sections():
+                        if sec['sh_size'] > 0 and sec.name in (".text", ".data", ".bss", ".rodata"):
+                            section_sizes[sec.name] = sec['sh_size']
+                if section_sizes:
+                    sizes_str = ", ".join(f"{k}: 0x{v:x}" for k, v in section_sizes.items())
+                    print(f"  dynld sections: {sizes_str}")
+            except Exception:
+                pass
+
             # Step 4: objcopy to binary (no _assemble — raw code only)
             bin_file = os.path.join(tmpdir, "module.bin")
             if not self.toolchain.elf2bin(elf_file, bin_file):
@@ -247,7 +264,11 @@ class ModuleBuild:
                 return None
 
             with open(bin_file, "rb") as f:
-                return f.read()
+                bin_data = f.read()
+
+            if len(bin_data) > 1024:
+                print(f"W: dynld binary is {len(bin_data)} bytes (max 1024), may not fit")
+            return bin_data
 
     def _compile(self, source_file, obj_file):
         """Compile module C source to object file.
