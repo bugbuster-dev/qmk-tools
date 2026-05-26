@@ -88,7 +88,7 @@ class RGBMatrixTab(QWidget):
         )
         self.rgb_animation_tab = RGBAnimationTab(self.rgb_matrix_size)
         self.rgb_audio_tab = RGBAudioTab(self.rgb_matrix_size)
-        self.rgb_dynld_animation_tab = RGBDynLDAnimationTab()
+        self.rgb_dynld_animation_tab = RGBDynLDAnimationTab(keyboard=self.keyboard)
 
         self.tab_widget.addTab(self.rgb_video_tab, "video")
         self.tab_widget.addTab(self.rgb_animation_tab, "animation")

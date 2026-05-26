@@ -1,5 +1,5 @@
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit, QApplication, QMessageBox
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit, QApplication, QMessageBox, QFileDialog
 from PySide6.QtGui import QFont, QKeySequence, QKeyEvent, QTextCursor
 
 from DebugTracer import DebugTracer
@@ -88,7 +88,8 @@ class HexEditor(QTextEdit):
 class RGBDynLDAnimationTab(QWidget):
     signal_dynld_function = Signal(int, bytearray)
 
-    def __init__(self):
+    def __init__(self, keyboard=None):
+        self.keyboard = keyboard
         self.dbg = DebugTracer(zones={'D':1}, obj=self)
         #---------------------------------------
         super().__init__()
@@ -96,14 +97,29 @@ class RGBDynLDAnimationTab(QWidget):
 
     def init_gui(self):
         layout = QVBoxLayout()
+
+        # --- Source file compilation ---
+        hlayout_src = QHBoxLayout()
+        hlayout_src.addWidget(QLabel("C source:"))
+        self.source_input = QLineEdit()
+        self.source_input.setPlaceholderText("path/to/animation.c")
+        hlayout_src.addWidget(self.source_input)
+        self.browse_src_btn = QPushButton("Browse")
+        self.browse_src_btn.clicked.connect(self.browse_source)
+        hlayout_src.addWidget(self.browse_src_btn)
+        self.compile_btn = QPushButton("Compile")
+        self.compile_btn.clicked.connect(self.compile_source)
+        hlayout_src.addWidget(self.compile_btn)
+        layout.addLayout(hlayout_src)
+
         #---------------------------------------
-        # dynld animation bin file
+        # dynld animation bin file (pre-built)
         hlayout = QHBoxLayout()
-        dynld_bin_label = QLabel("animation bin")
+        dynld_bin_label = QLabel("Binary (.bin):")
         self.dynld_bin_input = QLineEdit("dynld_animation.bin")
         hlayout.addWidget(dynld_bin_label)
         hlayout.addWidget(self.dynld_bin_input)
-        self.load_button = QPushButton("load")
+        self.load_button = QPushButton("Load")
         self.load_button.clicked.connect(self.load_dynld_animation_func)
         hlayout.addWidget(self.load_button)
         layout.addLayout(hlayout)
@@ -130,6 +146,47 @@ class RGBDynLDAnimationTab(QWidget):
                 self.dynld_funtext_edit.formatText()
         except Exception as e:
             self.dbg.tr('DEBUG', f"error: {e}")
+
+    def browse_source(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Select Animation Source", "", "C Files (*.c);;All Files (*)"
+        )
+        if file_path:
+            self.source_input.setText(file_path)
+
+    def compile_source(self):
+        source = self.source_input.text().strip()
+        if not source:
+            QMessageBox.warning(self, "No Source", "No C source file specified.")
+            return
+
+        if not self.keyboard:
+            QMessageBox.warning(self, "No Keyboard", "Keyboard not connected.")
+            return
+
+        self.compile_btn.setEnabled(False)
+        self.dbg.tr('DEBUG', f"Compiling: {source}")
+
+        try:
+            result = self.keyboard.compile(source)
+        except Exception as e:
+            self.dbg.tr('DEBUG', f"Compile FAILED: {e}")
+            QMessageBox.warning(self, "Compile Failed", str(e))
+            self.compile_btn.setEnabled(True)
+            return
+
+        if result is None or result.get("bin") is None:
+            self.dbg.tr('DEBUG', "Compile FAILED")
+            QMessageBox.warning(self, "Compile Failed", "Compilation returned no output.")
+            self.compile_btn.setEnabled(True)
+            return
+
+        bin_data = result["bin"]
+        hexbuf = bin_data.hex(' ')
+        self.dynld_funtext_edit.setText(hexbuf)
+        self.dynld_funtext_edit.formatText()
+        self.dbg.tr('DEBUG', f"Compile OK: {len(bin_data)} bytes — ready to send")
+        self.compile_btn.setEnabled(True)
 
     def send_dynld_animation_func(self):
         fundata = self.dynld_funtext_edit.getBinaryContent()
