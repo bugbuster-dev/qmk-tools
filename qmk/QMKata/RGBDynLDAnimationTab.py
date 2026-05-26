@@ -168,7 +168,7 @@ class RGBDynLDAnimationTab(QWidget):
         self.dbg.tr('DEBUG', f"Compiling: {source}")
 
         try:
-            result = self.keyboard.compile(source)
+            result = self.keyboard.kb_script_env.compile(source)
         except Exception as e:
             self.dbg.tr('DEBUG', f"Compile FAILED: {e}")
             QMessageBox.warning(self, "Compile Failed", str(e))
