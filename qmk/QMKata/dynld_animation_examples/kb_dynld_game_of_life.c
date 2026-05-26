@@ -68,12 +68,21 @@ bool effect_runner_dx_dy_dist(dynld_custom_animation_env_t *anim_env,
     }
 
     buf[62]++;
-    if (buf[62] >= 10) {
+    if (buf[62] >= 200) {
         buf[62] = 0;
         life_step(buf);
         for (uint8_t i = 0; i < N_BYTES; i++)
             buf[i] = buf[N_BYTES + i];
+
+        uint8_t alive_count = 0;
+        for (uint8_t i = 0; i < N_BYTES; i++) {
+            uint8_t b = buf[i];
+            while (b) { alive_count += (b & 1); b >>= 1; }
+        }
+        anim_env->printf("life: step gen=%d alive=%d\n", buf[61]++, alive_count);
+
         if (!any_alive(buf)) {
+            anim_env->printf("life: all dead, reseeding\n");
             uint8_t s = anim_env->time & 0xFF;
             for (uint8_t gr = 0; gr < LIFE_ROWS; gr++)
                 for (uint8_t col = 0; col < LIFE_COLS; col++) {
