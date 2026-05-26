@@ -20,6 +20,39 @@
 #define GRID_OFF   0
 #define NEXT_OFF   N_BYTES
 
+/* ---- entry point (must be first function in the file) ---- */
+
+bool effect_runner_dx_dy_dist(dynld_custom_animation_env_t *anim_env,
+                               effect_params_t *params) {
+    uint8_t *buf = anim_env->buf;
+
+    uint8_t speed = anim_env->rgb_config->speed;
+    uint16_t interval = 1024 / (speed + 1);
+    uint32_t elapsed = anim_env->time;
+
+    if (!grid_has_life(buf + GRID_OFF)) {
+        life_seed(buf, anim_env->time);
+        buf[2*N_BYTES] = 0;
+        buf[2*N_BYTES + 1] = 0;
+    }
+
+    uint16_t last_step = (buf[2*N_BYTES + 1] << 8) | buf[2*N_BYTES];
+    if (elapsed - last_step >= interval) {
+        life_step(buf);
+        for (uint8_t i = 0; i < N_BYTES; i++)
+            buf[GRID_OFF + i] = buf[NEXT_OFF + i];
+        buf[2*N_BYTES] = elapsed & 0xFF;
+        buf[2*N_BYTES + 1] = (elapsed >> 8) & 0xFF;
+        if (!grid_has_life(buf + GRID_OFF))
+            life_seed(buf, anim_env->time);
+    }
+
+    life_render(anim_env, buf);
+    return true;
+}
+
+/* ---- helpers ---- */
+
 static inline bool grid_get(uint8_t *buf, uint8_t row, uint8_t col) {
     uint8_t idx = row * LIFE_COLS + col;
     return (buf[idx / 8] >> (idx % 8)) & 1;
@@ -98,33 +131,4 @@ static void life_seed(uint8_t *buf, uint32_t seed) {
     }
     for (uint8_t i = 0; i < N_BYTES; i++)
         buf[NEXT_OFF + i] = buf[GRID_OFF + i];
-}
-
-bool effect_runner_dx_dy_dist(dynld_custom_animation_env_t *anim_env,
-                               effect_params_t *params) {
-    uint8_t *buf = anim_env->buf;
-
-    uint8_t speed = anim_env->rgb_config->speed;
-    uint16_t interval = 1024 / (speed + 1);
-    uint32_t elapsed = anim_env->time;
-
-    if (!grid_has_life(buf + GRID_OFF)) {
-        life_seed(buf, anim_env->time);
-        buf[2*N_BYTES] = 0;
-        buf[2*N_BYTES + 1] = 0;
-    }
-
-    uint16_t last_step = (buf[2*N_BYTES + 1] << 8) | buf[2*N_BYTES];
-    if (elapsed - last_step >= interval) {
-        life_step(buf);
-        for (uint8_t i = 0; i < N_BYTES; i++)
-            buf[GRID_OFF + i] = buf[NEXT_OFF + i];
-        buf[2*N_BYTES] = elapsed & 0xFF;
-        buf[2*N_BYTES + 1] = (elapsed >> 8) & 0xFF;
-        if (!grid_has_life(buf + GRID_OFF))
-            life_seed(buf, anim_env->time);
-    }
-
-    life_render(anim_env, buf);
-    return true;
 }
