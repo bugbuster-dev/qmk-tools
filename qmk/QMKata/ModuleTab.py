@@ -1,3 +1,4 @@
+import os
 import struct
 
 from PySide6.QtCore import Qt, Signal
@@ -272,6 +273,12 @@ class ModuleTab(QWidget):
         self._rebuild_hook_checkboxes(result['hooks'])
         self.load_button.setEnabled(True)
         self.log(f"Build OK: {result['size']} bytes, hooks: {', '.join(result['hooks'])}")
+
+        # Autosave binary next to source
+        bin_path = os.path.splitext(source)[0] + ".bin"
+        with open(bin_path, "wb") as f:
+            f.write(result['binary'])
+        self.log(f"  saved: {bin_path}")
         self.log(f"  hook_bitmap: 0x{result['hook_bitmap']:08X}")
         self.log(f"  fits_slot: {'yes' if result['fits_slot'] else 'no'}")
 
