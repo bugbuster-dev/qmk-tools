@@ -99,6 +99,7 @@ class ModuleAutoSwitchTab(QWidget):
             return
         self.update_winfocus_text(line)
         focus_parts = line.split("\t")
+        focus_pid = focus_parts[0].strip() if len(focus_parts) > 0 else ""
         focus_proc = focus_parts[1].strip() if len(focus_parts) > 1 else ""
 
         for i in range(self.num_entries):
@@ -106,8 +107,9 @@ class ModuleAutoSwitchTab(QWidget):
             if not selected or selected == "-":
                 continue
             sel_parts = selected.split("\t")
+            sel_pid = sel_parts[0].strip() if len(sel_parts) > 0 else ""
             sel_proc = sel_parts[1].strip() if len(sel_parts) > 1 else ""
-            if focus_proc == sel_proc:
+            if focus_proc == sel_proc and focus_pid == sel_pid:
                 module_path = self.module_inputs[i].text().strip()
                 if module_path and os.path.exists(module_path):
                     self._load_module(module_path)
