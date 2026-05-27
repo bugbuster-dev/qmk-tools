@@ -31,6 +31,7 @@ static const holdseq_def_t module_holds[] = {
     { ';', "p",   "git pull " },
     { ';', "pr",  "git pull --rebase " },
     { ';', "cm",  "git commit -m \"\"" },
+    { ';', "s",   "git status" },
     { '/', "ps",  "ps aux | grep " },
     { '/', "du",  "du -sh * | sort -rh | head" },
     { '/', "fi",  "find . -name " },
