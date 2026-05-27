@@ -62,6 +62,7 @@ from RGBDynLDAnimationTab import RGBDynLDAnimationTab
 from ModuleTab import ModuleTab
 from ModuleBuild import MODULE_SRAM_SLOT_BASE_ID
 from LayerAutoSwitchTab import LayerAutoSwitchTab
+from ModuleAutoSwitchTab import ModuleAutoSwitchTab
 
 if __name__ != "__main__":
     exit()
@@ -750,6 +751,9 @@ class MainWindow(QMainWindow):
         self.module_tab = ModuleTab(self.keyboard.keyboardModel, self.keyboard)
         tab_widget.addTab(self.module_tab, "kbsm modules")
 
+        self.module_auto_switch_tab = ModuleAutoSwitchTab()
+        tab_widget.addTab(self.module_auto_switch_tab, "module auto-switch")
+
         self.setCentralWidget(tab_widget)
         # -----------------------------------------------------------
         # connect signals
@@ -834,12 +838,18 @@ class MainWindow(QMainWindow):
         self.module_tab.signal_get_module_summary.connect(self.keyboard.keyb_get_module_summary)
         self.module_tab.signal_get_module.connect(self.keyboard.keyb_get_module)
 
+        # Module auto-switch signals
+        self.module_auto_switch_tab.signal_load_module.connect(self.on_module_load)
+
         # -----------------------------------------------------------
         # window focus listener
         try:
             self.winfocus_listener = WinFocusListener()
             self.winfocus_listener.signal_winfocus.connect(
                 self.layer_switch_tab.on_winfocus
+            )
+            self.winfocus_listener.signal_winfocus.connect(
+                self.module_auto_switch_tab.on_winfocus
             )
             self.winfocus_listener.start()
         except:
