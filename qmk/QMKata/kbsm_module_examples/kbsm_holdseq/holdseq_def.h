@@ -37,7 +37,7 @@ static const holdseq_def_t module_holds[] = {
     { '/', "ht",  "history | grep " },
     { '/', "tx",  "tar xzf " },
     { '/', "gr",  "grep -rn --include=\"*.c\" " },
-    { '/', "ls",  "ls -lah --group-directories-first" },
+    { '/', "ls",  "ls -lah --group-dirs=first" },
 };
 #define MODULE_HOLDSEQ_COUNT (sizeof(module_holds) / sizeof(module_holds[0]))
 
