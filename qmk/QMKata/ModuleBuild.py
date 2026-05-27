@@ -10,9 +10,10 @@ from GccMapfile import GccMapfile
 
 
 # Must match firmware module_loader.h
-MODULE_HEADER_MAGIC   = 0x4D4F444C  # "MODL" as uint32 (bytes on disk: 4C 44 4F 4D)
-MODULE_HEADER_VERSION = 5
-MODULE_HEADER_SIZE    = 32
+MODULE_HEADER_MAGIC      = 0x4D4F444C  # "MODL" as uint32 (bytes on disk: 4C 44 4F 4D)
+MODULE_HEADER_VERSION    = 5
+MODULE_HEADER_FLAG_SRAM  = 0x0001    # binary relocated to SRAM slot
+MODULE_HEADER_SIZE       = 32
 MODULE_HOOK_TABLE_OFF = 32  # Hook table immediately follows header
 MODULE_HOOK_MAX       = 32
 
@@ -634,7 +635,7 @@ class ModuleBuild:
             'relocs': list(relocs),  # sorted ascending; apply_relocations_and_crc consumes
         }
 
-    def apply_relocations_and_crc(self, binary, relocs, slot_addr):
+    def apply_relocations_and_crc(self, binary, relocs, slot_addr, flags=0):
         """Rebase ABS32 targets by slot_addr and embed the final CRC.
 
         Called from ModuleTab._prepare_binary_for_load at load time, once the
@@ -665,6 +666,11 @@ class ModuleBuild:
                 )
             val = struct.unpack_from("<I", out, off)[0]
             struct.pack_into("<I", out, off, (val + slot_addr) & 0xFFFFFFFF)
+
+        # Apply flags (OR into existing value from _assemble header).
+        if flags:
+            existing = struct.unpack_from("<H", out, 6)[0]
+            struct.pack_into("<H", out, 6, existing | flags)
 
         crc_off = MODULE_HEADER_SIZE - 4
         struct.pack_into("<I", out, crc_off, 0)

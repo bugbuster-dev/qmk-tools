@@ -13,6 +13,7 @@ from ModuleBuild import (
     ModuleBuild, HOOK_NAMES, MODULE_HEADER_SIZE,
     MODULE_FLASH_BASE, MODULE_FLASH_SLOT_SIZE,
     MODULE_SRAM_SLOT_BASE_ID, MODULE_SRAM_SLOT_SIZE, MODULE_SRAM_DEFAULT_BASE,
+    MODULE_HEADER_FLAG_SRAM,
     hook_name_for_index, hook_index_for_name,
 )
 
@@ -217,10 +218,12 @@ class ModuleTab(QWidget):
         kb = getattr(self, "keyboard", None)
         keyboard_model = getattr(kb, "keyboardModel", None) if kb is not None else None
         slot_addr = _slot_base_addr(keyboard_model, slot_id)
+        load_flags = MODULE_HEADER_FLAG_SRAM if slot_id >= MODULE_SRAM_SLOT_BASE_ID else 0
         return self.module_build.apply_relocations_and_crc(
             bytes(binary),
             relocs,
             slot_addr,
+            flags=load_flags,
         )
 
     def build_module(self):
@@ -278,6 +281,15 @@ class ModuleTab(QWidget):
             self.log("Error: No module built yet")
             return
         slot_id = self.slot_combo.currentData()
+
+        # Check SRAM flag in header before uploading to flash slot
+        binary_raw = self.last_build_result['binary']
+        flags = struct.unpack_from("<H", binary_raw, 6)[0]
+        if (flags & MODULE_HEADER_FLAG_SRAM) and slot_id < MODULE_SRAM_SLOT_BASE_ID:
+            self.log("Error: Binary is SRAM-relocated - cannot upload to flash slot.")
+            self.log("         Upload to Slot 8 (SRAM) instead.")
+            return
+
         binary = self._prepare_binary_for_load(slot_id)
         self.log(f"Loading module to slot {slot_id} ({len(binary)} bytes)...")
         self.signal_load_module.emit(slot_id, binary)
@@ -311,6 +323,11 @@ class ModuleTab(QWidget):
         slot_id = self.slot_combo.currentData()
         if slot_id >= MODULE_SRAM_SLOT_BASE_ID and code_size > MODULE_SRAM_SLOT_SIZE:
             self.log(f"Error: module too large for SRAM slot ({code_size} > {MODULE_SRAM_SLOT_SIZE})")
+            return
+
+        if (flags & MODULE_HEADER_FLAG_SRAM) and slot_id < MODULE_SRAM_SLOT_BASE_ID:
+            self.log("Error: Binary is SRAM-relocated - cannot load to flash slot.")
+            self.log("         Select Slot 8 (SRAM) and try again.")
             return
 
         # Decode hook names from bitmap
