@@ -16,7 +16,7 @@
 #include <stdint.h>
 
 #define HOLDSEQ_MAX_SEQ_LEN  8
-#define HOLDSEQ_MAX_EXP_LEN 128
+#define HOLDSEQ_MAX_EXP_LEN 32
 
 typedef struct {
     char primary;
