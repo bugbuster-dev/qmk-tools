@@ -63,6 +63,7 @@ class ModuleTab(QWidget):
         self.keyboard = keyboard
         self.module_build = None  # set up when build is first triggered
         self.last_build_result = None
+        self.last_build_target = None  # 'flash' or 'sram'
         self.hook_checkboxes = []
         self.init_gui()
 
@@ -169,6 +170,7 @@ class ModuleTab(QWidget):
     def on_source_changed(self):
         if self.last_build_result is not None:
             self.last_build_result = None
+            self.last_build_target = None
         self._clear_hook_checkboxes()
         self.load_button.setEnabled(False)
 
@@ -258,6 +260,7 @@ class ModuleTab(QWidget):
           # Determine build target from selected slot.
         selected_slot = self.slot_combo.currentData()
         build_target = 'sram' if selected_slot >= MODULE_SRAM_SLOT_BASE_ID else 'flash'
+        self.last_build_target = build_target
         result = self.module_build.build(source, target=build_target)
         if result is None:
             if self.module_build.last_error:
@@ -267,6 +270,7 @@ class ModuleTab(QWidget):
             self._clear_hook_checkboxes()
             self.load_button.setEnabled(False)
             self.last_build_result = None
+            self.last_build_target = None
             return
 
         self.last_build_result = result
@@ -289,12 +293,14 @@ class ModuleTab(QWidget):
             return
         slot_id = self.slot_combo.currentData()
 
-        # Check SRAM flag in header before uploading to flash slot
-        binary_raw = self.last_build_result['binary']
-        flags = struct.unpack_from("<H", binary_raw, 6)[0]
-        if (flags & MODULE_HEADER_FLAG_SRAM) and slot_id < MODULE_SRAM_SLOT_BASE_ID:
-            self.log("Error: Binary is SRAM-relocated - cannot upload to flash slot.")
-            self.log("         Upload to Slot 8 (SRAM) instead.")
+        # Check build target matches selected slot type
+        if self.last_build_target == 'sram' and slot_id < MODULE_SRAM_SLOT_BASE_ID:
+            self.log("Error: Module was built for SRAM — cannot upload to flash slot.")
+            self.log("         Select Slot 8 (SRAM) and try again.")
+            return
+        if self.last_build_target == 'flash' and slot_id >= MODULE_SRAM_SLOT_BASE_ID:
+            self.log("Error: Module was built for flash — cannot upload to SRAM slot.")
+            self.log("         Select a flash slot (0-7) and try again.")
             return
 
         binary = self._prepare_binary_for_load(slot_id)
