@@ -743,7 +743,12 @@ class MainWindow(QMainWindow):
         tab_widget.addTab(self.console_tab, "console")
         tab_widget.addTab(self.keyb_script_tab, "keyboard script")
         tab_widget.addTab(self.rgb_matrix_tab, "rgb matrix")
-        tab_widget.addTab(self.layer_switch_tab, "layer auto switch")
+
+        # Auto-switch parent tab with layer/module child tabs
+        self.auto_switch_tab = QTabWidget()
+        self.auto_switch_tab.addTab(self.layer_switch_tab, "layer")
+        tab_widget.addTab(self.auto_switch_tab, "auto switch")
+
         tab_widget.addTab(self.keyb_config_tab, "keyboard config")
         tab_widget.addTab(self.keyb_status_tab, "keyboard status")
         tab_widget.addTab(self.key_functions_tab, "key functions")
@@ -752,7 +757,7 @@ class MainWindow(QMainWindow):
         tab_widget.addTab(self.module_tab, "kbsm modules")
 
         self.module_auto_switch_tab = ModuleAutoSwitchTab()
-        tab_widget.addTab(self.module_auto_switch_tab, "module auto-switch")
+        self.auto_switch_tab.addTab(self.module_auto_switch_tab, "module")
 
         self.setCentralWidget(tab_widget)
         # -----------------------------------------------------------
