@@ -31,6 +31,13 @@ static const holdseq_def_t module_holds[] = {
     { ';', "p",   "git pull " },
     { ';', "pr",  "git pull --rebase " },
     { ';', "cm",  "git commit -m \"\"" },
+    { '/', "ps",  "ps aux | grep " },
+    { '/', "du",  "du -sh * | sort -rh | head" },
+    { '/', "fi",  "find . -name " },
+    { '/', "ht",  "history | grep " },
+    { '/', "tx",  "tar xzf " },
+    { '/', "gr",  "grep -rn --include=\"*.c\" " },
+    { '/', "ls",  "ls -lah --group-directories-first" },
 };
 #define MODULE_HOLDSEQ_COUNT (sizeof(module_holds) / sizeof(module_holds[0]))
 
