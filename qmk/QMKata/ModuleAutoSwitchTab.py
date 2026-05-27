@@ -65,7 +65,7 @@ class ModuleAutoSwitchTab(QWidget):
             ps.addItems(["" for _ in range(5)])
             ps.setCurrentIndex(0)
             self.program_selectors.append(ps)
-            entry_layout.addWidget(ps)
+            entry_layout.addWidget(ps, 2)
 
             mod_input = QLineEdit()
             mod_input.setPlaceholderText("path/to/module.bin")
