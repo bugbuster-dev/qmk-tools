@@ -748,7 +748,7 @@ class MainWindow(QMainWindow):
         tab_widget.addTab(self.key_functions_tab, "key functions")
 
         self.module_tab = ModuleTab(self.keyboard.keyboardModel, self.keyboard)
-        tab_widget.addTab(self.module_tab, "modules")
+        tab_widget.addTab(self.module_tab, "kbsm modules")
 
         self.setCentralWidget(tab_widget)
         # -----------------------------------------------------------
