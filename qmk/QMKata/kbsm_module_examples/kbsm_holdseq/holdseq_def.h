@@ -26,10 +26,10 @@ typedef struct {
 
 /* Edit these definitions and rebuild. */
 static const holdseq_def_t module_holds[] = {
-    { ';', "cb",  "git checkout -b " },
-    { ';', "pr",  "git pull --rebase " },
-    { ';', "p",   "git pull " },
     { ';', "co",  "git checkout " },
+    { ';', "cb",  "git checkout -b " },
+    { ';', "p",   "git pull " },
+    { ';', "pr",  "git pull --rebase " },
     { ';', "cm",  "git commit -m \"\"" },
 };
 #define MODULE_HOLDSEQ_COUNT (sizeof(module_holds) / sizeof(module_holds[0]))
