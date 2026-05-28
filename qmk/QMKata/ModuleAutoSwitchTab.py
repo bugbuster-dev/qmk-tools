@@ -59,6 +59,7 @@ class ModuleAutoSwitchTab(QWidget):
         # Program entries
         self.program_selectors = []
         self.module_inputs = []
+        self.match_all_checkbox = []
         for i in range(self.num_entries):
             entry_layout = QHBoxLayout()
             ps = ProgramSelectorComboBox(self.winfocus_textedit)
@@ -75,6 +76,11 @@ class ModuleAutoSwitchTab(QWidget):
             browse_btn = QPushButton("Browse...")
             browse_btn.clicked.connect(lambda checked=False, idx=i: self.browse_module(idx))
             entry_layout.addWidget(browse_btn)
+
+            cb = QCheckBox("all")
+            cb.setChecked(True)
+            self.match_all_checkbox.append(cb)
+            entry_layout.addWidget(cb)
 
             layout.addLayout(entry_layout)
 
@@ -106,10 +112,14 @@ class ModuleAutoSwitchTab(QWidget):
             selected = self.program_selectors[i].currentText().strip()
             if not selected or selected == "-":
                 continue
-            sel_parts = selected.split("\t")
+                 sel_parts = selected.split("\t")
             sel_pid = sel_parts[0].strip() if len(sel_parts) > 0 else ""
             sel_proc = sel_parts[1].strip() if len(sel_parts) > 1 else ""
-            if focus_proc == sel_proc and focus_pid == sel_pid:
+            if self.match_all_checkbox[i].isChecked():
+                match = focus_proc == sel_proc
+            else:
+                match = focus_proc == sel_proc and focus_pid == sel_pid
+            if match:
                 module_path = self.module_inputs[i].text().strip()
                 if module_path and os.path.exists(module_path):
                     self._load_module(module_path)
