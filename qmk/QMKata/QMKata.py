@@ -16,7 +16,7 @@
 # USA.
 
 # this code is like a box of bugs, you never know what you're gonna get
-import os, sys, argparse, struct
+import os, sys, argparse, struct, zlib
 
 from PySide6 import QtCore
 from PySide6.QtCore import Qt, Signal
@@ -60,7 +60,10 @@ from RGBAudioTab import RGBAudioTab
 from RGBAnimationTab import RGBAnimationTab, CodeTextEdit
 from RGBDynLDAnimationTab import RGBDynLDAnimationTab
 from ModuleTab import ModuleTab
-from ModuleBuild import MODULE_SRAM_SLOT_BASE_ID
+from ModuleBuild import (
+    MODULE_SRAM_SLOT_BASE_ID, MODULE_HEADER_MAGIC, MODULE_HEADER_VERSION,
+    MODULE_HEADER_SIZE, MODULE_HOOK_TABLE_OFF, MODULE_HOOK_MAX,
+)
 from LayerAutoSwitchTab import LayerAutoSwitchTab
 from ModuleAutoSwitchTab import ModuleAutoSwitchTab
 
@@ -928,7 +931,16 @@ class MainWindow(QMainWindow):
 
     def on_module_unload(self, slot_id):
         if slot_id >= MODULE_SRAM_SLOT_BASE_ID:
-            ok = self.keyboard.keyb_set_module(slot_id, bytearray(32))
+            # Write a no-op module to invalidate the SRAM slot
+            hook_table = bytearray(MODULE_HOOK_MAX * 4)
+            code_size = MODULE_HEADER_SIZE + MODULE_HOOK_MAX * 4
+            header = struct.pack("<I H H I I I I I I",
+                MODULE_HEADER_MAGIC, MODULE_HEADER_VERSION, 0,
+                code_size, 0, MODULE_HOOK_TABLE_OFF, 0, 0, 0)
+            noop = bytearray(header) + hook_table
+            crc = zlib.crc32(bytes(noop)) & 0xFFFFFFFF
+            struct.pack_into("<I", noop, 28, crc)
+            ok = self.keyboard.keyb_set_module(slot_id, noop)
         else:
             ok = self.keyboard.keyb_del_module(slot_id)
         if ok:
