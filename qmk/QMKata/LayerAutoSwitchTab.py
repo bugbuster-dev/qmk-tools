@@ -129,15 +129,21 @@ class LayerAutoSwitchTab(QWidget):
         self.program_selector = []
         self.layer_selector = []
         for i in range(self.num_program_selectors):
-            self.program_selector.append(ProgramSelectorComboBox(self.winfocus_textedit))
-            self.program_selector[i].addItems(["" for i in range(5)])
-            self.program_selector[i].setCurrentIndex(0)
-            layout.addWidget(self.program_selector[i])
+            entry_layout = QHBoxLayout()
 
-            self.layer_selector.append(QComboBox())
-            self.layer_selector[i].addItems([str(i) for i in range(self.num_keyb_layers)])
-            self.layer_selector[i].setCurrentIndex(0)
-            layout.addWidget(self.layer_selector[i])
+            ps = ProgramSelectorComboBox(self.winfocus_textedit)
+            ps.addItems(["" for _ in range(5)])
+            ps.setCurrentIndex(0)
+            self.program_selector.append(ps)
+            entry_layout.addWidget(ps, 2)
+
+            ls = QComboBox()
+            ls.addItems([str(i) for i in range(self.num_keyb_layers)])
+            ls.setCurrentIndex(0)
+            self.layer_selector.append(ls)
+            entry_layout.addWidget(ls, 1)
+
+            layout.addLayout(entry_layout)
         #---------------------------------------
         self.setLayout(layout)
 
