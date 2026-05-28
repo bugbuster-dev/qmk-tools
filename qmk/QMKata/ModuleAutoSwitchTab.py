@@ -13,7 +13,7 @@ from ModuleBuild import MODULE_SRAM_SLOT_BASE_ID
 
 class ModuleAutoSwitchTab(QWidget):
     signal_load_module = Signal(int, bytearray)
-    num_entries = 4
+    num_entries = 10
 
     def __init__(self):
         self.dbg = DebugTracer(zones={'D': 0}, obj=self)
