@@ -135,13 +135,14 @@ class LayerAutoSwitchTab(QWidget):
             ps.addItems(["" for _ in range(5)])
             ps.setCurrentIndex(0)
             self.program_selector.append(ps)
-            entry_layout.addWidget(ps, 2)
+            entry_layout.addWidget(ps, 1)
 
             ls = QComboBox()
             ls.addItems([str(i) for i in range(self.num_keyb_layers)])
             ls.setCurrentIndex(0)
+            ls.setMinimumWidth(50)
             self.layer_selector.append(ls)
-            entry_layout.addWidget(ls, 1)
+            entry_layout.addWidget(ls)
 
             layout.addLayout(entry_layout)
         #---------------------------------------
