@@ -206,6 +206,7 @@ class ModuleAutoSwitchTab(QWidget):
             entries = mod.get("entries", [])
             for i in range(self.num_entries):
                 if i < len(entries) and entries[i].get("program"):
+                    self.program_selectors[i].clear()
                     self.program_selectors[i].addItem(entries[i]["program"])
                     self.program_selectors[i].setCurrentIndex(0)
                     mp = entries[i].get("module_path", "")

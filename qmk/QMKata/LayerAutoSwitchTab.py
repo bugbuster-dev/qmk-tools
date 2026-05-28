@@ -264,6 +264,7 @@ class LayerAutoSwitchTab(QWidget):
             entries = layer.get("entries", [])
             for i in range(self.num_program_selectors):
                 if i < len(entries) and entries[i].get("program"):
+                    self.program_selector[i].clear()
                     self.program_selector[i].addItem(entries[i]["program"])
                     self.program_selector[i].setCurrentIndex(0)
                     lr = entries[i].get("layer", 0)
