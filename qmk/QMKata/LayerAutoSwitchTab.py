@@ -219,8 +219,11 @@ class LayerAutoSwitchTab(QWidget):
         try:
             config = {}
             if os.path.exists(CONFIG_FILE):
-                with open(CONFIG_FILE) as f:
-                    config = json.load(f)
+                try:
+                    with open(CONFIG_FILE) as f:
+                        config = json.load(f)
+                except json.JSONDecodeError:
+                    pass
             entries = []
             for i in range(self.num_program_selectors):
                 entries.append({
