@@ -1,3 +1,4 @@
+import json
 import os
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -7,7 +8,7 @@ from PySide6.QtWidgets import (
 )
 
 from DebugTracer import DebugTracer
-from LayerAutoSwitchTab import ProgramSelectorComboBox
+from LayerAutoSwitchTab import ProgramSelectorComboBox, CONFIG_FILE
 from ModuleBuild import MODULE_SRAM_SLOT_BASE_ID
 
 
@@ -21,6 +22,7 @@ class ModuleAutoSwitchTab(QWidget):
         self.current_module = None  # track currently loaded module path
         super().__init__()
         self.init_gui()
+        self._load_config()
 
     def init_gui(self):
         layout = QVBoxLayout()
@@ -86,6 +88,14 @@ class ModuleAutoSwitchTab(QWidget):
 
         self.setLayout(layout)
 
+        # Wire auto-save on every change
+        self.enabled_checkbox.stateChanged.connect(self._save_config)
+        self.default_module_input.textChanged.connect(self._save_config)
+        for i in range(self.num_entries):
+            self.program_selectors[i].currentIndexChanged.connect(self._save_config)
+            self.module_inputs[i].textChanged.connect(self._save_config)
+            self.match_all_checkbox[i].stateChanged.connect(self._save_config)
+
     def browse_default_module(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "Select Module Binary", "", "Binary Files (*.bin);;All Files (*)"
@@ -149,3 +159,49 @@ class ModuleAutoSwitchTab(QWidget):
         lines = self.winfocus_textedit.toPlainText().split('\n')
         if len(lines) > 10:
             self.winfocus_textedit.setPlainText('\n'.join(lines[-10:]))
+
+    def _save_config(self):
+        try:
+            config = {}
+            if os.path.exists(CONFIG_FILE):
+                with open(CONFIG_FILE) as f:
+                    config = json.load(f)
+            entries = []
+            for i in range(self.num_entries):
+                entries.append({
+                    "program": self.program_selectors[i].currentText(),
+                    "module_path": self.module_inputs[i].text(),
+                    "match_all": self.match_all_checkbox[i].isChecked(),
+                })
+            config["module"] = {
+                "enabled": self.enabled_checkbox.isChecked(),
+                "default_module": self.default_module_input.text(),
+                "entries": entries,
+            }
+            with open(CONFIG_FILE, "w") as f:
+                json.dump(config, f, indent=2)
+        except Exception as e:
+            self.dbg.tr('E', f"save config: {e}")
+
+    def _load_config(self):
+        try:
+            if not os.path.exists(CONFIG_FILE):
+                return
+            with open(CONFIG_FILE) as f:
+                config = json.load(f)
+            mod = config.get("module", {})
+            self.enabled_checkbox.setChecked(mod.get("enabled", True))
+            dm = mod.get("default_module", "")
+            if dm:
+                self.default_module_input.setText(dm)
+            entries = mod.get("entries", [])
+            for i in range(self.num_entries):
+                if i < len(entries) and entries[i].get("program"):
+                    self.program_selectors[i].addItem(entries[i]["program"])
+                    self.program_selectors[i].setCurrentIndex(0)
+                    mp = entries[i].get("module_path", "")
+                    if mp:
+                        self.module_inputs[i].setText(mp)
+                    self.match_all_checkbox[i].setChecked(entries[i].get("match_all", True))
+        except Exception as e:
+            self.dbg.tr('E', f"load config: {e}")

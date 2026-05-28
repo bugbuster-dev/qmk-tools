@@ -1,9 +1,14 @@
+import json
+import os
+
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QComboBox, QCheckBox, QHBoxLayout, QLineEdit, QTextEdit, QStyledItemDelegate
 from PySide6.QtGui import QFont, QFontMetrics, QIntValidator, QMouseEvent
 from PySide6.QtCore import Qt, Signal
 
 from DebugTracer import DebugTracer
 from WSServer import WSServer
+
+CONFIG_FILE = "qmkata_config.json"
 
 #-------------------------------------------------------------------------------
 class ProgramSelectorComboBox(QComboBox):
@@ -43,6 +48,7 @@ class LayerAutoSwitchTab(QWidget):
 
         super().__init__()
         self.init_gui()
+        self._load_config()
 
     async def ws_handler(self, websocket, path):
         async for message in websocket:
@@ -154,6 +160,15 @@ class LayerAutoSwitchTab(QWidget):
         #---------------------------------------
         self.setLayout(layout)
 
+        # Wire auto-save on every change
+        self.deflayer_selector.currentIndexChanged.connect(self._save_config)
+        self.layer_switch_server_checkbox.stateChanged.connect(self._save_config)
+        self.layer_switch_server_port.textChanged.connect(self._save_config)
+        for i in range(self.num_program_selectors):
+            self.program_selector[i].currentIndexChanged.connect(self._save_config)
+            self.layer_selector[i].currentIndexChanged.connect(self._save_config)
+            self.match_all_checkbox[i].stateChanged.connect(self._save_config)
+
     def update_default_layer(self, layer):
         self.dbg.tr('DEBUG', f"default layer update: {layer}")
         self.deflayer_selector.setCurrentIndex(layer)
@@ -199,3 +214,53 @@ class LayerAutoSwitchTab(QWidget):
         if self.ws_server:
             self.ws_server.stop()
             self.ws_server.wait()
+
+    def _save_config(self):
+        try:
+            config = {}
+            if os.path.exists(CONFIG_FILE):
+                with open(CONFIG_FILE) as f:
+                    config = json.load(f)
+            entries = []
+            for i in range(self.num_program_selectors):
+                entries.append({
+                    "program": self.program_selector[i].currentText(),
+                    "layer": self.layer_selector[i].currentIndex(),
+                    "match_all": self.match_all_checkbox[i].isChecked(),
+                })
+            config["layer"] = {
+                "default_layer": self.deflayer_selector.currentIndex(),
+                "ws_enabled": self.layer_switch_server_checkbox.isChecked(),
+                "ws_port": self.layer_switch_server_port.text(),
+                "entries": entries,
+            }
+            with open(CONFIG_FILE, "w") as f:
+                json.dump(config, f, indent=2)
+        except Exception as e:
+            self.dbg.tr('E', f"save config: {e}")
+
+    def _load_config(self):
+        try:
+            if not os.path.exists(CONFIG_FILE):
+                return
+            with open(CONFIG_FILE) as f:
+                config = json.load(f)
+            layer = config.get("layer", {})
+            dl = layer.get("default_layer", 0)
+            if 0 <= dl < self.num_keyb_layers:
+                self.deflayer_selector.setCurrentIndex(dl)
+            we = layer.get("ws_enabled", False)
+            self.layer_switch_server_checkbox.setChecked(we)
+            wp = layer.get("ws_port", "8765")
+            self.layer_switch_server_port.setText(wp)
+            entries = layer.get("entries", [])
+            for i in range(self.num_program_selectors):
+                if i < len(entries) and entries[i].get("program"):
+                    self.program_selector[i].addItem(entries[i]["program"])
+                    self.program_selector[i].setCurrentIndex(0)
+                    lr = entries[i].get("layer", 0)
+                    if 0 <= lr < self.num_keyb_layers:
+                        self.layer_selector[i].setCurrentIndex(lr)
+                    self.match_all_checkbox[i].setChecked(entries[i].get("match_all", True))
+        except Exception as e:
+            self.dbg.tr('E', f"load config: {e}")
