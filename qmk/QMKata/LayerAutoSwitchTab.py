@@ -32,7 +32,7 @@ class ProgramSelectorComboBox(QComboBox):
 #-------------------------------------------------------------------------------
 class LayerAutoSwitchTab(QWidget):
     signal_keyb_set_layer = Signal(int)
-    num_program_selectors = 4
+    num_program_selectors = 10
 
     def __init__(self, num_keyb_layers=8):
         self.dbg = DebugTracer(zones={'D':0}, obj=self)
