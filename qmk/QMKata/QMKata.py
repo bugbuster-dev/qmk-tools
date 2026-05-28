@@ -931,7 +931,8 @@ class MainWindow(QMainWindow):
 
     def on_module_unload(self, slot_id):
         if slot_id >= MODULE_SRAM_SLOT_BASE_ID:
-            # Write a no-op module to invalidate the SRAM slot
+            # TODO(firmware): DEL should support SRAM slots (just zero the buffer,
+            # no flash erase). Until then, write a valid no-op module to invalidate.
             hook_table = bytearray(MODULE_HOOK_MAX * 4)
             code_size = MODULE_HEADER_SIZE + MODULE_HOOK_MAX * 4
             header = struct.pack("<I H H I I I I I I",
