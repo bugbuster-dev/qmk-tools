@@ -154,6 +154,8 @@ class ModuleAutoSwitchTab(QWidget):
 
     def update_winfocus_text(self, line):
         self.winfocus_textedit.append(line)
+        scrollbar = self.winfocus_textedit.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
 
     def limit_lines(self):
         lines = self.winfocus_textedit.toPlainText().split('\n')
