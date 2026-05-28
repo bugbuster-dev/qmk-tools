@@ -167,6 +167,8 @@ class LayerAutoSwitchTab(QWidget):
         for i, ps in enumerate(self.program_selector):
             compare_win = self.program_selector[i].currentText().split("\t")
             #self.dbg.tr('DEBUG', f"on_winfocus compare: {compare_win}")
+            if len(compare_win) < 2:
+                continue
             if self.match_all_checkbox[i].isChecked():
                 match = focus_win[1].strip() == compare_win[1].strip()
             else:
