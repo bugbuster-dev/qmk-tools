@@ -1020,6 +1020,11 @@ def main(keyboard_vid_pid, firmware_path=None):
                     keyb_models[selected_keyboard].VID,
                     keyb_models[selected_keyboard].PID,
                 )
+        else:
+            print("No keyboard detected.")
+            print(f"Available models: {', '.join(keyb_models.keys())}")
+            print("Use --keyboard '<name>' to select one manually.")
+            sys.exit(1)
 
     main_window = MainWindow(keyboard_vid_pid, firmware_path=firmware_path)
     main_window.show()
@@ -1034,6 +1039,9 @@ parser.add_argument(
     "--pid", required=False, type=lambda x: int(x, 16), help="keyboard pid in hex"
 )
 parser.add_argument(
+    "--keyboard", required=False, type=str, help="keyboard model name (e.g. 'keychron q3 max')"
+)
+parser.add_argument(
     "--firmware-path",
     required=False,
     type=str,
@@ -1041,4 +1049,14 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
-main((args.vid, args.pid), firmware_path=args.firmware_path)
+keyboard_vid_pid = (args.vid, args.pid)
+if args.keyboard:
+    keyboards, keyb_models = QMKataKeyboard.attached_keyboards()
+    if args.keyboard in keyb_models:
+        keyboard_vid_pid = (keyb_models[args.keyboard].VID, keyb_models[args.keyboard].PID)
+    else:
+        print(f"Error: unknown keyboard '{args.keyboard}'")
+        print(f"Available: {', '.join(keyb_models.keys())}")
+        sys.exit(1)
+
+main(keyboard_vid_pid, firmware_path=args.firmware_path)
