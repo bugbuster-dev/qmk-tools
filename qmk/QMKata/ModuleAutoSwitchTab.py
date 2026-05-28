@@ -112,7 +112,7 @@ class ModuleAutoSwitchTab(QWidget):
             selected = self.program_selectors[i].currentText().strip()
             if not selected or selected == "-":
                 continue
-                 sel_parts = selected.split("\t")
+            sel_parts = selected.split("\t")
             sel_pid = sel_parts[0].strip() if len(sel_parts) > 0 else ""
             sel_proc = sel_parts[1].strip() if len(sel_parts) > 1 else ""
             if self.match_all_checkbox[i].isChecked():
