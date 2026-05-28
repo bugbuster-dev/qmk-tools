@@ -927,7 +927,11 @@ class MainWindow(QMainWindow):
         self.module_tab.refresh_slots()
 
     def on_module_unload(self, slot_id):
-        if self.keyboard.keyb_del_module(slot_id):
+        if slot_id >= MODULE_SRAM_SLOT_BASE_ID:
+            ok = self.keyboard.keyb_set_module(slot_id, bytearray(32))
+        else:
+            ok = self.keyboard.keyb_del_module(slot_id)
+        if ok:
             self.module_tab.log(f"Unload OK: slot {slot_id}")
         else:
             self.module_tab.log(f"Unload FAILED: slot {slot_id}")
