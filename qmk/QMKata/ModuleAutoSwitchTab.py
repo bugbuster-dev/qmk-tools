@@ -115,7 +115,7 @@ class ModuleAutoSwitchTab(QWidget):
             return
         focus_parts = line.split("\t")
         focus_title = focus_parts[2].strip() if len(focus_parts) > 2 else ""
-        if focus_title == "Task Switching":
+        if focus_title in ("Task Switching", "Task View"):
             return
         self.update_winfocus_text(line)
         focus_parts = line.split("\t")

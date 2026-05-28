@@ -175,7 +175,7 @@ class LayerAutoSwitchTab(QWidget):
 
     def on_winfocus(self, line):
         focus_win = line.split("\t")
-        if len(focus_win) > 2 and focus_win[2].strip() == "Task Switching":
+        if len(focus_win) > 2 and focus_win[2].strip() in ("Task Switching", "Task View"):
             return
         self.update_winfocus_text(line)
         self.current_focus = line
