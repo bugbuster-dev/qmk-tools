@@ -114,8 +114,11 @@ class ModuleAutoSwitchTab(QWidget):
         if not self.enabled_checkbox.isChecked():
             return
         focus_parts = line.split("\t")
+        focus_proc = focus_parts[1].strip() if len(focus_parts) > 1 else ""
         focus_title = focus_parts[2].strip() if len(focus_parts) > 2 else ""
         if focus_title in ("Task Switching", "Task View"):
+            return
+        if "explorer.exe" in focus_proc and not focus_title:
             return
         self.update_winfocus_text(line)
         focus_parts = line.split("\t")

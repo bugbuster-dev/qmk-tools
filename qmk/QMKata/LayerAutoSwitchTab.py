@@ -177,6 +177,10 @@ class LayerAutoSwitchTab(QWidget):
         focus_win = line.split("\t")
         if len(focus_win) > 2 and focus_win[2].strip() in ("Task Switching", "Task View"):
             return
+        if len(focus_win) > 1 and "explorer.exe" in focus_win[1].strip():
+            title = focus_win[2].strip() if len(focus_win) > 2 else ""
+            if not title:
+                return
         self.update_winfocus_text(line)
         self.current_focus = line
         # foreground focus window info
