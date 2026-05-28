@@ -128,6 +128,7 @@ class LayerAutoSwitchTab(QWidget):
         #---------------------------------------
         self.program_selector = []
         self.layer_selector = []
+        self.match_all_checkbox = []
         for i in range(self.num_program_selectors):
             entry_layout = QHBoxLayout()
 
@@ -143,6 +144,11 @@ class LayerAutoSwitchTab(QWidget):
             ls.setMinimumWidth(50)
             self.layer_selector.append(ls)
             entry_layout.addWidget(ls)
+
+            cb = QCheckBox("all")
+            cb.setChecked(True)
+            self.match_all_checkbox.append(cb)
+            entry_layout.addWidget(cb)
 
             layout.addLayout(entry_layout)
         #---------------------------------------
@@ -161,8 +167,12 @@ class LayerAutoSwitchTab(QWidget):
         for i, ps in enumerate(self.program_selector):
             compare_win = self.program_selector[i].currentText().split("\t")
             #self.dbg.tr('DEBUG', f"on_winfocus compare: {compare_win}")
-            if focus_win[0].strip() == compare_win[0].strip() and \
-               focus_win[1].strip() == compare_win[1].strip():
+            if self.match_all_checkbox[i].isChecked():
+                match = focus_win[1].strip() == compare_win[1].strip()
+            else:
+                match = (focus_win[0].strip() == compare_win[0].strip() and
+                         focus_win[1].strip() == compare_win[1].strip())
+            if match:
                 layer = int(self.layer_selector[i].currentText())
                 self.signal_keyb_set_layer.emit(layer)
                 self.current_layer = layer
