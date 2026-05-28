@@ -896,7 +896,6 @@ class MainWindow(QMainWindow):
         # Sector-preserving reload: read siblings, erase sector, write all
         # slots back. Flash erase is sector-granular (16 KB = 4 slots), so
         # loading into any slot would otherwise destroy its 3 siblings.
-        MODULE_HEADER_MAGIC = 0x4D4F444C  # 'MODL'
 
         # Pull slot size + slots-per-sector from the keyboard's module flash
         # layout (derived from the MCU hardware profile). Fall back to the
