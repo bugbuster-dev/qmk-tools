@@ -28,7 +28,8 @@ typedef struct {
 static const holdseq_def_t module_holds[] = {
     { ';', "co",  "git checkout " },
     { ';', "cb",  "git checkout -b " },
-    { ';', "p",   "git pull " },
+    { ';', "pl",   "git pull" },
+    { ';', "ps",   "git push" },
     { ';', "pr",  "git pull --rebase " },
     { ';', "cm",  "git commit -m \"\"" },
     { ';', "s",   "git status" },

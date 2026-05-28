@@ -8,9 +8,9 @@
 
 #define RAIN_COLS              14
 #define RAIN_ROWS              6
-#define RAIN_SPEED             8
-#define RAIN_TRAIL_MIN         3
-#define RAIN_TRAIL_MAX         8
+#define RAIN_SPEED             16
+#define RAIN_TRAIL_MIN         2
+#define RAIN_TRAIL_MAX         5
 #define RAIN_GREEN_R           0
 #define RAIN_GREEN_G           255
 #define RAIN_GREEN_B           0

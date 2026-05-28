@@ -211,7 +211,7 @@ typedef struct {
  *
  * Demo configuration:
  *   "teh" → "the" (typo fix)
- *   "/email" → "alice@example.com" (email address)
+ *   "/eml" → "alice@example.com" (email address)
  *   "btw" → "by the way " (common abbreviation)
  *   "idk" → "I don't know" (common abbreviation)
  *   "brb" → "be right back" (common abbreviation)
@@ -222,7 +222,7 @@ typedef struct {
  */
 static const autotext_def_t module_autotext[] = {
     { "teh",    "the" },
-    { "/email", "alice@example.com" },
+    { "/eml",   "alice@example.com" },
     { "btw",    "by the way " },
     { "idk",    "I don't know" },
     { "brb",    "be right back" },
