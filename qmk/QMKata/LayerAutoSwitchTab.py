@@ -174,6 +174,9 @@ class LayerAutoSwitchTab(QWidget):
         self.deflayer_selector.setCurrentIndex(layer)
 
     def on_winfocus(self, line):
+        focus_win = line.split("\t")
+        if len(focus_win) > 2 and focus_win[2].strip() == "Task Switching":
+            return
         self.update_winfocus_text(line)
         self.current_focus = line
         # foreground focus window info

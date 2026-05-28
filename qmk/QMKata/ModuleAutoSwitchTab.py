@@ -113,6 +113,10 @@ class ModuleAutoSwitchTab(QWidget):
     def on_winfocus(self, line):
         if not self.enabled_checkbox.isChecked():
             return
+        focus_parts = line.split("\t")
+        focus_title = focus_parts[2].strip() if len(focus_parts) > 2 else ""
+        if focus_title == "Task Switching":
+            return
         self.update_winfocus_text(line)
         focus_parts = line.split("\t")
         focus_pid = focus_parts[0].strip() if len(focus_parts) > 0 else ""
