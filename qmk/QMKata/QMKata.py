@@ -873,7 +873,20 @@ class MainWindow(QMainWindow):
         # SRAM modules are volatile — lost on reset.
         if slot_id >= MODULE_SRAM_SLOT_BASE_ID:
             self.module_tab.log(f"Loading SRAM slot {slot_id}...")
-            if self.keyboard.keyb_set_module(slot_id, binary):
+            ok = self.keyboard.keyb_set_module(slot_id, binary)
+            if not ok:
+                # Clear slot and retry — firmware may reject if slot is in bad state
+                hook_table = bytearray(MODULE_HOOK_MAX * 4)
+                code_size = MODULE_HEADER_SIZE + MODULE_HOOK_MAX * 4
+                header = struct.pack("<I H H I I I I I I",
+                    MODULE_HEADER_MAGIC, MODULE_HEADER_VERSION, 0,
+                    code_size, 0, MODULE_HOOK_TABLE_OFF, 0, 0, 0)
+                noop = bytearray(header) + hook_table
+                crc = zlib.crc32(bytes(noop)) & 0xFFFFFFFF
+                struct.pack_into("<I", noop, 28, crc)
+                self.keyboard.keyb_set_module(slot_id, noop)
+                ok = self.keyboard.keyb_set_module(slot_id, binary)
+            if ok:
                 self.module_tab.log(f"Load OK: SRAM slot {slot_id}")
             else:
                 self.module_tab.log(f"Load FAILED: SRAM slot {slot_id}")
