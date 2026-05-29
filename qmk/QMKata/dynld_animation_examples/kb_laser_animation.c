@@ -16,28 +16,31 @@ typedef struct {
     uint8_t pos;
     uint8_t dir;
     uint8_t speed;
+    uint8_t frame;
 } laser_t;
-
-static inline uint8_t _lcg_rand(uint32_t *seed) {
-    *seed = *seed * 1103515245 + 12345;
-    return (uint8_t)((*seed >> 16) & 0xFF);
-}
 
 __attribute__((section(".text.entry")))
 bool effect_runner_func(dynld_custom_animation_env_t *anim_env,
                          effect_params_t *params) {
     static laser_t lasers[LASER_COUNT];
-    static uint32_t rng_seed;
     uint8_t speed = anim_env->rgb_config->speed;
+    uint8_t spd = (speed >> 4) + 1;
 
     if (params->init) {
-        rng_seed = anim_env->time;
-        for (uint8_t i = 0; i < LASER_COUNT; i++) {
-            lasers[i].row = _lcg_rand(&rng_seed) % MATRIX_ROWS;
-            lasers[i].pos = _lcg_rand(&rng_seed) % MATRIX_COLS;
-            lasers[i].dir = (_lcg_rand(&rng_seed) & 1);
-            lasers[i].speed = (speed >> 4) + 1;
+        uint32_t t = anim_env->time;
+        lasers[0].row = (t >> 4) % MATRIX_ROWS;
+        lasers[0].pos = (t >> 8) % MATRIX_COLS;
+        lasers[0].dir = 0;
+        lasers[0].speed = spd;
+        lasers[0].frame = 0;
+        lasers[1].row = (t >> 12) % MATRIX_ROWS;
+        while (lasers[1].row == lasers[0].row) {
+            lasers[1].row = (lasers[1].row + 1) % MATRIX_ROWS;
         }
+        lasers[1].pos = (t >> 16) % MATRIX_COLS;
+        lasers[1].dir = 1;
+        lasers[1].speed = spd;
+        lasers[1].frame = 0;
     }
 
     for (uint8_t i = 0; i < RGB_MATRIX_LED_COUNT; i++) {
@@ -45,6 +48,10 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env,
     }
 
     for (uint8_t l = 0; l < LASER_COUNT; l++) {
+        lasers[l].frame++;
+        if (lasers[l].frame < spd) continue;
+        lasers[l].frame = 0;
+
         uint8_t row = lasers[l].row;
         uint8_t pos = lasers[l].pos;
         uint8_t dir = lasers[l].dir;
