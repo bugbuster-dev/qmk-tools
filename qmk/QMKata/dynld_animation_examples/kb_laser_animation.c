@@ -3,6 +3,7 @@
 #include "dynld_func.h"
 
 #define LASER_LENGTH 8
+#define LASER_SPEED  1
 #define RED_R 255
 #define RED_G 0
 #define RED_B 0
@@ -22,6 +23,7 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env,
     static uint8_t pos_r;
     static uint8_t row_b;
     static uint8_t pos_b;
+    static uint8_t frame;
     static uint32_t rng;
 
     if (params->init) {
@@ -67,14 +69,17 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env,
         }
     }
 
-    pos_r = (pos_r + 1) % MATRIX_COLS;
-    if (pos_r == 0) {
-        row_r = _lcg(&rng) % MATRIX_ROWS;
-    }
-
-    pos_b = (pos_b + MATRIX_COLS - 1) % MATRIX_COLS;
-    if (pos_b == MATRIX_COLS - 1) {
-        row_b = _lcg(&rng) % MATRIX_ROWS;
+    frame++;
+    if (frame >= LASER_SPEED) {
+        frame = 0;
+        pos_r = (pos_r + 1) % MATRIX_COLS;
+        if (pos_r == 0) {
+            row_r = _lcg(&rng) % MATRIX_ROWS;
+        }
+        pos_b = (pos_b + MATRIX_COLS - 1) % MATRIX_COLS;
+        if (pos_b == MATRIX_COLS - 1) {
+            row_b = _lcg(&rng) % MATRIX_ROWS;
+        }
     }
 
     return false;
