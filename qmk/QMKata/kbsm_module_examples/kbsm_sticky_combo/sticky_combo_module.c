@@ -25,8 +25,6 @@ typedef struct {
     StickyCombo sm;
     kbsm_env_t *env;
     int8_t  active_combo;       /* index into module_sticky_combos[], -1 = none */
-    bool    key1_held;
-    bool    key2_held;
     bool    sticky_active;
     /* Simultaneous-press detection */
     int8_t   pending_combo;
@@ -94,8 +92,6 @@ static kbsm_result_t sticky_handle(void *self, keyevent_t *event, keyrecord_t *r
             (env->timer_elapsed(st->pending_time) <= STICKY_COMBO_WINDOW_MS) &&
             ((st->pending_is_key1 && is_key2) || (!st->pending_is_key1 && is_key1))) {
             st->active_combo = combo;
-            st->key1_held = true;
-            st->key2_held = true;
             st->sticky_active = false;
             st->pending_combo = -1;
             st->pending_pressed_on_host = false;
@@ -133,23 +129,9 @@ static kbsm_result_t sticky_handle(void *self, keyevent_t *event, keyrecord_t *r
         if (event->pressed) return KBSM_CONSUME;
 
         if (kc == key1) {
-            st->key1_held = false;
-            if (st->key2_held) {
-                StickyCombo_dispatch_event(&st->sm, StickyCombo_EventId_ON_RELEASE_KEY1);
-            } else {
-                StickyCombo_dispatch_event(&st->sm, StickyCombo_EventId_ON_RELEASE_BOTH);
-                st->active_combo = -1;
-                st->sticky_active = false;
-            }
+            StickyCombo_dispatch_event(&st->sm, StickyCombo_EventId_ON_RELEASE_KEY1);
         } else {
-            st->key2_held = false;
-            if (st->key1_held) {
-                StickyCombo_dispatch_event(&st->sm, StickyCombo_EventId_ON_RELEASE_KEY2);
-            } else {
-                StickyCombo_dispatch_event(&st->sm, StickyCombo_EventId_ON_RELEASE_BOTH);
-                st->active_combo = -1;
-                st->sticky_active = false;
-            }
+            StickyCombo_dispatch_event(&st->sm, StickyCombo_EventId_ON_RELEASE_KEY2);
         }
         return KBSM_CONSUME;
     }
@@ -161,20 +143,14 @@ static kbsm_result_t sticky_handle(void *self, keyevent_t *event, keyrecord_t *r
         uint16_t key2 = module_sticky_combos[st->active_combo].key2;
         if (kc == key1) {
             if (event->pressed) {
-                st->key1_held = true;
                 st->sticky_active = true;
                 uint16_t action = module_sticky_combos[st->active_combo].tap_action_1;
                 if (action != KC_NO) env->tap_code16(action);
-                if (st->key2_held) {
-                    StickyCombo_dispatch_event(&st->sm, StickyCombo_EventId_ON_TAP_KEY1);
-                }
-            } else {
-                st->key1_held = false;
+                StickyCombo_dispatch_event(&st->sm, StickyCombo_EventId_ON_TAP_KEY1);
             }
             return KBSM_CONSUME;
         }
         if (kc == key2 && !event->pressed) {
-            st->key2_held = false;
             if (st->sticky_active) {
                 StickyCombo_dispatch_event(&st->sm, StickyCombo_EventId_ON_RELEASE_KEY2);
             } else {
@@ -194,20 +170,14 @@ static kbsm_result_t sticky_handle(void *self, keyevent_t *event, keyrecord_t *r
         uint16_t key2 = module_sticky_combos[st->active_combo].key2;
         if (kc == key2) {
             if (event->pressed) {
-                st->key2_held = true;
                 st->sticky_active = true;
                 uint16_t action = module_sticky_combos[st->active_combo].tap_action_2;
                 if (action != KC_NO) env->tap_code16(action);
-                if (st->key1_held) {
-                    StickyCombo_dispatch_event(&st->sm, StickyCombo_EventId_ON_TAP_KEY2);
-                }
-            } else {
-                st->key2_held = false;
+                StickyCombo_dispatch_event(&st->sm, StickyCombo_EventId_ON_TAP_KEY2);
             }
             return KBSM_CONSUME;
         }
         if (kc == key1 && !event->pressed) {
-            st->key1_held = false;
             if (st->sticky_active) {
                 StickyCombo_dispatch_event(&st->sm, StickyCombo_EventId_ON_RELEASE_KEY1);
             } else {
@@ -228,26 +198,20 @@ static kbsm_result_t sticky_handle(void *self, keyevent_t *event, keyrecord_t *r
 
         if (kc == key1) {
             if (event->pressed) {
-                st->key1_held = true;
                 st->sticky_active = true;
                 uint16_t action = module_sticky_combos[st->active_combo].tap_action_1;
                 if (action != KC_NO) env->tap_code16(action);
                 StickyCombo_dispatch_event(&st->sm, StickyCombo_EventId_ON_TAP_KEY1);
-            } else {
-                st->key1_held = false;
             }
             return KBSM_CONSUME;
         }
 
         if (kc == key2) {
             if (event->pressed) {
-                st->key2_held = true;
                 st->sticky_active = true;
                 uint16_t action = module_sticky_combos[st->active_combo].tap_action_2;
                 if (action != KC_NO) env->tap_code16(action);
                 StickyCombo_dispatch_event(&st->sm, StickyCombo_EventId_ON_TAP_KEY2);
-            } else {
-                st->key2_held = false;
             }
             return KBSM_CONSUME;
         }
@@ -274,8 +238,6 @@ static void sticky_reset(void *self) {
     StickyCombo_start(&st->sm);
     st->active_combo = -1;
     st->pending_combo = -1;
-    st->key1_held = false;
-    st->key2_held = false;
     st->sticky_active = false;
     st->pending_pressed_on_host = false;
 }
@@ -299,8 +261,6 @@ static uint32_t module_init(kbsm_env_t *env) {
     StickyCombo_start(&g_state.sm);
     g_state.active_combo = -1;
     g_state.pending_combo = -1;
-    g_state.key1_held = false;
-    g_state.key2_held = false;
     g_state.sticky_active = false;
     g_state.pending_pressed_on_host = false;
 
