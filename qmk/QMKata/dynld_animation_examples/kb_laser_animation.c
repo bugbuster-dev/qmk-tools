@@ -28,15 +28,23 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env,
 
     if (params->init) {
         uint32_t t = anim_env->time;
-        lasers[0].row = (t >> 4) % MATRIX_ROWS;
+        uint8_t valid_rows[MATRIX_ROWS];
+        uint8_t valid_count = 0;
+        for (uint8_t r = 0; r < MATRIX_ROWS; r++) {
+            for (uint8_t c = 0; c < MATRIX_COLS; c++) {
+                if (anim_env->led_config->matrix_co[r][c] != 255) {
+                    valid_rows[valid_count++] = r;
+                    break;
+                }
+            }
+        }
+        if (valid_count < 2) valid_count = 2;
+        lasers[0].row = valid_rows[(t >> 4) % valid_count];
         lasers[0].pos = (t >> 8) % MATRIX_COLS;
         lasers[0].dir = 0;
         lasers[0].speed = spd;
         lasers[0].frame = 0;
-        lasers[1].row = (t >> 12) % MATRIX_ROWS;
-        while (lasers[1].row == lasers[0].row) {
-            lasers[1].row = (lasers[1].row + 1) % MATRIX_ROWS;
-        }
+        lasers[1].row = valid_rows[((t >> 12) + 1) % valid_count];
         lasers[1].pos = (t >> 16) % MATRIX_COLS;
         lasers[1].dir = 1;
         lasers[1].speed = spd;
