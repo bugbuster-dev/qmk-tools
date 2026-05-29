@@ -181,7 +181,7 @@
 #define KC_SLSH  0x0038
 #endif
 #ifndef KC_MINUS
-#define KC_MINUS 0x0039
+#define KC_MINUS 0x002D
 #endif
 #ifndef KC_EQL
 #define KC_EQL   0x003A

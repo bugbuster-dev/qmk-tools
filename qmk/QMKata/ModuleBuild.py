@@ -328,6 +328,10 @@ class ModuleBuild:
         # Include path for module_api.h
         api_dir = os.path.dirname(self.module_api_header)
         opts.includes([api_dir + os.sep])
+        # Include firmware quantum/ for keycodes.h (single source of truth for KC_ values)
+        if self.firmware_path:
+            quantum_dir = os.path.join(self.firmware_path, "quantum")
+            opts.includes([quantum_dir + os.sep])
         # Additional include paths (e.g. dynld animation sources)
         if self.extra_includes:
             opts.includes(self.extra_includes)

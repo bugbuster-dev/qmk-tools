@@ -453,19 +453,71 @@ Pick a priority that places your module correctly relative to existing ones.
 
 ## QMK keycode values for keycode-to-ASCII lookup
 
+**Preferred:** Include the firmware header for a single source of truth:
+
 ```c
+#include "keycode.h"  // provides KC_A, KC_ENTER, etc. via firmware keycodes.h
+```
+
+The build pipeline adds `firmware_path/quantum/` to the include path when `--firmware-path` is set. If unavailable, fall back to `#ifndef` guarded `#define` values.
+
+**Fallback values** (only if firmware headers are not available):
+
+```c
+#ifndef KC_A
 #define KC_A    0x0004   // through KC_Z = 0x001D (sequential)
+#endif
+#ifndef KC_1
 #define KC_1    0x001E   // through KC_0 = 0x0027 (sequential)
+#endif
+#ifndef KC_ENTER
 #define KC_ENTER  0x0028
+#endif
+#ifndef KC_ESC
 #define KC_ESC    0x0029
+#endif
+#ifndef KC_BSPC
 #define KC_BSPC   0x002A
+#endif
+#ifndef KC_TAB
 #define KC_TAB    0x002B
+#endif
+#ifndef KC_SPACE
 #define KC_SPACE  0x002C
+#endif
+#ifndef KC_MINUS
+#define KC_MINUS  0x002D
+#endif
+#ifndef KC_EQUAL
+#define KC_EQUAL  0x002E
+#endif
+#ifndef KC_LBRC
+#define KC_LBRC   0x002F
+#endif
+#ifndef KC_RBRC
+#define KC_RBRC   0x0030
+#endif
+#ifndef KC_BSLS
+#define KC_BSLS   0x0031
+#endif
+#ifndef KC_SCLN
 #define KC_SCLN   0x0033
+#endif
+#ifndef KC_QUOT
+#define KC_QUOT   0x0034
+#endif
+#ifndef KC_GRAVE
+#define KC_GRAVE  0x0035
+#endif
+#ifndef KC_COMM
 #define KC_COMM   0x0036
+#endif
+#ifndef KC_DOT
 #define KC_DOT    0x0037
+#endif
+#ifndef KC_SLSH
 #define KC_SLSH   0x0038
-#define KC_MINUS  0x0039
+#endif
 ```
 
 Only include the keycodes your module actually matches. Full list is at
