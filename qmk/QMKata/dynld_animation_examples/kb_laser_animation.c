@@ -3,7 +3,7 @@
 #include "dynld_func.h"
 
 #define LASER_LENGTH 8
-#define LASER_SPEED  1
+#define LASER_SPEED  5
 #define RED_R 255
 #define RED_G 0
 #define RED_B 0
