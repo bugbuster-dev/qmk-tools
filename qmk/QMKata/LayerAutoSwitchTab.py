@@ -179,7 +179,7 @@ class LayerAutoSwitchTab(QWidget):
             return
         if len(focus_win) > 1 and "explorer.exe" in focus_win[1].strip():
             title = focus_win[2].strip() if len(focus_win) > 2 else ""
-            if not title:
+            if "File Explorer" not in title:
                 return
         self.update_winfocus_text(line)
         self.current_focus = line

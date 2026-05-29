@@ -118,7 +118,7 @@ class ModuleAutoSwitchTab(QWidget):
         focus_title = focus_parts[2].strip() if len(focus_parts) > 2 else ""
         if focus_title in ("Task Switching", "Task View"):
             return
-        if "explorer.exe" in focus_proc and not focus_title:
+        if "explorer.exe" in focus_proc and "File Explorer" not in focus_title:
             return
         self.update_winfocus_text(line)
         focus_parts = line.split("\t")
