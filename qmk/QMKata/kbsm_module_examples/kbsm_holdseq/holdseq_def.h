@@ -24,22 +24,26 @@ typedef struct {
     char expansion[HOLDSEQ_MAX_EXP_LEN];
 } holdseq_def_t;
 
+#define GIT_HOLD 	'\''
+#define SHELL_HOLD 	'/'
+
 /* Edit these definitions and rebuild. */
 static const holdseq_def_t module_holds[] = {
-    { ';', "co",  "git checkout " },
-    { ';', "cb",  "git checkout -b " },
-    { ';', "pl",   "git pull" },
-    { ';', "ps",   "git push" },
-    { ';', "pr",  "git pull --rebase " },
-    { ';', "cm",  "git commit -m \"\"" },
-    { ';', "s",   "git status" },
-    { '/', "ps",  "ps aux | grep " },
-    { '/', "du",  "du -sh * | sort -rh | head" },
-    { '/', "fi",  "find . -name " },
-    { '/', "ht",  "history | grep " },
-    { '/', "tx",  "tar xzf " },
-    { '/', "gr",  "grep -rn --include=\"*.c\" " },
-    { '/', "ls",  "ls -lah --g " },
+    { GIT_HOLD, "co",  "git checkout " },
+    { GIT_HOLD, "cb",  "git checkout -b " },
+    { GIT_HOLD, "pl",  "git pull" },
+    { GIT_HOLD, "pr",  "git pull --rebase " },
+    { GIT_HOLD, "ps",  "git push" },
+    { GIT_HOLD, "a",   "git add " },
+    { GIT_HOLD, "cm",  "git commit -m \"\"" },
+    { GIT_HOLD, "s",   "git status" },
+    { SHELL_HOLD, "ps",  "ps aux | grep " },
+    { SHELL_HOLD, "du",  "du -sh * | sort -rh | head" },
+    { SHELL_HOLD, "fi",  "find . -name " },
+    { SHELL_HOLD, "ht",  "history | grep " },
+    { SHELL_HOLD, "tx",  "tar xzf " },
+    { SHELL_HOLD, "gr",  "grep -rn --include=\"*.c\" " },
+    { SHELL_HOLD, "ll",  "ls -lah --g " },
 };
 #define MODULE_HOLDSEQ_COUNT (sizeof(module_holds) / sizeof(module_holds[0]))
 
@@ -140,6 +144,9 @@ static const holdseq_def_t module_holds[] = {
 #ifndef KC_SCLN
 #define KC_SCLN  0x0033
 #endif
+#ifndef KC_QUOT
+#define KC_QUOT  0x0034
+#endif
 #ifndef KC_ENTER
 #define KC_ENTER 0x0028
 #endif
@@ -164,7 +171,7 @@ static const keycode_char_t keycode_to_char[] = {
     { KC_U,'u' }, { KC_V,'v' }, { KC_W,'w' }, { KC_X,'x' },
     { KC_Y,'y' }, { KC_Z,'z' },
     { KC_SPACE, ' ' }, { KC_SLSH, '/' }, { KC_DOT, '.' },
-    { KC_MINUS, '-' }, { KC_COMM, ',' }, { KC_SCLN, ';' },
+    { KC_MINUS, '-' }, { KC_COMM, ',' }, { KC_SCLN, ';' }, { KC_QUOT, '\'' },
     { KC_ENTER, '\n' }, { KC_TAB, '\t' }, { KC_BSPC, '\b' },
     { 0, 0 }
 };
