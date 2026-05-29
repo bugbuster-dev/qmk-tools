@@ -322,6 +322,7 @@ class ModuleBuild:
             "-fno-asynchronous-unwind-tables",
             "-fno-exceptions",
             "-Wall",
+            "-Wno-unused-function",
             "-Werror",
             "-std=gnu11",
         ])
