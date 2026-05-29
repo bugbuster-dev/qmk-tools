@@ -1,1 +1,3 @@
 __pycache__/
+.opencode/
+qmk/QMKata/qmkata_config.json
