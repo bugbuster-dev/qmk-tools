@@ -39,6 +39,18 @@
 #ifndef KC_DOWN
 #define KC_DOWN  0x0051
 #endif
+#ifndef KC_LEFT
+#define KC_LEFT  0x0050
+#endif
+#ifndef KC_RIGHT
+#define KC_RIGHT 0x004F
+#endif
+#ifndef KC_H
+#define KC_H     0x000B
+#endif
+#ifndef KC_L
+#define KC_L     0x000F
+#endif
 
 typedef struct {
     uint16_t key1;
@@ -50,8 +62,10 @@ typedef struct {
 
 /* Edit these definitions and rebuild. */
 static const sticky_combo_def_t module_sticky_combos[] = {
-    /* Demo: J+K arms; J-held + tap K = Down; K-held + tap J = Up. */
+    /* J+K arms; J-held + tap K = Down; K-held + tap J = Up. */
     { KC_J, KC_K, KC_NO, KC_UP, KC_DOWN },
+    /* H+L arms; H-held + tap L = Right; L-held + tap H = Left. */
+    { KC_H, KC_L, KC_NO, KC_LEFT, KC_RIGHT },
 };
 
 #define MODULE_STICKY_COMBO_COUNT \
