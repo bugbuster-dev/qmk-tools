@@ -3,7 +3,6 @@
 #include "dynld_func.h"
 
 #define LASER_LENGTH    8
-#define LASER_COUNT     2
 #define LASER_RED_R     255
 #define LASER_RED_G       0
 #define LASER_RED_B       0
@@ -21,32 +20,17 @@ typedef struct {
 __attribute__((section(".text.entry")))
 bool effect_runner_func(dynld_custom_animation_env_t *anim_env,
                          effect_params_t *params) {
-    static laser_t lasers[LASER_COUNT];
+    static laser_t lasers[2];
     uint8_t speed = anim_env->rgb_config->speed;
     uint8_t skip = (speed >> 5) + 1;
 
     if (params->init) {
-        uint8_t valid_rows[MATRIX_ROWS];
-        uint8_t count = 0;
-        for (uint8_t r = 0; r < MATRIX_ROWS; r++) {
-            for (uint8_t c = 0; c < MATRIX_COLS; c++) {
-                if (anim_env->led_config->matrix_co[r][c] != 255) {
-                    valid_rows[count++] = r;
-                    break;
-                }
-            }
-        }
-        if (count < 2) count = 2;
-        uint32_t t = anim_env->time;
-        lasers[0].row = valid_rows[t % count];
+        lasers[0].row = 0;
         lasers[0].pos = 0;
         lasers[0].dir = 0;
         lasers[0].frame = 0;
-        lasers[1].row = valid_rows[(t / count) % count];
-        if (lasers[1].row == lasers[0].row) {
-            lasers[1].row = valid_rows[(t % count + 1) % count];
-        }
-        lasers[1].pos = 0;
+        lasers[1].row = MATRIX_ROWS - 1;
+        lasers[1].pos = MATRIX_COLS - 1;
         lasers[1].dir = 1;
         lasers[1].frame = 0;
     }
@@ -55,7 +39,7 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env,
         anim_env->set_color(i, 0, 0, 0);
     }
 
-    for (uint8_t l = 0; l < LASER_COUNT; l++) {
+    for (uint8_t l = 0; l < 2; l++) {
         lasers[l].frame++;
         if (lasers[l].frame >= skip) {
             lasers[l].frame = 0;
