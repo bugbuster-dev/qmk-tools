@@ -29,7 +29,7 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env,
         lasers[0].pos = 0;
         lasers[0].dir = 0;
         lasers[0].frame = 0;
-        lasers[1].row = MATRIX_ROWS - 1;
+        lasers[1].row = 2;
         lasers[1].pos = MATRIX_COLS - 1;
         lasers[1].dir = 1;
         lasers[1].frame = 0;
