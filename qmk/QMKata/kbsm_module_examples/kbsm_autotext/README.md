@@ -16,10 +16,10 @@ the configured expansion via `SEND_STRING`.
 - Type `idk` → host shows `I don't know`
 - Type `brb` → host shows `be right back`
 
-The typed trigger characters reach the host normally as you type. When
-a full match is detected, the module sends backspaces to delete them,
-then sends the expansion. This is the standard autotext approach —
-simple, predictable, no event deferral needed.
+Trigger characters reach the host normally until a full match is detected.
+The trigger-completing character is consumed, so it never reaches the host;
+the module backspaces only the already-sent prefix characters, then sends the
+expansion. This avoids the final character appearing after the expansion.
 
 ## How it differs from existing QMK features
 
@@ -71,9 +71,8 @@ python3 emulator/scripts/build_sram_module.py --feature autotext
 Produces `.build/kbsm_autotext.bin` (relocated for slot 8) and
 `.build/kbsm_autotext.json` (slot metadata).
 
-The host applies relocations against the SRAM slot address
-(`0x2000F000` for the default 4 KB carve-out at top of STM32F401xC SRAM,
-or wherever `g_module_sram` resolves in your firmware build).
+The helper resolves the firmware's actual `g_module_sram` address before
+applying relocations and the final CRC.
 
 Load the resulting `.bin` into slot 8 via the QMKata host tool.
 
@@ -123,7 +122,7 @@ The first exact match wins; the longer trigger never fires.
   know the host state was rewritten. Behavior is typically fine but
   not perfect.
 
-See `docs/plans/2026-05-24-autotext-design.md` in the firmware repo for
+See `keychron_qmk_firmware/docs/plans/2026-05-24-autotext-design.md` for
 the full design rationale and out-of-scope items.
 
 ## Volatility

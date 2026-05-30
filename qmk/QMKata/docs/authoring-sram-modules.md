@@ -42,18 +42,26 @@ Generate the SM code:
 ~/.local/bin/statesmith run --lang C99 --no-csx --no-ask path/to/yourname.puml
 ```
 
-Apply the GCC pragma guard manually (see `../../docs/installing-statesmith.md`
-in the firmware repo for the snippet). Generated files are committed to the
-repo so end users don't need StateSmith installed.
+Apply the GCC pragma guard manually (see
+`keychron_qmk_firmware/docs/installing-statesmith.md` for the snippet).
+Generated files are committed to the repo so end users don't need StateSmith
+installed.
 
 **StateSmith limitations in PlantUML mode (v0.21.0-alpha-1):**
 - `$VARS` is **not supported** — cannot declare struct fields via the diagram.
-  State lives in the adapter struct, not the generated SM struct.
+  Runtime context lives in the adapter struct; topology state lives in the
+  generated SM's `state_id`.
 - `[guard]` syntax on edge labels is **not supported** — use `<<choice>>`
   pseudo-states instead (see StateSmith wiki: "PlantUML → Layout Tip: Extra
   choice states").
 - Inline comments (`'`) on edge labels cause parse errors — comment on
   separate lines.
+
+**Do not mirror SM topology in adapter fields.** The generated SM's
+`state_id` is the single source of truth for states/modes/topology stages.
+Adapter fields should only hold runtime context the SM cannot store: `env`,
+`firing`, held keycodes, active config indices, buffers, timers, replay flags,
+etc.
 
 ### 3. Create the config header (`yourname_def.h`)
 
@@ -100,12 +108,13 @@ static const keycode_char_t keycode_to_char[] = {
 #include "Yourname.c"
 #include "yourname_def.h"
 
-/* State struct. Fields beyond the SM must live here (PlantUML $VARS
- * is unsupported in v0.21.0-alpha-1). */
+/* State struct. Runtime context beyond the SM must live here (PlantUML
+ * $VARS is unsupported in v0.21.0-alpha-1). Do not mirror topology state;
+ * use st->sm.state_id for the current StateSmith state. */
 typedef struct {
     Yourname sm;
     kbsm_env_t *env;
-    /* ... your fields ... */
+    /* ... context fields such as held keycodes, buffers, timers ... */
     bool firing;  // REQUIRED if you call tap_code16/send_string from handle()
 } yourname_state_t;
 
@@ -129,15 +138,16 @@ static char keycode_to_ascii(uint16_t kc) {
 static kbsm_result_t yourname_handle(void *self, keyevent_t *event,
                                       keyrecord_t *record) {
     yourname_state_t *st = (yourname_state_t *)self;
-    kbsm_env_t *env = st->env;
-    uint16_t kc = env->get_record_keycode(record, true);
 
     /* GUARD: fire_trigger() calls tap_code16/send_string which
      * generate synthetic keyevents that re-enter this handler.
      * Skip processing while firing to avoid corrupting state. */
     if (st->firing) return KBSM_PASS;
 
-    /* ... dispatch per state_id ... */
+    kbsm_env_t *env = st->env;
+    uint16_t kc = env->get_record_keycode(record, true);
+
+    /* ... dispatch using st->sm.state_id or StateSmith events ... */
 
     return KBSM_PASS;
 }
@@ -231,7 +241,7 @@ development. Go through this list before declaring a module "working."
 | 1 | **Inline char arrays, not pointers** | GCC doesn't emit R_ARM_ABS32 relocs for .rodata→.rodata pointer references. `const char *` fields in config tables point to firmware flash, not SRAM. | Use `char name[N]` inline arrays in all config structs. |
 | 2 | **`.bss` fields must be explicitly initialized** | SRAM modules have no C runtime. `static` locals in `.bss` are NOT zeroed at load time — they hold leftover SRAM bits. | Set every struct field in `module_init()`. |
 | 3 | **`firing` guard for self-reentry** | `tap_code16()` and `send_string()` called within `handle()` generate synthetic keyevents that go through the kbsm chain and re-enter the same handler. Without a guard, these corrupt buffer/state. | Add a `bool firing` field. Set `true` before calls, `false` after. Return `KBSM_PASS` immediately when `firing` is true. |
-| 4 | **Consume, then backspace (send-then-erase)** | When `KBSM_PASS` returns, the current keypress reaches the host AFTER `tap_code16`/`send_string` calls already ran. The trigger-completing char arrives after the expansion. | Use `KBSM_CONSUME` for the matching character, and backspace `(buffer_len-1)` chars (the consumed one never reached the host). |
+| 4 | **Consume the trigger-completing character** | When `KBSM_PASS` returns, the current keypress reaches the host AFTER `tap_code16`/`send_string` calls already ran. The trigger-completing char arrives after the expansion. | Use `KBSM_CONSUME` for the matching character, and backspace `(buffer_len-1)` chars (the consumed one never reached the host). |
 | 5 | **StateMachine inline comments break parsing** | StateSmith's PlantUML parser chokes on `' comment` at the end of edge labels (`mis matched input '''`). | Remove inline comments from edge labels; comment on separate lines. |
 | 6 | **Module source includes the generated `.c`** | `ModuleBuild` only compiles a single `.c`. Multiple source files are concatenated by `build_sram_module.py`. The `#include "Yourname.c"` in the module source is for standalone builds; the build script strips it from the concatenated file. | Always `#include "Yourname.c"` in the module source. |
 | 7 | **`.sim.html` is not committed** | StateSmith generates a `.sim.html` alongside `.c`/`.h`. | Don't commit it (matches existing examples). |
@@ -269,7 +279,7 @@ Modules run in priority order within `KBSM_PHASE_PRE_TAP`:
 | Priority | Module | Purpose |
 |---|---|---|
 | 40 | sticky_combo | Combo + tap-hold (low number = runs first) |
-| 50 | vim_modal | Modal layer (reserved, not loaded) |
+| 50 | vim_modal | Modal layer |
 | 60 | dyad | Hold primary, tap one secondary |
 | 65 | holdseq | Hold primary, tap variable-length sequence |
 | 70 | autotext | Abbreviation expansion (observation-only) |
@@ -297,6 +307,6 @@ python3 emulator/scripts/build_sram_module.py --feature yourname
 - `docs/sram-module-compilation.md` — compilation pipeline and `-fPIC` rationale
 - `docs/sram-module-relocation.md` — relocation pipeline and the .rodata→.rodata pointer gap
 - `module_api.h` — full ABI reference (hook indices, kbsm_env_t, kbsm_t)
-- `../../docs/sram-modules.md` (firmware repo) — SRAM module architecture overview
-- `../../docs/installing-statesmith.md` (firmware repo) — StateSmith setup
-- `../../quantum/features/README.md` (firmware repo) — feature table + when to use SM
+- `keychron_qmk_firmware/docs/sram-modules.md` — SRAM module architecture overview
+- `keychron_qmk_firmware/docs/installing-statesmith.md` — StateSmith setup
+- `keychron_qmk_firmware/quantum/features/README.md` — feature table + when to use SM

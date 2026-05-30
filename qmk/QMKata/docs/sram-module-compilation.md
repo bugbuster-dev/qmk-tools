@@ -15,10 +15,12 @@ the loader to a new MCU, read on.
   through PC-relative addressing.
 * Linker script `module_linker.ld` (or a generated variant for SRAM)
   links at **`ORIGIN = 0`**.
-* For SRAM modules, `.data` and `.bss` are kept in the binary blob.
-* No host-side relocation pass runs against the linked module — the
-  binary is uploaded verbatim and the loader writes it to a free SRAM
-  slot.
+* For SRAM modules, `.data` and `.bss` are kept in the MODULE address
+  layout. `.data` contents are copied; `.bss` storage must still be
+  explicitly initialized by `module_init()` because no C runtime clears it.
+* The host still runs `apply_relocations_and_crc()` before upload/load.
+  Healthy kbsm SRAM modules normally report **0 ABS32 relocs**, so this
+  step usually only sets the SRAM flag and final CRC.
 * The module's `module_init(env)` receives `env->module_base` set to the
   slot address. The current sticky-combo example does **not** need to
   use it because `-fPIC` already produces correct runtime addresses;
@@ -34,13 +36,15 @@ the loader to a new MCU, read on.
 | 1 | Compile `.c` → `.o` with the flag set below | `_compile()` |
 | 1.5 | If `target == 'flash'`, reject any module with writable sections (`.data`, `.bss`). SRAM modules skip this check. | `_validate_no_writable_sections()` |
 | 2 | Resolve undefined symbols against the firmware `.map` and generate a `symbols.ld` with `PROVIDE(name = 0x...)` for each. | `_resolve_symbols()` |
-| 2.5 | For `target == 'sram'`, generate a per-build linker script that *keeps* `.data` and `.bss` in the output (the stock script discards them). | inline in `build()` |
+| 2.5 | For `target == 'sram'`, generate a per-build linker script that *keeps* `.data` and `.bss` in the MODULE region (the stock script discards them). | inline in `build()` |
 | 3 | Link `.o` + `symbols.ld` against `module_linker.ld` (or the SRAM variant) | `GccToolchain.link()` |
 | 4 | `objcopy --output-target=binary` to strip the ELF wrapper. | `GccToolchain.elf2bin()` |
 | 5 | Read the raw binary, detect which hooks the module provides, and assemble the final blob (header + hook table + code). | `_assemble()` |
 
-The resulting `result['binary']` is what gets uploaded to the keyboard
-via QMKata's MIDI/HID transport.
+The resulting `result['binary']` is the pre-load module image. Before upload,
+QMKata or `emulator/scripts/build_sram_module.py` calls
+`apply_relocations_and_crc()` for the selected slot so the SRAM flag and final
+CRC match the bytes sent to the keyboard.
 
 ## Compile flags (`_compile`)
 
@@ -101,8 +105,8 @@ add  rX, pc            ; rX = (pc + 4 of the LDR) + delta = sym
 
 Because the literal pool stores a delta to `sym` (not `sym` itself),
 the computation gives the correct runtime SRAM address at any load
-offset. No host-side relocation pass and no runtime rebasing in the
-module is required.
+offset. No non-empty host-side relocation list and no runtime rebasing in
+the module are required.
 
 GCC chooses this sequence even though we link as `ET_EXEC` rather than
 `ET_DYN` / PIE. Linking as `-pie` was tried first but fails on
@@ -112,16 +116,16 @@ also tried; it produces ET_DYN but emits GOT-relative loads that
 require an initialised `r9` / GOT pointer at runtime, which we do not
 have. Plain `ET_EXEC` with `-fPIC` is the right combination.
 
-### Why we no longer rebase on the host
+### Why zero relocations are the steady state
 
 Earlier iterations of `ModuleBuild` extracted `R_ARM_ABS32` relocations
 from the linked ELF and patched the binary at upload time by adding
 `slot_addr` to each literal-pool entry. With `-fPIC` the compiler emits
 no such absolute literal-pool entries in the first place, so there is
-nothing left to rebase. The relocation-extraction code is kept in
-`ModuleBuild._extract_relocations()` for legacy / future compatibility,
-but `apply_relocations_and_crc()` is a no-op when the list is empty,
-which is the steady state today.
+nothing left to rebase in normal kbsm modules. The relocation-extraction
+code is kept in `ModuleBuild._extract_relocations()` for legacy / future
+compatibility, and `apply_relocations_and_crc()` still runs to set load
+flags and write the final CRC.
 
 ## Linker script
 
@@ -141,9 +145,10 @@ SECTIONS {
 
 For SRAM builds the discard rule is replaced (in
 `ModuleBuild.build()`) with explicit output sections that keep `.data`
-and `.bss` inside the MODULE region, so the binary blob contains
-zero-initialised state slots that the firmware writes into SRAM along
-with the code.
+and `.bss` inside the MODULE region. This gives static state a stable
+address in the SRAM slot, but module authors must still initialize every
+runtime field in `module_init()`; no C runtime clears `.bss` when the
+module is loaded.
 
 `.rodata` is merged into `.text` for PC-relative reachability — the
 GOT-less `LDR + ADD pc` sequence used by `-fPIC` can only reach a
@@ -164,14 +169,14 @@ The module binary layout, as built by `_assemble()`:
 +----------------------------+
 | .data (SRAM target only)   |
 +----------------------------+
-| .bss  (SRAM target only)   |
+| .bss storage (SRAM target only; not C-runtime-zeroed) |
 +----------------------------+
 ```
 
 On the firmware side, `module_loader.c`:
 
 1. Validates the header (magic / version / size / hook bitmap / CRC).
-2. For SRAM target, picks a free SRAM slot, copies the blob there
+2. For SRAM target, validates the requested SRAM slot, copies the blob there
    verbatim, and emits `DSB` / `ISB` to make the bytes visible to the
    instruction fetcher.
 3. Claims hook entries by storing the slot's `slot_addr + hook_offset`
@@ -182,13 +187,9 @@ On the firmware side, `module_loader.c`:
    `slot_addr + init_off | 1` (the `| 1` is the Thumb-bit invariant).
 5. Returns `true` to the host once `init` returns `MODULE_INIT_MAGIC`.
 
-The `env->module_base` value is currently informational. The example
-sticky-combo module ignores it because `-fPIC` already produces correct
-runtime pointers. A future module that wants to perform its own
-explicit pointer arithmetic (for example to compute an address that the
-compiler refuses to materialise via the PIC sequence) can add
-`env->module_base` to a link-time offset and obtain the runtime
-absolute address.
+The `env->module_base` value is informational. Do not use it to rebase
+normal C pointers: `-fPIC` already produces correct runtime addresses, and
+adding the base again double-counts the load address.
 
 ## Verifying the compiled output
 
@@ -235,6 +236,6 @@ flags — the resulting module will not work at the SRAM load address.
 The sticky-combo module had a bug where the first key of a combo was
 leaked to the host before the module knew whether the partner key would
 follow within the window. This was fixed by deferring the first press
-(via `SM_CONSUME`) and flushing on window expiry or third-key arrival.
+(via `KBSM_CONSUME`) and flushing on window expiry or third-key arrival.
 The same fix was applied to both the SRAM module and the firmware-built
 adapter. See `docs/plans/sticky-combo-fix.md` for the full analysis.

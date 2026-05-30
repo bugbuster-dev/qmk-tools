@@ -2,44 +2,31 @@
 
 ## The Problem
 
-An SRAM module is compiled independently from the firmware, linked against a stub linker script, and loaded at runtime into an arbitrary SRAM address (`g_module_sram`, typically `0x2000F000` or wherever the firmware carve-out lands). The module's `.text` and `.rodata` contain absolute addresses that were correct at compile time (when linked at address 0), but are wrong at runtime (when loaded at the actual SRAM address).
+An SRAM module is compiled independently from the firmware, linked at
+`ORIGIN = 0`, and loaded at runtime into a SRAM slot whose actual address
+is the firmware's `g_module_sram` symbol. Any absolute link-time address
+left in the module would point near `0x00000000` instead of the runtime
+SRAM address.
 
-## How Absolute Addresses Get Into the Binary
+## Current Model: Avoid Absolute Addresses
 
-Consider this C code in a module:
+Current kbsm SRAM modules are compiled with `-fPIC`. On Cortex-M Thumb-2,
+GCC emits PC-relative `LDR + ADD pc` sequences for internal function and
+data references, so references to `g_state`, `g_machine`, string literals,
+and generated StateSmith functions resolve correctly at any SRAM load
+address.
 
-```c
-static const char *msg = "hello";
-void foo(void) {
-    xprintf(msg);          // addr of "hello" in .rodata
-    xprintf(0x08012360);   // hardcoded firmware address
-}
+The expected build output for these modules is:
+
+```text
+relocs: 0 ABS32 entries
 ```
 
-GCC with `-fPIC` emits **position-independent** code for function calls (using PC-relative addressing via `LDR + ADD pc`). But for data symbols — addresses of `.rodata` strings, addresses of global variables, addresses in pointer tables — it emits **absolute 32-bit addresses** with `R_ARM_ABS32` relocation entries in the ELF.
-
-## The Relocation Pipeline
-
-### Step 1 — Build (compile + link)
-
-Module linked at address 0. The `.text` section contains absolute addresses like `0x000007e4` (the compile-time offset of `"hello"` in `.rodata`). The ELF file records these as `R_ARM_ABS32` relocations: "replace the 32-bit value at offset X with (symbol_addr + load_base)."
-
-### Step 2 — Host resolves relocations (qmk-tools ModuleBuild)
-
-The host reads the ELF's relocation table, extracts each `R_ARM_ABS32` entry, and adjusts the 32-bit value in the binary by adding the target slot address.
-
-Example:
-- Compile-time value at offset `0x100`: `0x000007E4` (string in .rodata)
-- Target slot address (g_module_sram): `0x2000F000`
-- Relocated value: `0x000007E4 + 0x2000F000 = 0x2000F7E4`
-
-### Step 3 — Load into SRAM
-
-The firmware's `module_sram_write()` copies the adjusted binary to the SRAM slot. The module's code now references `0x2000F7E4` instead of `0x000007E4` — correct for the runtime address.
-
-### Step 4 — Host recomputes CRC
-
-After applying relocations, the host computes a new CRC-32 over the modified binary and writes it into the `crc32` field of the 32-byte module header. The firmware verifies this CRC on every boot via `module_boot_scan()`.
+The host still runs `ModuleBuild.apply_relocations_and_crc()` before
+upload/load. With zero relocations this step only sets load flags and
+recomputes the final CRC. If future code produces `R_ARM_ABS32` entries,
+the host can rebase the extracted offsets against the target slot address,
+but zero relocations remains the target state for kbsm modules.
 
 ## The Critical Gap: `.rodata` → `.rodata` Pointers
 
@@ -57,7 +44,7 @@ The string literals `"teh"` and `"the"` live in `.rodata` at addresses like `0x0
 
 But **GCC does not mark these as relocatable** — it considers `.rodata`→`.rodata` references as "within the same section, known at link time" and does not emit `R_ARM_ABS32` entries.
 
-When the module loads into SRAM at `0x2000F000`:
+When the module loads into SRAM at example address `0x2000F000`:
 - The struct is at `0x2000F000 + offset_of_table`
 - The pointer field still holds `0x000007E4` (compile-time address, not runtime address)
 - Reading `trigger[0]` at that address returns garbage (it's in firmware flash, not SRAM)
@@ -97,7 +84,7 @@ static const autotext_def_t table[] = {
 
 The string data is now part of the struct itself — stored as arrays of bytes, not pointers. The data is copied to SRAM with the struct when the module loads. No pointer indirection, no relocation needed.
 
-**This pattern is used by all kbsm module examples** (sticky_combo, dyad, autotext, holdseq).
+**This pattern is used by all kbsm module examples** (sticky_combo, dyad, autotext, holdseq, vim_modal).
 
 ## Why Current Modules Show "0 ABS32 Relocs"
 
@@ -112,23 +99,25 @@ The build output shows zero relocations for our current modules because:
 
 The module is **fully position-independent** — it works at any load address without relocation.
 
-## When Relocations ARE Emitted
+## Relocation Audit Cases
 
-`R_ARM_ABS32` relocations will appear when:
+Current kbsm modules should show `0 ABS32 entries`. If the build reports a
+non-zero count, inspect why before loading it:
 
-| Pattern | Relocated? | Example |
+| Pattern | Expected result | Example |
 |---|---|---|
-| External firmware function pointer | Yes | `void (*fn)(void) = some_firmware_function;` |
-| `.text` → `.rodata` string address | Yes | `xprintf("hello")` in function body |
-| `.rodata` → `.rodata` pointer | **No** | `const char *ptr = "hello"` in a struct |
-| `.data` → `.rodata` pointer | **No** | Same as above but in `.data` section |
+| Internal code/data references with `-fPIC` | No ABS32; PC-relative | `g_state`, `g_machine`, generated SM functions |
+| Inline char arrays | No pointers to relocate | `char trigger[16]` inside a config struct |
+| `.rodata` → `.rodata` pointer | **Broken: no relocation emitted even though one would be needed** | `const char *ptr = "hello"` in a struct |
+| `.data` → `.rodata` pointer | **Broken for the same reason** | Pointer field initialized to a string literal |
+| External symbol address stored as data | May emit ABS32; audit carefully | `void (*fn)(void) = some_firmware_function;` |
 
 ## Lessons for Module Authors
 
 1. **Never use `const char *` in module data tables.** Use `char name[N]` inline arrays instead.
 2. **Assume 0 relocations is the target state** for kbsm SRAM modules. If you see non-zero relocs, audit for pointer fields or external symbol references.
 3. **Test with `trigger[0] != 0` early.** If a string field reads as `\0` at runtime when it should be a printable character, you've hit this bug.
-4. **The linker script places `.data` and `.bss` in the MODULE region** (not `/DISCARD/`), so writable globals are preserved in SRAM. For flash modules, writable globals are rejected.
+4. **The linker script places `.data` and `.bss` in the MODULE region** (not `/DISCARD/`), so writable globals have storage in SRAM. `.bss` is not C-runtime-zeroed; initialize runtime fields in `module_init()`. For flash modules, writable globals are rejected.
 
 ## Related
 

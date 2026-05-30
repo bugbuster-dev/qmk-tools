@@ -102,6 +102,18 @@ No additional fields can be declared through the diagram. The generated
 `_dispatch_event()`, `_ctor()`, and `_start()` functions handle topology
 (state transitions) only — no actions, no guards, no data beyond `state_id`.
 
+### State ownership rule
+
+The generated SM's `state_id` is the single source of truth for topology
+state. Do **not** duplicate it in adapter fields such as `mode`,
+`is_collecting`, or `active_state`. Adapter state should only hold runtime
+context the generated SM cannot store: `env`, `firing`, held keycodes,
+active table indices, buffers, timers, replay flags, and similar data.
+
+When behavior depends on the current state, inspect `st->sm.state_id` or
+dispatch a StateSmith event. Do not maintain a parallel adapter enum/boolean
+that mirrors the StateSmith state machine.
+
 ### Regeneration command
 
 ```bash
@@ -172,9 +184,10 @@ Fields hold whatever bits were left in SRAM from prior activity.
 **Symptom if violated:** `firing` guard stuck at `true`, permanently blocking
 the handler. Other fields garbage-initialized.
 
-**Note:** Using a designated initializer (`static my_state_t g_state = {.x = 0};`)
-puts the variable in `.data` instead of `.bss` — this also avoids the problem.
-Choose one approach and be consistent.
+**Note:** Do not rely on an all-zero designated initializer to move state out
+of `.bss`; GCC may still place all-zero static storage there. A non-zero
+initializer can put the object in `.data`, but modules should still initialize
+every runtime field in `module_init()` so reload behavior is explicit.
 
 ### 3. `firing` guard for synthetic event reentry
 
@@ -231,8 +244,9 @@ AFTER the backspaces + expansion already ran, corrupting the output (e.g.,
 The backspace count must be `buffer_len - 1` since that character was never
 sent.
 
-**When NOT needed:** For observation-only modules that never consume events
-(like autotext, which uses send-then-erase instead).
+**When NOT needed:** For true observation-only modules that never consume
+events. Autotext-like modules that consume the trigger-completing character
+must use this pattern.
 
 ### 5. Return `KBSM_CONSUME` for deferred-press decisions
 
@@ -437,14 +451,14 @@ relocs: 0 ABS32 entries
 - `hook_bitmap: 0x200018`
 - `relocs: 0 ABS32 entries`
 - `hooks: ['init', 'deinit', 'kbsm_get_machine']`
-- All existing modules (`sticky_combo`, `dyad`, `autotext`, `holdseq`) still build
+- All existing modules (`sticky_combo`, `dyad`, `autotext`, `holdseq`, `vim_modal`) still build
 
 ## Module priority ordering (current, do not disrupt)
 
 | Priority | Module | Role |
 |---|---|---|
 | 40 | sticky_combo | Combo + tap-hold |
-| 50 | vim_modal | Modal layer (reserved) |
+| 50 | vim_modal | Modal layer |
 | 60 | dyad | Hold + single tap |
 | 65 | holdseq | Hold + variable sequence |
 | 70 | autotext | Abbreviation expansion |

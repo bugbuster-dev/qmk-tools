@@ -31,21 +31,18 @@ Requires firmware built with:
 - `MODULE_SRAM_ENABLE = yes`
 - (Optional) `STICKY_COMBO_ENABLE = no` so the firmware copy doesn't double-register.
 
-Build the module via qmk-tools `ModuleBuild`, target slot `8` (default
-SRAM slot on Q3 Max). The host applies relocations against the SRAM
-slot address (`0x2000F000` for default 4 KB carve-out at top of the
-STM32F401xC 64 KB SRAM).
+From the firmware repo:
 
-```python
-# In a kb script:
-keyboard.module_load_from_source(
-    slot_id=8,
-    sources=[
-        "kbsm_module_examples/kbsm_sticky_combo/sticky_combo_module.c",
-        "kbsm_module_examples/kbsm_sticky_combo/StickyCombo.c",
-    ],
-)
+```bash
+python3 emulator/scripts/build_sram_module.py --feature sticky_combo
 ```
+
+Produces `.build/kbsm_sticky_combo.bin` (relocated for slot 8) and
+`.build/kbsm_sticky_combo.json` (slot metadata). The helper resolves the
+firmware's actual `g_module_sram` address before applying relocations and
+the final CRC.
+
+Load the resulting `.bin` into slot 8 via the QMKata host tool.
 
 ## Editing combos
 

@@ -43,7 +43,8 @@ IDLE → primary press → PRIMARY_HELD
 python3 emulator/scripts/build_sram_module.py --feature holdseq
 ```
 
-Produces `.build/kbsm_holdseq.bin` (2088 bytes, slot 8).
+Produces `.build/kbsm_holdseq.bin` (relocated for slot 8) and
+`.build/kbsm_holdseq.json` (slot metadata).
 
 ## Regenerating the SM
 
@@ -60,4 +61,5 @@ Produces `.build/kbsm_holdseq.bin` (2088 bytes, slot 8).
 - Replay on no-match uses `tap_code16` (bypasses kbsm chain — documented limitation)
 - Compile-time const config only (no EEPROM/QMKata runtime editing)
 
-See `docs/plans/2026-05-24-holdseq-design.md` for full design rationale.
+See `keychron_qmk_firmware/docs/plans/2026-05-24-holdseq-design.md` for full
+design rationale.

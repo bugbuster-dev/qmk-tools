@@ -73,9 +73,8 @@ python3 emulator/scripts/build_sram_module.py --feature dyad
 Produces `.build/kbsm_dyad.bin` (relocated for slot 8) and
 `.build/kbsm_dyad.json` (slot metadata).
 
-The host applies relocations against the SRAM slot address
-(`0x2000F000` for the default 4 KB carve-out at top of STM32F401xC SRAM,
-or wherever `g_module_sram` resolves in your firmware build).
+The helper resolves the firmware's actual `g_module_sram` address before
+applying relocations and the final CRC.
 
 Load the resulting `.bin` into slot 8 via the QMKata host tool.
 
@@ -115,8 +114,8 @@ this iteration loop is fast and flash-friendly.
 - **Output via `tap_code16` only.** Single-keycode outputs (incl.
   modifier-bearing macros like `LCTL(KC_A)`). No `SEND_STRING` support.
 
-See `docs/plans/2026-05-24-dyad-design.md` in the firmware repo for
-the full design rationale and out-of-scope items.
+See `keychron_qmk_firmware/docs/plans/2026-05-24-dyad-design.md` for the
+full design rationale and out-of-scope items.
 
 ## Volatility
 
