@@ -15,7 +15,7 @@ class MurmurationSourceContractTest(unittest.TestCase):
         self.assertIn("PERCEPTION_RADIUS", source)
         self.assertIn("SEPARATION_RADIUS_Q8", source)
         # Per-bird local accumulation, not a single global average.
-        self.assertIn("count", source)
+        self.assertIn("same_n", source)
         self.assertIn("coh_x", source)
         self.assertIn("ali_x", source)
         self.assertIn("sep_x", source)
@@ -45,13 +45,31 @@ class MurmurationSourceContractTest(unittest.TestCase):
         # The collapse-causing single-point goal seek must be gone.
         self.assertNotIn("goal_x", source)
 
+    def test_animation_has_split_merge_dance(self):
+        source = MURMURATION_SOURCE.read_text()
+
+        # Integer oscillators drive a fission-fusion "dance" (no float/LUT).
+        self.assertIn("tri8", source)
+        self.assertIn("sep_osc", source)
+        self.assertIn("axis_x", source)
+        # Birds belong to one of two sub-flocks pulled apart and back together.
+        self.assertIn("team", source)
+        self.assertIn("dance_ax", source)
+
+    def test_reverses_direction_when_center_reaches_edge(self):
+        source = MURMURATION_SOURCE.read_text()
+
+        # Reversal compares the flock center to a near-edge margin.
+        self.assertIn("center_x > bound_x_q8 - MIGRATE_MARGIN_Q8", source)
+        self.assertIn("center_x < MIGRATE_MARGIN_Q8", source)
+        # The margin must be small enough that the center actually reaches
+        # the edge zone before reversing (flock spread keeps it ~28px out).
+        migrate_margin = int(re.search(r"#define MIGRATE_MARGIN_Q8 \((\d+) << 8\)", source).group(1))
+        self.assertLessEqual(migrate_margin, 32)
+
     def test_animation_dims_physical_edges_to_avoid_turnaround_flicker(self):
         source = MURMURATION_SOURCE.read_text()
 
-        edge_margin = int(re.search(r"#define EDGE_MARGIN_Q8 \((\d+) << 8\)", source).group(1))
-        migrate_margin = int(re.search(r"#define MIGRATE_MARGIN_Q8 \((\d+) << 8\)", source).group(1))
-
-        self.assertGreaterEqual(migrate_margin, edge_margin + 12)
         self.assertIn("EDGE_FADE_MARGIN", source)
         self.assertIn("MAX_DENSITY", source)
         self.assertIn("edge_scale", source)

@@ -6,17 +6,24 @@
 #define MAX_SPEED_Q8 150
 #define EDGE_MARGIN_Q8 (24 << 8)
 #define EDGE_FORCE_Q8 18
-#define MIGRATE_MARGIN_Q8 (40 << 8)
-#define CRUISE_Q8 80
+#define MIGRATE_MARGIN_Q8 (32 << 8)
+#define CRUISE_Q8 64
 #define EDGE_FADE_MARGIN 32
 #define MAX_DENSITY 220
-#define PERCEPTION_RADIUS 34
+#define PERCEPTION_RADIUS 44
 #define PERCEPTION_RADIUS_SQ (PERCEPTION_RADIUS * PERCEPTION_RADIUS)
 #define SEPARATION_RADIUS_Q8 (12 << 8)
 #define SEPARATION_RADIUS (SEPARATION_RADIUS_Q8 >> 8)
 #define SEPARATION_RADIUS_SQ (SEPARATION_RADIUS * SEPARATION_RADIUS)
 #define RENDER_RADIUS 18
 #define RENDER_RADIUS_SQ (RENDER_RADIUS * RENDER_RADIUS)
+/* Fission-fusion dance: the two sub-flocks aim at center +/- a breathing
+ * offset along a slowly rotating axis. Because the offset is bounded, the
+ * split distance is bounded too — the flocks always stay close enough to
+ * reconnect and then merge again when the offset breathes back to zero. */
+#define SPLIT_OFFSET_SHIFT 6   /* scales oscillator product down to px */
+#define SPLIT_OFFSET_MAX 32    /* px; caps how far the flocks separate */
+#define SPLIT_STEER_SHIFT 2    /* how firmly birds seek their sub-flock */
 
 typedef struct {
     int32_t x;
@@ -35,6 +42,20 @@ static inline int16_t clamp_speed(int16_t v) {
     if (v > MAX_SPEED_Q8) return MAX_SPEED_Q8;
     if (v < -MAX_SPEED_Q8) return -MAX_SPEED_Q8;
     return v;
+}
+
+static inline int16_t clamp_offset(int16_t v) {
+    if (v > SPLIT_OFFSET_MAX) return SPLIT_OFFSET_MAX;
+    if (v < -SPLIT_OFFSET_MAX) return -SPLIT_OFFSET_MAX;
+    return v;
+}
+
+/* Integer triangle wave approximating a sine over 0..255 -> ~[-128,128].
+ * Drives the dance oscillator; no float / LUT needed. */
+static inline int16_t tri8(uint8_t p) {
+    if (p < 64) return (int16_t)(p * 2);
+    if (p < 192) return (int16_t)(128 - (p - 64) * 2);
+    return (int16_t)(-128 + (p - 192) * 2);
 }
 
 __attribute__((section(".text.entry")))
@@ -67,73 +88,95 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
     int32_t bound_x_q8 = (int32_t)cached_max_x << 8;
     int32_t bound_y_q8 = (int32_t)cached_max_y << 8;
 
-    /* Migration: reverse the cruise direction when the flock's center
-     * approaches a side. This drives net side-to-side travel without a
-     * shared attractor point (which would collapse the flock to a clump). */
-    int32_t center_x = 0;
-    for (int i = 0; i < BIRD_COUNT; i++) center_x += birds[i].x;
+    /* Global flock center (Q8). Used for migration and as the pivot the two
+     * sub-flocks split around. */
+    int32_t center_x = 0, center_y = 0;
+    for (int i = 0; i < BIRD_COUNT; i++) {
+        center_x += birds[i].x;
+        center_y += birds[i].y;
+    }
     center_x /= BIRD_COUNT;
+    center_y /= BIRD_COUNT;
+    int16_t center_xp = (int16_t)(center_x >> 8);
+    int16_t center_yp = (int16_t)(center_y >> 8);
 
+    /* Migration: reverse cruise direction when the whole flock nears a side,
+     * so the dancing mass also drifts across the panel. */
     if (center_x > bound_x_q8 - MIGRATE_MARGIN_Q8) travel_dir = -1;
     else if (center_x < MIGRATE_MARGIN_Q8) travel_dir = 1;
-
     int16_t cruise_vx = (int16_t)(travel_dir * CRUISE_Q8);
+
+    /* Dance oscillators. sep_osc breathes the split open (>0) and shut (<=0);
+     * axis_x/axis_y slowly rotate the split direction. The per-team target
+     * offset is bounded so the flocks can never fully separate. */
+    uint8_t ph  = (uint8_t)((anim_env->time >> 6) & 0xFF);
+    uint8_t aph = (uint8_t)((anim_env->time >> 7) & 0xFF);
+    int16_t sep_osc = tri8(ph);
+    int16_t axis_x  = tri8(aph);
+    int16_t axis_y  = tri8((uint8_t)(aph + 64));
+    int16_t split = sep_osc > 0 ? sep_osc : 0;
+    int16_t off_x = clamp_offset((int16_t)((split * axis_x) >> SPLIT_OFFSET_SHIFT));
+    int16_t off_y = clamp_offset((int16_t)((split * axis_y) >> SPLIT_OFFSET_SHIFT));
 
     for (int i = 0; i < BIRD_COUNT; i++) {
         bird_t *b = &birds[i];
-        int32_t sum_cx = 0, sum_cy = 0;   /* neighbor positions (px) */
-        int32_t sum_vx = 0, sum_vy = 0;   /* neighbor velocities (Q8) */
-        int32_t sep_x = 0, sep_y = 0;     /* short-range repulsion (px) */
-        int16_t count = 0;
-
+        int16_t team = (i & 1) ? 1 : -1;
         int16_t bxp = (int16_t)(b->x >> 8);
         int16_t byp = (int16_t)(b->y >> 8);
 
-        /* Local neighborhood only — this is what produces murmuration
-         * shimmer instead of a single rigid blob. */
+        int32_t same_cx = 0, same_cy = 0, same_vx = 0, same_vy = 0;
+        int32_t sep_x = 0, sep_y = 0;
+        int16_t same_n = 0;
+
+        /* Local neighborhood among same-team birds: cohesion + alignment
+         * keep each sub-flock tight. Separation (any neighbor) avoids
+         * overlap. This locality gives the murmuration shimmer. */
         for (int j = 0; j < BIRD_COUNT; j++) {
             if (i == j) continue;
 
             int16_t dx = bxp - (int16_t)(birds[j].x >> 8);
             int16_t dy = byp - (int16_t)(birds[j].y >> 8);
             int32_t dist_sq = (int32_t)dx * dx + (int32_t)dy * dy;
+            if (dist_sq >= PERCEPTION_RADIUS_SQ) continue;
 
-            if (dist_sq < PERCEPTION_RADIUS_SQ) {
-                count++;
-                sum_cx += (int16_t)(birds[j].x >> 8);
-                sum_cy += (int16_t)(birds[j].y >> 8);
-                sum_vx += birds[j].vx;
-                sum_vy += birds[j].vy;
-
-                if (dist_sq < SEPARATION_RADIUS_SQ) {
-                    sep_x += dx;
-                    sep_y += dy;
-                }
+            if (((i ^ j) & 1) == 0) {
+                same_n++;
+                same_cx += (int16_t)(birds[j].x >> 8);
+                same_cy += (int16_t)(birds[j].y >> 8);
+                same_vx += birds[j].vx;
+                same_vy += birds[j].vy;
+            }
+            if (dist_sq < SEPARATION_RADIUS_SQ) {
+                sep_x += dx;
+                sep_y += dy;
             }
         }
 
-        int16_t coh_x = 0, coh_y = 0;   /* toward local center (px) */
-        int16_t ali_x = 0, ali_y = 0;   /* match local heading (Q8) */
-        if (count > 0) {
-            coh_x = (int16_t)(anim_env->math_funs->div((int)sum_cx, count) - bxp);
-            coh_y = (int16_t)(anim_env->math_funs->div((int)sum_cy, count) - byp);
-            ali_x = (int16_t)(anim_env->math_funs->div((int)sum_vx, count) - b->vx);
-            ali_y = (int16_t)(anim_env->math_funs->div((int)sum_vy, count) - b->vy);
+        int16_t coh_x = 0, coh_y = 0;
+        int16_t ali_x = 0, ali_y = 0;
+        if (same_n > 0) {
+            coh_x = (int16_t)(anim_env->math_funs->div((int)same_cx, same_n) - bxp);
+            coh_y = (int16_t)(anim_env->math_funs->div((int)same_cy, same_n) - byp);
+            ali_x = (int16_t)(anim_env->math_funs->div((int)same_vx, same_n) - b->vx);
+            ali_y = (int16_t)(anim_env->math_funs->div((int)same_vy, same_n) - b->vy);
         }
 
-        /* Steering: separation (strong, short range) + alignment +
-         * cohesion (weak) + migration cruise bias. */
-        int16_t ax = (int16_t)(sep_x << 3) + (ali_x >> 2) + (coh_x >> 1) +
-                     ((cruise_vx - b->vx) >> 3);
-        int16_t ay = (int16_t)(sep_y << 3) + (ali_y >> 2) + (coh_y >> 1) +
-                     ((-b->vy) >> 4);
+        /* Each team seeks center +/- the breathing offset: the two flocks
+         * pull apart as the offset opens and rejoin as it closes. */
+        int16_t target_x = center_xp + team * off_x;
+        int16_t target_y = center_yp + team * off_y;
+        int16_t dance_ax = (int16_t)((target_x - bxp) >> SPLIT_STEER_SHIFT);
+        int16_t dance_ay = (int16_t)((target_y - byp) >> SPLIT_STEER_SHIFT);
 
-        /* Tiny deterministic flutter for organic motion. */
+        int16_t ax = (int16_t)(sep_x << 3) + (ali_x >> 2) + (coh_x >> 3) +
+                     ((cruise_vx - b->vx) >> 4) + dance_ax;
+        int16_t ay = (int16_t)(sep_y << 3) + (ali_y >> 2) + (coh_y >> 3) +
+                     ((-b->vy) >> 4) + dance_ay;
+
         uint8_t flutter = (uint8_t)(((anim_env->time >> 6) + i * 17) & 7);
         ax += (int16_t)flutter - 3;
         ay += 3 - (int16_t)((flutter + i) & 7);
 
-        /* Soft edge avoidance keeps birds inside the panel. */
         if (b->x < EDGE_MARGIN_Q8) ax += EDGE_FORCE_Q8;
         if (b->x > bound_x_q8 - EDGE_MARGIN_Q8) ax -= EDGE_FORCE_Q8;
         if (b->y < EDGE_MARGIN_Q8) ay += EDGE_FORCE_Q8;
