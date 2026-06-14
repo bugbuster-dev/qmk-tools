@@ -21,8 +21,8 @@ typedef struct {
 } particle_t;
 
 static particle_t particles[64];
-static uint8_t cached_max_x = 0;
-static uint8_t cached_max_y = 0;
+static uint16_t cached_max_x = 0;
+static uint16_t cached_max_y = 0;
 static bool initialized = false;
 
 __attribute__((section(".text.entry")))
