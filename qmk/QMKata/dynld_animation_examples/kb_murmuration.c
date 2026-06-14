@@ -16,6 +16,8 @@ static inline int16_t q_cos(int16_t theta) {
 typedef struct {
     int32_t x;
     int32_t y;
+    int16_t vx;  // velocity Q8.8
+    int16_t vy;  // velocity Q8.8
 } particle_t;
 
 static particle_t particles[64];
@@ -36,13 +38,15 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
             particles[i].x = (int16_t)(seed % (cached_max_x + 1)) << 8;
             seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF;
             particles[i].y = (int16_t)(seed % (cached_max_y + 1)) << 8;
+            particles[i].vx = 0;
+            particles[i].vy = 0;
         }
         initialized = true;
     }
 
-    uint32_t t = anim_env->time / 10;
-    const uint16_t scale1 = 100;
-    const uint16_t scale2 = 200;
+    uint32_t t = anim_env->time / 80;
+    int32_t bound_x_q8 = (int32_t)(cached_max_x + 1) << 8;
+    int32_t bound_y_q8 = (int32_t)(cached_max_y + 1) << 8;
 
     for (int i = 0; i < RGB_MATRIX_LED_COUNT; i++) {
         HSV clear = {0, 0, 0};
@@ -54,14 +58,22 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
         int16_t x_int = p->x >> 8;
         int16_t y_int = p->y >> 8;
 
-        int16_t dx = q_sin((int16_t)(t + y_int * scale1)) + q_cos((int16_t)(t + x_int * scale2));
-        int16_t dy = q_cos((int16_t)(t + x_int * scale1)) + q_sin((int16_t)(t + y_int * scale2));
-        
+        /* Smooth flow field - low spatial frequency for large-scale swirls */
+        int16_t fx = q_sin((int16_t)(t + (x_int * 8 + y_int * 3))) +
+                     q_cos((int16_t)(t + (x_int * 5 - y_int * 7)));
+        int16_t fy = q_cos((int16_t)(t + (x_int * 6 + y_int * 2))) +
+                     q_sin((int16_t)(t - (x_int * 4 + y_int * 9)));
+
+        /* Blend flow direction into existing velocity (inertia) */
+        p->vx = (p->vx * 14 + fx) >> 4;
+        p->vy = (p->vy * 14 + fy) >> 4;
+
+        /* Scale velocity down for graceful movement */
+        int16_t dx = p->vx >> 2;
+        int16_t dy = p->vy >> 2;
+
         p->x += dx;
         p->y += dy;
-
-        int32_t bound_x_q8 = (int32_t)(cached_max_x + 1) << 8;
-        int32_t bound_y_q8 = (int32_t)(cached_max_y + 1) << 8;
 
         while (p->x < 0) p->x += bound_x_q8;
         while (p->x >= bound_x_q8) p->x -= bound_x_q8;
@@ -86,11 +98,15 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
         }
 
         if (closest_led != -1) {
+            /* Hue from flow angle, brightness from speed */
             int32_t vel_sq = (int32_t)dx * dx + (int32_t)dy * dy;
+            uint8_t hue = (uint8_t)((px * 13 + py * 29 + t * 3) & 0xFF);
+            uint8_t val = (uint8_t)((vel_sq >> 4) > 255 ? 255 : (vel_sq >> 4));
+            if (val < 64) val = 64;
             HSV hsv = {
-                .h = (uint8_t)((vel_sq * 255) / 524288),
-                .s = 255,
-                .v = 255
+                .h = hue,
+                .s = 200,
+                .v = val
             };
             anim_env->set_color_hsv(closest_led, hsv);
         }
