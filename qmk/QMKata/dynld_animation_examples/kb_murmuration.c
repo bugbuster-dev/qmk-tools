@@ -60,6 +60,13 @@ static inline int16_t tri8(uint8_t p) {
 
 __attribute__((section(".text.entry")))
 bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t *params) {
+    /* QMK's rgb_matrix splits one render frame into multiple iter chunks
+     * (~5 for an 87-LED panel). If we advance bird physics on every call,
+     * birds move N times faster than the time-based dance oscillator and
+     * hammer the edges. Run physics + full re-render only on the first
+     * chunk; later chunks reuse the framebuffer values from iter 0. */
+    if (params->iter != 0) return false;
+
     if (!initialized) {
         for (int led = 0; led < RGB_MATRIX_LED_COUNT; led++) {
             if (anim_env->led_config->point[led].x > cached_max_x) cached_max_x = anim_env->led_config->point[led].x;

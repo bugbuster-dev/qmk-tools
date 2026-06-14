@@ -76,5 +76,15 @@ class MurmurationSourceContractTest(unittest.TestCase):
         self.assertIn("density = (density * edge_scale) >> 8", source)
 
 
+    def test_only_updates_state_once_per_frame(self):
+        source = MURMURATION_SOURCE.read_text()
+
+        # QMK calls effect_runner_func once per LED chunk (~5x per frame).
+        # Bird physics must advance only on the first chunk (iter == 0),
+        # otherwise birds move N times faster than the dance oscillator.
+        self.assertIn("params->iter", source)
+        self.assertIn("params->iter != 0", source)
+
+
 if __name__ == "__main__":
     unittest.main()
