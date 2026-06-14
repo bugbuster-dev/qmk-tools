@@ -4,10 +4,12 @@
 
 #define BIRD_COUNT 24
 #define MAX_SPEED_Q8 150
-#define EDGE_MARGIN_Q8 (16 << 8)
+#define EDGE_MARGIN_Q8 (24 << 8)
 #define EDGE_FORCE_Q8 18
 #define SWEEP_SPEED_Q8 28
-#define TARGET_MARGIN_Q8 (18 << 8)
+#define TARGET_MARGIN_Q8 (42 << 8)
+#define EDGE_FADE_MARGIN 32
+#define MAX_DENSITY 220
 #define SEPARATION_RADIUS_Q8 (11 << 8)
 #define SEPARATION_RADIUS (SEPARATION_RADIUS_Q8 >> 8)
 #define SEPARATION_RADIUS_SQ (SEPARATION_RADIUS * SEPARATION_RADIUS)
@@ -163,6 +165,10 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
         int16_t lx = anim_env->led_config->point[led].x;
         int16_t ly = anim_env->led_config->point[led].y;
         uint16_t density = 0;
+        uint16_t edge_dist = (uint16_t)lx;
+        uint16_t right_dist = cached_max_x - (uint16_t)lx;
+        uint16_t bottom_dist = cached_max_y - (uint16_t)ly;
+        uint16_t edge_scale = 255;
 
         for (int i = 0; i < BIRD_COUNT; i++) {
             int16_t dx = (int16_t)(birds[i].x >> 8) - lx;
@@ -173,7 +179,15 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
             }
         }
 
-        if (density > 255) density = 255;
+        if ((uint16_t)ly < edge_dist) edge_dist = (uint16_t)ly;
+        if (right_dist < edge_dist) edge_dist = right_dist;
+        if (bottom_dist < edge_dist) edge_dist = bottom_dist;
+        if (edge_dist < EDGE_FADE_MARGIN) {
+            edge_scale = 96 + ((edge_dist * 160) >> 5);
+        }
+
+        if (density > MAX_DENSITY) density = MAX_DENSITY;
+        density = (density * edge_scale) >> 8;
         HSV hsv = {
             .h = (uint8_t)(145 + (density >> 4)),
             .s = 90,

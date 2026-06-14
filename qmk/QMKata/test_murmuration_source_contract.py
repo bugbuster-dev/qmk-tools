@@ -1,4 +1,5 @@
 import unittest
+import re
 from pathlib import Path
 
 
@@ -38,6 +39,18 @@ class MurmurationSourceContractTest(unittest.TestCase):
         self.assertIn("travel_dir = -travel_dir", source)
         self.assertIn("target_x +=", source)
         self.assertIn("target_x - b->x", source)
+
+    def test_animation_dims_physical_edges_to_avoid_turnaround_flicker(self):
+        source = MURMURATION_SOURCE.read_text()
+
+        edge_margin = int(re.search(r"#define EDGE_MARGIN_Q8 \((\d+) << 8\)", source).group(1))
+        target_margin = int(re.search(r"#define TARGET_MARGIN_Q8 \((\d+) << 8\)", source).group(1))
+
+        self.assertGreaterEqual(target_margin, edge_margin + 12)
+        self.assertIn("EDGE_FADE_MARGIN", source)
+        self.assertIn("MAX_DENSITY", source)
+        self.assertIn("edge_scale", source)
+        self.assertIn("density = (density * edge_scale) >> 8", source)
 
 
 if __name__ == "__main__":
