@@ -11,6 +11,6 @@ static particle_t particles[64];
 static bool initialized = false;
 
 __attribute__((section(".text.entry")))
-bool effect_runner_func(void) {
+bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t *params) {
     return false;
 }
