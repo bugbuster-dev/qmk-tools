@@ -76,6 +76,16 @@ class MurmurationSourceContractTest(unittest.TestCase):
         self.assertIn("density = (density * edge_scale) >> 8", source)
 
 
+    def test_bird_state_uses_compact_q8_position_storage(self):
+        source = MURMURATION_SOURCE.read_text()
+
+        bird_struct = re.search(r"typedef struct \{(?P<body>.*?)\} bird_t;", source, re.S).group("body")
+        self.assertIn("uint16_t x;", bird_struct)
+        self.assertIn("uint16_t y;", bird_struct)
+        self.assertNotIn("int32_t x;", bird_struct)
+        self.assertNotIn("int32_t y;", bird_struct)
+
+
     def test_vertical_motion_stays_inside_six_row_matrix(self):
         source = MURMURATION_SOURCE.read_text()
 
@@ -86,7 +96,7 @@ class MurmurationSourceContractTest(unittest.TestCase):
         self.assertIn("MIDLINE_RECENTER_SHIFT", source)
         self.assertIn("mid_y", source)
         self.assertIn("mid_y - byp", source)
-        self.assertIn("b->y += (((int32_t)mid_y << 8) - b->y) >> MIDLINE_RECENTER_SHIFT", source)
+        self.assertIn("next_y += (((int32_t)mid_y << 8) - next_y) >> MIDLINE_RECENTER_SHIFT", source)
         vertical_offset = int(re.search(r"#define VERTICAL_OFFSET_MAX (\d+)", source).group(1))
         self.assertLessEqual(vertical_offset, 10)
 

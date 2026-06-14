@@ -28,8 +28,10 @@
 #define MIDLINE_RECENTER_SHIFT 3
 
 typedef struct {
-    int32_t x;
-    int32_t y;
+    /* Q8 coordinates are non-negative and fit in uint16_t on the Q3 Max.
+     * Keeping them compact prevents static state from overrunning dynld RAM. */
+    uint16_t x;
+    uint16_t y;
     int16_t vx;
     int16_t vy;
 } bird_t;
@@ -79,12 +81,12 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
             seed ^= seed << 13;
             seed ^= seed >> 17;
             seed ^= seed << 5;
-            birds[i].x = (int32_t)anim_env->math_funs->mod((int)(seed >> 8), cached_max_x + 1) << 8;
+            birds[i].x = (uint16_t)(anim_env->math_funs->mod((int)(seed >> 8), cached_max_x + 1) << 8);
 
             seed ^= seed << 13;
             seed ^= seed >> 17;
             seed ^= seed << 5;
-            birds[i].y = (int32_t)anim_env->math_funs->mod((int)(seed >> 8), cached_max_y + 1) << 8;
+            birds[i].y = (uint16_t)(anim_env->math_funs->mod((int)(seed >> 8), cached_max_y + 1) << 8);
 
             birds[i].vx = CRUISE_Q8;
             birds[i].vy = (int16_t)((((i >> 2) & 3) - 1) * 16);
@@ -192,25 +194,29 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
 
         b->vx = clamp_speed(b->vx + ax);
         b->vy = clamp_speed(b->vy + ay);
-        b->x += b->vx;
-        b->y += b->vy;
-        b->y += (((int32_t)mid_y << 8) - b->y) >> MIDLINE_RECENTER_SHIFT;
 
-        if (b->x < 0) {
-            b->x = 0;
+        int32_t next_x = (int32_t)b->x + b->vx;
+        int32_t next_y = (int32_t)b->y + b->vy;
+        next_y += (((int32_t)mid_y << 8) - next_y) >> MIDLINE_RECENTER_SHIFT;
+
+        if (next_x < 0) {
+            next_x = 0;
             if (b->vx < 0) b->vx = -b->vx >> 1;
-        } else if (b->x > bound_x_q8) {
-            b->x = bound_x_q8;
+        } else if (next_x > bound_x_q8) {
+            next_x = bound_x_q8;
             if (b->vx > 0) b->vx = -b->vx >> 1;
         }
 
-        if (b->y < 0) {
-            b->y = 0;
+        if (next_y < 0) {
+            next_y = 0;
             if (b->vy < 0) b->vy = -b->vy >> 1;
-        } else if (b->y > bound_y_q8) {
-            b->y = bound_y_q8;
+        } else if (next_y > bound_y_q8) {
+            next_y = bound_y_q8;
             if (b->vy > 0) b->vy = -b->vy >> 1;
         }
+
+        b->x = (uint16_t)next_x;
+        b->y = (uint16_t)next_y;
     }
 
     for (int led = 0; led < RGB_MATRIX_LED_COUNT; led++) {

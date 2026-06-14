@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from GccToolchain import GccToolchain
-from ModuleBuild import ModuleBuild
+from ModuleBuild import DYNLD_FUNC_SIZE, ModuleBuild
 from keyboards.KeychronQ3Max import KeychronQ3Max
 
 
@@ -12,6 +12,19 @@ ROOT = Path(__file__).resolve().parent
 FIRMWARE_ROOT = ROOT.parents[2] / "keychron_qmk_firmware"
 EXAMPLE_MODULE = ROOT / "module_examples" / "combo_layer_filter.c"
 NULL_MODULE = ROOT / "module_examples" / "null_module.c"
+
+
+class DynldFootprintTest(unittest.TestCase):
+    def test_dynld_footprint_counts_bss_after_uploaded_text(self):
+        sections = {
+            ".text": (0, 1304),
+            ".bss": (1304, 296),
+        }
+
+        footprint = ModuleBuild._dynld_memory_footprint(sections)
+
+        self.assertEqual(1600, footprint)
+        self.assertGreater(footprint, DYNLD_FUNC_SIZE)
 
 
 @unittest.skipUnless(shutil.which("arm-none-eabi-gcc"), "requires ARM toolchain")

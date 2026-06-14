@@ -41,6 +41,9 @@ MODULE_SRAM_SLOT_SIZE    = 0x1000
 # address from the firmware .map file via GccMapfile. Tests use this.
 MODULE_SRAM_DEFAULT_BASE = 0x2000F000
 
+# Must match firmware qmkata_sysex_handler.c dynld_func_buf slot size.
+DYNLD_FUNC_SIZE = 1536
+
 # Hook name → index mapping (human-readable). Keys are the QMK
 # callback names a module overrides; values are the indices defined
 # in firmware module_loader.h / host module_api.h. The C constants
@@ -124,6 +127,14 @@ class ModuleBuild:
         self.last_error = None
         self.module_api_header = os.path.join(os.path.dirname(__file__), "module_api.h")
         self.linker_script = os.path.join(os.path.dirname(__file__), "module_linker.ld")
+
+    @staticmethod
+    def _dynld_memory_footprint(section_ranges):
+        footprint = 0
+        for _name, (addr, size) in section_ranges.items():
+            if size > 0:
+                footprint = max(footprint, addr + size)
+        return footprint
 
     def build(self, source_file, target='flash'):
         """Build a module from C source file.
@@ -244,19 +255,35 @@ class ModuleBuild:
                 return None
 
             # Step 3.5: Extract section sizes from ELF for logging
+            dynld_memory_footprint = 0
             try:
                 from elftools.elf.elffile import ELFFile
                 section_sizes = {}
+                section_ranges = {}
                 with open(elf_file, "rb") as f:
                     elf = ELFFile(f)
                     for sec in elf.iter_sections():
-                        if sec['sh_size'] > 0 and sec.name in (".text", ".data", ".bss", ".rodata"):
-                            section_sizes[sec.name] = sec['sh_size']
+                        size = sec['sh_size']
+                        if size <= 0:
+                            continue
+                        if sec['sh_flags'] & 0x2:  # SHF_ALLOC
+                            section_ranges[sec.name] = (sec['sh_addr'], size)
+                        if sec.name in (".text", ".data", ".bss", ".rodata"):
+                            section_sizes[sec.name] = size
                 if section_sizes:
                     sizes_str = ", ".join(f"{k}: 0x{v:x}" for k, v in section_sizes.items())
                     print(f"  dynld sections: {sizes_str}")
+                dynld_memory_footprint = self._dynld_memory_footprint(section_ranges)
             except Exception:
                 pass
+
+            if dynld_memory_footprint > DYNLD_FUNC_SIZE:
+                self.last_error = (
+                    f"dynld memory footprint is {dynld_memory_footprint} bytes "
+                    f"(max {DYNLD_FUNC_SIZE})"
+                )
+                print(f"E: {self.last_error}")
+                return None
 
             # Step 4: objcopy to binary (no _assemble — raw code only)
             bin_file = os.path.join(tmpdir, "module.bin")
@@ -267,8 +294,8 @@ class ModuleBuild:
             with open(bin_file, "rb") as f:
                 bin_data = f.read()
 
-            if len(bin_data) > 1536:
-                print(f"W: dynld binary is {len(bin_data)} bytes (max 1536), may not fit")
+            if len(bin_data) > DYNLD_FUNC_SIZE:
+                print(f"W: dynld binary is {len(bin_data)} bytes (max {DYNLD_FUNC_SIZE}), may not fit")
             return bin_data
 
     def _compile(self, source_file, obj_file):
