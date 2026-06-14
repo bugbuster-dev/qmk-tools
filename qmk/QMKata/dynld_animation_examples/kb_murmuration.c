@@ -6,11 +6,13 @@
 #define MAX_SPEED_Q8 150
 #define EDGE_MARGIN_Q8 (24 << 8)
 #define EDGE_FORCE_Q8 18
-#define SWEEP_SPEED_Q8 28
-#define TARGET_MARGIN_Q8 (42 << 8)
+#define MIGRATE_MARGIN_Q8 (40 << 8)
+#define CRUISE_Q8 80
 #define EDGE_FADE_MARGIN 32
 #define MAX_DENSITY 220
-#define SEPARATION_RADIUS_Q8 (11 << 8)
+#define PERCEPTION_RADIUS 34
+#define PERCEPTION_RADIUS_SQ (PERCEPTION_RADIUS * PERCEPTION_RADIUS)
+#define SEPARATION_RADIUS_Q8 (12 << 8)
 #define SEPARATION_RADIUS (SEPARATION_RADIUS_Q8 >> 8)
 #define SEPARATION_RADIUS_SQ (SEPARATION_RADIUS * SEPARATION_RADIUS)
 #define RENDER_RADIUS 18
@@ -26,8 +28,6 @@ typedef struct {
 static bird_t birds[BIRD_COUNT];
 static uint16_t cached_max_x = 0;
 static uint16_t cached_max_y = 0;
-static int32_t target_x = 0;
-static int32_t target_y = 0;
 static int8_t travel_dir = 0;
 static bool initialized = false;
 
@@ -57,83 +57,83 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
             seed ^= seed << 5;
             birds[i].y = (int32_t)anim_env->math_funs->mod((int)(seed >> 8), cached_max_y + 1) << 8;
 
-            birds[i].vx = (int16_t)(((i & 3) - 1) * 32);
-            birds[i].vy = (int16_t)((((i >> 2) & 3) - 1) * 24);
+            birds[i].vx = CRUISE_Q8;
+            birds[i].vy = (int16_t)((((i >> 2) & 3) - 1) * 16);
         }
-        target_x = TARGET_MARGIN_Q8;
-        target_y = (int32_t)cached_max_y << 7;
         travel_dir = 1;
         initialized = true;
     }
 
     int32_t bound_x_q8 = (int32_t)cached_max_x << 8;
     int32_t bound_y_q8 = (int32_t)cached_max_y << 8;
-    int32_t left_target = TARGET_MARGIN_Q8;
-    int32_t right_target = bound_x_q8 - TARGET_MARGIN_Q8;
+
+    /* Migration: reverse the cruise direction when the flock's center
+     * approaches a side. This drives net side-to-side travel without a
+     * shared attractor point (which would collapse the flock to a clump). */
     int32_t center_x = 0;
-    int32_t center_y = 0;
-    int32_t avg_vx = 0;
-    int32_t avg_vy = 0;
-
-    if (right_target <= left_target) {
-        left_target = 0;
-        right_target = bound_x_q8;
-    }
-
-    target_x += (int32_t)travel_dir * SWEEP_SPEED_Q8;
-    if (target_x >= right_target) {
-        target_x = right_target;
-        travel_dir = -travel_dir;
-    } else if (target_x <= left_target) {
-        target_x = left_target;
-        travel_dir = -travel_dir;
-    }
-
-    target_y = bound_y_q8 >> 1;
-
-    for (int i = 0; i < BIRD_COUNT; i++) {
-        center_x += birds[i].x;
-        center_y += birds[i].y;
-        avg_vx += birds[i].vx;
-        avg_vy += birds[i].vy;
-    }
-
+    for (int i = 0; i < BIRD_COUNT; i++) center_x += birds[i].x;
     center_x /= BIRD_COUNT;
-    center_y /= BIRD_COUNT;
-    avg_vx /= BIRD_COUNT;
-    avg_vy /= BIRD_COUNT;
+
+    if (center_x > bound_x_q8 - MIGRATE_MARGIN_Q8) travel_dir = -1;
+    else if (center_x < MIGRATE_MARGIN_Q8) travel_dir = 1;
+
+    int16_t cruise_vx = (int16_t)(travel_dir * CRUISE_Q8);
 
     for (int i = 0; i < BIRD_COUNT; i++) {
         bird_t *b = &birds[i];
-        int32_t separate_x = 0;
-        int32_t separate_y = 0;
+        int32_t sum_cx = 0, sum_cy = 0;   /* neighbor positions (px) */
+        int32_t sum_vx = 0, sum_vy = 0;   /* neighbor velocities (Q8) */
+        int32_t sep_x = 0, sep_y = 0;     /* short-range repulsion (px) */
+        int16_t count = 0;
 
+        int16_t bxp = (int16_t)(b->x >> 8);
+        int16_t byp = (int16_t)(b->y >> 8);
+
+        /* Local neighborhood only — this is what produces murmuration
+         * shimmer instead of a single rigid blob. */
         for (int j = 0; j < BIRD_COUNT; j++) {
             if (i == j) continue;
 
-            int16_t dx = (int16_t)((b->x - birds[j].x) >> 8);
-            int16_t dy = (int16_t)((b->y - birds[j].y) >> 8);
+            int16_t dx = bxp - (int16_t)(birds[j].x >> 8);
+            int16_t dy = byp - (int16_t)(birds[j].y >> 8);
             int32_t dist_sq = (int32_t)dx * dx + (int32_t)dy * dy;
-            if (dist_sq > 0 && dist_sq < SEPARATION_RADIUS_SQ) {
-                separate_x += dx;
-                separate_y += dy;
+
+            if (dist_sq < PERCEPTION_RADIUS_SQ) {
+                count++;
+                sum_cx += (int16_t)(birds[j].x >> 8);
+                sum_cy += (int16_t)(birds[j].y >> 8);
+                sum_vx += birds[j].vx;
+                sum_vy += birds[j].vy;
+
+                if (dist_sq < SEPARATION_RADIUS_SQ) {
+                    sep_x += dx;
+                    sep_y += dy;
+                }
             }
         }
 
-        int16_t flock_x = (int16_t)((center_x - b->x) >> 8);
-        int16_t flock_y = (int16_t)((center_y - b->y) >> 8);
-        int16_t goal_x = (int16_t)((target_x - b->x) >> 8);
-        int16_t goal_y = (int16_t)((target_y - b->y) >> 8);
+        int16_t coh_x = 0, coh_y = 0;   /* toward local center (px) */
+        int16_t ali_x = 0, ali_y = 0;   /* match local heading (Q8) */
+        if (count > 0) {
+            coh_x = (int16_t)(anim_env->math_funs->div((int)sum_cx, count) - bxp);
+            coh_y = (int16_t)(anim_env->math_funs->div((int)sum_cy, count) - byp);
+            ali_x = (int16_t)(anim_env->math_funs->div((int)sum_vx, count) - b->vx);
+            ali_y = (int16_t)(anim_env->math_funs->div((int)sum_vy, count) - b->vy);
+        }
 
-        int16_t ax = (goal_x >> 2) + (flock_x >> 4) +
-                     (int16_t)((avg_vx - b->vx) >> 3) + (int16_t)(separate_x << 4);
-        int16_t ay = (goal_y >> 2) + (flock_y >> 4) +
-                     (int16_t)((avg_vy - b->vy) >> 3) + (int16_t)(separate_y << 4);
+        /* Steering: separation (strong, short range) + alignment +
+         * cohesion (weak) + migration cruise bias. */
+        int16_t ax = (int16_t)(sep_x << 3) + (ali_x >> 2) + (coh_x >> 1) +
+                     ((cruise_vx - b->vx) >> 3);
+        int16_t ay = (int16_t)(sep_y << 3) + (ali_y >> 2) + (coh_y >> 1) +
+                     ((-b->vy) >> 4);
 
+        /* Tiny deterministic flutter for organic motion. */
         uint8_t flutter = (uint8_t)(((anim_env->time >> 6) + i * 17) & 7);
         ax += (int16_t)flutter - 3;
         ay += 3 - (int16_t)((flutter + i) & 7);
 
+        /* Soft edge avoidance keeps birds inside the panel. */
         if (b->x < EDGE_MARGIN_Q8) ax += EDGE_FORCE_Q8;
         if (b->x > bound_x_q8 - EDGE_MARGIN_Q8) ax -= EDGE_FORCE_Q8;
         if (b->y < EDGE_MARGIN_Q8) ay += EDGE_FORCE_Q8;
