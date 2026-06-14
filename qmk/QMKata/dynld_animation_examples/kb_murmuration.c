@@ -23,7 +23,9 @@
  * reconnect and then merge again when the offset breathes back to zero. */
 #define SPLIT_OFFSET_SHIFT 6   /* scales oscillator product down to px */
 #define SPLIT_OFFSET_MAX 32    /* px; caps how far the flocks separate */
+#define VERTICAL_OFFSET_MAX 0  /* px; keep split horizontal on six-row matrix */
 #define SPLIT_STEER_SHIFT 2    /* how firmly birds seek their sub-flock */
+#define MIDLINE_RECENTER_SHIFT 3
 
 typedef struct {
     int32_t x;
@@ -50,6 +52,12 @@ static inline int16_t clamp_offset(int16_t v) {
     return v;
 }
 
+static inline int16_t clamp_vertical_offset(int16_t v) {
+    if (v > VERTICAL_OFFSET_MAX) return VERTICAL_OFFSET_MAX;
+    if (v < -VERTICAL_OFFSET_MAX) return -VERTICAL_OFFSET_MAX;
+    return v;
+}
+
 /* Integer triangle wave approximating a sine over 0..255 -> ~[-128,128].
  * Drives the dance oscillator; no float / LUT needed. */
 static inline int16_t tri8(uint8_t p) {
@@ -60,13 +68,6 @@ static inline int16_t tri8(uint8_t p) {
 
 __attribute__((section(".text.entry")))
 bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t *params) {
-    /* QMK's rgb_matrix splits one render frame into multiple iter chunks
-     * (~5 for an 87-LED panel). If we advance bird physics on every call,
-     * birds move N times faster than the time-based dance oscillator and
-     * hammer the edges. Run physics + full re-render only on the first
-     * chunk; later chunks reuse the framebuffer values from iter 0. */
-    if (params->iter != 0) return false;
-
     if (!initialized) {
         for (int led = 0; led < RGB_MATRIX_LED_COUNT; led++) {
             if (anim_env->led_config->point[led].x > cached_max_x) cached_max_x = anim_env->led_config->point[led].x;
@@ -105,7 +106,7 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
     center_x /= BIRD_COUNT;
     center_y /= BIRD_COUNT;
     int16_t center_xp = (int16_t)(center_x >> 8);
-    int16_t center_yp = (int16_t)(center_y >> 8);
+    int16_t mid_y = (int16_t)(cached_max_y >> 1);
 
     /* Migration: reverse cruise direction when the whole flock nears a side,
      * so the dancing mass also drifts across the panel. */
@@ -123,7 +124,7 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
     int16_t axis_y  = tri8((uint8_t)(aph + 64));
     int16_t split = sep_osc > 0 ? sep_osc : 0;
     int16_t off_x = clamp_offset((int16_t)((split * axis_x) >> SPLIT_OFFSET_SHIFT));
-    int16_t off_y = clamp_offset((int16_t)((split * axis_y) >> SPLIT_OFFSET_SHIFT));
+    int16_t off_y = clamp_vertical_offset((int16_t)((split * axis_y) >> SPLIT_OFFSET_SHIFT));
 
     for (int i = 0; i < BIRD_COUNT; i++) {
         bird_t *b = &birds[i];
@@ -171,14 +172,14 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
         /* Each team seeks center +/- the breathing offset: the two flocks
          * pull apart as the offset opens and rejoin as it closes. */
         int16_t target_x = center_xp + team * off_x;
-        int16_t target_y = center_yp + team * off_y;
+        int16_t target_y = mid_y + team * off_y;
         int16_t dance_ax = (int16_t)((target_x - bxp) >> SPLIT_STEER_SHIFT);
         int16_t dance_ay = (int16_t)((target_y - byp) >> SPLIT_STEER_SHIFT);
 
         int16_t ax = (int16_t)(sep_x << 3) + (ali_x >> 2) + (coh_x >> 3) +
                      ((cruise_vx - b->vx) >> 4) + dance_ax;
         int16_t ay = (int16_t)(sep_y << 3) + (ali_y >> 2) + (coh_y >> 3) +
-                     ((-b->vy) >> 4) + dance_ay;
+                     ((-b->vy) >> 4) + ((mid_y - byp) >> 2) + dance_ay;
 
         uint8_t flutter = (uint8_t)(((anim_env->time >> 6) + i * 17) & 7);
         ax += (int16_t)flutter - 3;
@@ -193,6 +194,7 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
         b->vy = clamp_speed(b->vy + ay);
         b->x += b->vx;
         b->y += b->vy;
+        b->y += (((int32_t)mid_y << 8) - b->y) >> MIDLINE_RECENTER_SHIFT;
 
         if (b->x < 0) {
             b->x = 0;
@@ -225,7 +227,8 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
             int16_t dy = (int16_t)(birds[i].y >> 8) - ly;
             int32_t dist_sq = (int32_t)dx * dx + (int32_t)dy * dy;
             if (dist_sq < RENDER_RADIUS_SQ) {
-                density += (uint16_t)(72 - (dist_sq >> 2));
+                int16_t contrib = (int16_t)(72 - (dist_sq >> 2));
+                if (contrib > 0) density += (uint16_t)contrib;
             }
         }
 

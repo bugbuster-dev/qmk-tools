@@ -76,14 +76,19 @@ class MurmurationSourceContractTest(unittest.TestCase):
         self.assertIn("density = (density * edge_scale) >> 8", source)
 
 
-    def test_only_updates_state_once_per_frame(self):
+    def test_vertical_motion_stays_inside_six_row_matrix(self):
         source = MURMURATION_SOURCE.read_text()
 
-        # QMK calls effect_runner_func once per LED chunk (~5x per frame).
-        # Bird physics must advance only on the first chunk (iter == 0),
-        # otherwise birds move N times faster than the dance oscillator.
-        self.assertIn("params->iter", source)
-        self.assertIn("params->iter != 0", source)
+        # The Q3 Max RGB matrix is only 64px tall. Split/merge may happen
+        # across X, but Y must stay near the keyboard midline so the flock
+        # remains visible on all rows instead of escaping into the top rows.
+        self.assertIn("VERTICAL_OFFSET_MAX", source)
+        self.assertIn("MIDLINE_RECENTER_SHIFT", source)
+        self.assertIn("mid_y", source)
+        self.assertIn("mid_y - byp", source)
+        self.assertIn("b->y += (((int32_t)mid_y << 8) - b->y) >> MIDLINE_RECENTER_SHIFT", source)
+        vertical_offset = int(re.search(r"#define VERTICAL_OFFSET_MAX (\d+)", source).group(1))
+        self.assertLessEqual(vertical_offset, 10)
 
 
 if __name__ == "__main__":
