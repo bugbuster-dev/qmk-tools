@@ -28,6 +28,17 @@ class MurmurationSourceContractTest(unittest.TestCase):
         self.assertIn("density", source)
         self.assertIn("anim_env->set_color_hsv(led, hsv)", source)
 
+    def test_animation_has_independent_side_to_side_migration_target(self):
+        source = MURMURATION_SOURCE.read_text()
+
+        self.assertIn("SWEEP_SPEED_Q8", source)
+        self.assertIn("target_x", source)
+        self.assertIn("target_y", source)
+        self.assertIn("travel_dir", source)
+        self.assertIn("travel_dir = -travel_dir", source)
+        self.assertIn("target_x +=", source)
+        self.assertIn("target_x - b->x", source)
+
 
 if __name__ == "__main__":
     unittest.main()

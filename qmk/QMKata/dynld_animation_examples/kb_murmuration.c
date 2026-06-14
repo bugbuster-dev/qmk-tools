@@ -6,6 +6,8 @@
 #define MAX_SPEED_Q8 150
 #define EDGE_MARGIN_Q8 (16 << 8)
 #define EDGE_FORCE_Q8 18
+#define SWEEP_SPEED_Q8 28
+#define TARGET_MARGIN_Q8 (18 << 8)
 #define SEPARATION_RADIUS_Q8 (11 << 8)
 #define SEPARATION_RADIUS (SEPARATION_RADIUS_Q8 >> 8)
 #define SEPARATION_RADIUS_SQ (SEPARATION_RADIUS * SEPARATION_RADIUS)
@@ -22,6 +24,9 @@ typedef struct {
 static bird_t birds[BIRD_COUNT];
 static uint16_t cached_max_x = 0;
 static uint16_t cached_max_y = 0;
+static int32_t target_x = 0;
+static int32_t target_y = 0;
+static int8_t travel_dir = 0;
 static bool initialized = false;
 
 static inline int16_t clamp_speed(int16_t v) {
@@ -53,15 +58,36 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
             birds[i].vx = (int16_t)(((i & 3) - 1) * 32);
             birds[i].vy = (int16_t)((((i >> 2) & 3) - 1) * 24);
         }
+        target_x = TARGET_MARGIN_Q8;
+        target_y = (int32_t)cached_max_y << 7;
+        travel_dir = 1;
         initialized = true;
     }
 
     int32_t bound_x_q8 = (int32_t)cached_max_x << 8;
     int32_t bound_y_q8 = (int32_t)cached_max_y << 8;
+    int32_t left_target = TARGET_MARGIN_Q8;
+    int32_t right_target = bound_x_q8 - TARGET_MARGIN_Q8;
     int32_t center_x = 0;
     int32_t center_y = 0;
     int32_t avg_vx = 0;
     int32_t avg_vy = 0;
+
+    if (right_target <= left_target) {
+        left_target = 0;
+        right_target = bound_x_q8;
+    }
+
+    target_x += (int32_t)travel_dir * SWEEP_SPEED_Q8;
+    if (target_x >= right_target) {
+        target_x = right_target;
+        travel_dir = -travel_dir;
+    } else if (target_x <= left_target) {
+        target_x = left_target;
+        travel_dir = -travel_dir;
+    }
+
+    target_y = bound_y_q8 >> 1;
 
     for (int i = 0; i < BIRD_COUNT; i++) {
         center_x += birds[i].x;
@@ -92,11 +118,15 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
             }
         }
 
-        int16_t ax = (int16_t)((center_x - b->x) >> 8);
-        int16_t ay = (int16_t)((center_y - b->y) >> 8);
+        int16_t flock_x = (int16_t)((center_x - b->x) >> 8);
+        int16_t flock_y = (int16_t)((center_y - b->y) >> 8);
+        int16_t goal_x = (int16_t)((target_x - b->x) >> 8);
+        int16_t goal_y = (int16_t)((target_y - b->y) >> 8);
 
-        ax = (ax >> 3) + (int16_t)((avg_vx - b->vx) >> 3) + (int16_t)(separate_x << 4);
-        ay = (ay >> 3) + (int16_t)((avg_vy - b->vy) >> 3) + (int16_t)(separate_y << 4);
+        int16_t ax = (goal_x >> 2) + (flock_x >> 4) +
+                     (int16_t)((avg_vx - b->vx) >> 3) + (int16_t)(separate_x << 4);
+        int16_t ay = (goal_y >> 2) + (flock_y >> 4) +
+                     (int16_t)((avg_vy - b->vy) >> 3) + (int16_t)(separate_y << 4);
 
         uint8_t flutter = (uint8_t)(((anim_env->time >> 6) + i * 17) & 7);
         ax += (int16_t)flutter - 3;
