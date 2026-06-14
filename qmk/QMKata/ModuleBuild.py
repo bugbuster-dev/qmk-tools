@@ -267,8 +267,8 @@ class ModuleBuild:
             with open(bin_file, "rb") as f:
                 bin_data = f.read()
 
-            if len(bin_data) > 1024:
-                print(f"W: dynld binary is {len(bin_data)} bytes (max 1024), may not fit")
+            if len(bin_data) > 1536:
+                print(f"W: dynld binary is {len(bin_data)} bytes (max 1536), may not fit")
             return bin_data
 
     def _compile(self, source_file, obj_file):
