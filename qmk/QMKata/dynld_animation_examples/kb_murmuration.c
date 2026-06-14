@@ -7,22 +7,23 @@
 #define M_PI 3.1415926535f
 #endif
 
-static inline int16_t q_sin(dynld_custom_animation_env_t *env, int16_t theta) {
+static inline int16_t q_sin(int16_t theta) {
     return (int16_t)(sinf((float)theta * (2.0f * M_PI / 65536.0f)) * 256.0f);
 }
 
-static inline int16_t q_cos(dynld_custom_animation_env_t *env, int16_t theta) {
+static inline int16_t q_cos(int16_t theta) {
     return (int16_t)(cosf((float)theta * (2.0f * M_PI / 65536.0f)) * 256.0f);
 }
 
 typedef struct {
-    int16_t x;
-    int16_t y;
+    int32_t x;
+    int32_t y;
 } particle_t;
 
 static particle_t particles[64];
 static uint8_t cached_max_x = 0;
 static uint8_t cached_max_y = 0;
+static bool initialized = false;
 
 __attribute__((section(".text.entry")))
 bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t *params) {
@@ -50,19 +51,19 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
         int16_t x_int = p->x >> 8;
         int16_t y_int = p->y >> 8;
 
-        int16_t dx = q_sin(anim_env, (int16_t)(t + y_int * scale1)) + q_cos(anim_env, (int16_t)(t + x_int * scale2));
-        int16_t dy = q_cos(anim_env, (int16_t)(t + x_int * scale1)) + q_sin(anim_env, (int16_t)(t + y_int * scale2));
+        int16_t dx = q_sin((int16_t)(t + y_int * scale1)) + q_cos((int16_t)(t + x_int * scale2));
+        int16_t dy = q_cos((int16_t)(t + x_int * scale1)) + q_sin((int16_t)(t + y_int * scale2));
         
         p->x += dx;
         p->y += dy;
 
-        int16_t bound_x_q8 = (int16_t)(cached_max_x + 1) << 8;
-        int16_t bound_y_q8 = (int16_t)(cached_max_y + 1) << 8;
+        int32_t bound_x_q8 = (int32_t)(cached_max_x + 1) << 8;
+        int32_t bound_y_q8 = (int32_t)(cached_max_y + 1) << 8;
 
-        if (p->x < 0) p->x += bound_x_q8;
-        else if (p->x >= bound_x_q8) p->x -= bound_x_q8;
-        if (p->y < 0) p->y += bound_y_q8;
-        else if (p->y >= bound_y_q8) p->y -= bound_y_q8;
+        while (p->x < 0) p->x += bound_x_q8;
+        while (p->x >= bound_x_q8) p->x -= bound_x_q8;
+        while (p->y < 0) p->y += bound_y_q8;
+        while (p->y >= bound_y_q8) p->y -= bound_y_q8;
     }
 
     return false;
