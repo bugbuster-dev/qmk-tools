@@ -1,6 +1,15 @@
 #include "info_config.h"
 #include "rgb_matrix.h"
 #include "dynld_func.h"
+#include <math.h>
+
+static inline int16_t q_sin(dynld_custom_animation_env_t *env, int16_t theta) {
+    return (int16_t)(sinf((float)theta / 256.0f) * 256.0f);
+}
+
+static inline int16_t q_cos(dynld_custom_animation_env_t *env, int16_t theta) {
+    return (int16_t)(cosf((float)theta / 256.0f) * 256.0f);
+}
 
 typedef struct {
     int16_t x;
