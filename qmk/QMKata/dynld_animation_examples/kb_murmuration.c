@@ -46,6 +46,11 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
     const uint16_t scale1 = 100;
     const uint16_t scale2 = 200;
 
+    for (int i = 0; i < RGB_MATRIX_LED_COUNT; i++) {
+        HSV clear = {0, 0, 0};
+        anim_env->set_color_hsv(i, clear);
+    }
+
     for (int i = 0; i < 64; i++) {
         particle_t *p = &particles[i];
         int16_t x_int = p->x >> 8;
@@ -64,6 +69,33 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
         while (p->x >= bound_x_q8) p->x -= bound_x_q8;
         while (p->y < 0) p->y += bound_y_q8;
         while (p->y >= bound_y_q8) p->y -= bound_y_q8;
+
+        int32_t min_dist_sq = 0x7FFFFFFF;
+        int closest_led = -1;
+        int16_t px = p->x >> 8;
+        int16_t py = p->y >> 8;
+
+        for (int j = 0; j < RGB_MATRIX_LED_COUNT; j++) {
+            int16_t lx = anim_env->led_config->point[j].x;
+            int16_t ly = anim_env->led_config->point[j].y;
+            int32_t ddx = px - lx;
+            int32_t ddy = py - ly;
+            int32_t dist_sq = ddx * ddx + ddy * ddy;
+            if (dist_sq < min_dist_sq) {
+                min_dist_sq = dist_sq;
+                closest_led = j;
+            }
+        }
+
+        if (closest_led != -1) {
+            float vel = sqrtf((float)dx * dx + (float)dy * dy);
+            HSV hsv = {
+                .h = (uint8_t)((vel / 362.0f) * 255.0f),
+                .s = 255,
+                .v = 255
+            };
+            anim_env->set_color_hsv(closest_led, hsv);
+        }
     }
 
     return false;
