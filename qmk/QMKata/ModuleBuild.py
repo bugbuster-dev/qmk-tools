@@ -42,7 +42,7 @@ MODULE_SRAM_SLOT_SIZE    = 0x1000
 MODULE_SRAM_DEFAULT_BASE = 0x2000F000
 
 # Must match firmware qmkata_sysex_handler.c dynld_func_buf slot size.
-DYNLD_FUNC_SIZE = 1536
+DYNLD_FUNC_SIZE = 2048
 
 # Hook name → index mapping (human-readable). Keys are the QMK
 # callback names a module overrides; values are the indices defined
