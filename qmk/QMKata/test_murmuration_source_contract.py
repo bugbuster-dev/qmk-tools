@@ -86,19 +86,29 @@ class MurmurationSourceContractTest(unittest.TestCase):
         self.assertNotIn("int32_t y;", bird_struct)
 
 
-    def test_vertical_motion_stays_inside_six_row_matrix(self):
+    def test_vertical_motion_uses_full_panel_height(self):
         source = MURMURATION_SOURCE.read_text()
 
-        # The Q3 Max RGB matrix is only 64px tall. Split/merge may happen
-        # across X, but Y must stay near the keyboard midline so the flock
-        # remains visible on all rows instead of escaping into the top rows.
+        # Vertical split must be enabled so the dance can swing the
+        # flock up and down across the matrix.
         self.assertIn("VERTICAL_OFFSET_MAX", source)
-        self.assertIn("MIDLINE_RECENTER_SHIFT", source)
-        self.assertIn("mid_y", source)
-        self.assertIn("mid_y - byp", source)
-        self.assertIn("next_y += (((int32_t)mid_y << 8) - next_y) >> MIDLINE_RECENTER_SHIFT", source)
-        vertical_offset = int(re.search(r"#define VERTICAL_OFFSET_MAX (\d+)", source).group(1))
-        self.assertLessEqual(vertical_offset, 10)
+        vertical_offset = int(
+            re.search(r"#define VERTICAL_OFFSET_MAX (\d+)", source).group(1))
+        self.assertGreaterEqual(vertical_offset, 12)
+
+        # The midline recentering and the per-bird pull toward mid_y are
+        # both removed so birds aren't snapped back to the centre row.
+        self.assertNotIn("MIDLINE_RECENTER_SHIFT", source)
+        self.assertNotIn("mid_y - byp", source)
+        self.assertNotRegex(
+            source,
+            r"next_y\s*\+=\s*\(\(\(int32_t\)mid_y\s*<<\s*8\)\s*-\s*next_y\)",
+        )
+
+        # Dance still uses mid_y as the vertical pivot via target_y.
+        self.assertIn("target_y", source)
+        self.assertIn("axis_y", source)
+        self.assertIn("clamp_vertical_offset", source)
 
     def test_reinitializes_when_effect_runner_signals_init(self):
         source = MURMURATION_SOURCE.read_text()

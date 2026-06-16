@@ -24,9 +24,8 @@
  * reconnect and then merge again when the offset breathes back to zero. */
 #define SPLIT_OFFSET_SHIFT 6   /* scales oscillator product down to px */
 #define SPLIT_OFFSET_MAX 32    /* px; caps how far the flocks separate */
-#define VERTICAL_OFFSET_MAX 0  /* px; keep split horizontal on six-row matrix */
+#define VERTICAL_OFFSET_MAX 16  /* px; half of the matrix half-height */
 #define SPLIT_STEER_SHIFT 2    /* how firmly birds seek their sub-flock */
-#define MIDLINE_RECENTER_SHIFT 3
 
 typedef struct {
     /* Q8 coordinates are non-negative and fit in uint16_t on the Q3 Max.
@@ -55,8 +54,14 @@ static inline int16_t clamp_offset(int16_t v) {
     return v;
 }
 
-/* clamp_vertical_offset is unnecessary while VERTICAL_OFFSET_MAX == 0
- * (off_y is always 0). Re-add it if you ever raise the vertical range. */
+/* Vertical split mirrors clamp_offset but uses VERTICAL_OFFSET_MAX so
+ * the dance's vertical swing can be capped independently of the
+ * horizontal one (the matrix is much shorter than it is wide). */
+static inline int16_t clamp_vertical_offset(int16_t v) {
+    if (v >  VERTICAL_OFFSET_MAX) return  VERTICAL_OFFSET_MAX;
+    if (v < -VERTICAL_OFFSET_MAX) return -VERTICAL_OFFSET_MAX;
+    return v;
+}
 
 /* Integer triangle wave approximating a sine over 0..255 -> ~[-128,128].
  * Drives the dance oscillator; no float / LUT needed. */
@@ -132,12 +137,10 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
     uint8_t aph = (uint8_t)((anim_env->time >> 7) & 0xFF);
     int16_t sep_osc = tri8(ph);
     int16_t axis_x  = tri8(aph);
+    int16_t axis_y  = tri8((uint8_t)(aph + 64));
     int16_t split = sep_osc > 0 ? sep_osc : 0;
     int16_t off_x = clamp_offset((int16_t)((split * axis_x) >> SPLIT_OFFSET_SHIFT));
-    /* Vertical split is disabled (VERTICAL_OFFSET_MAX == 0) to keep the
-     * flock visible on all six rows; re-introduce a tri8(aph + 64) axis
-     * and clamp here if you raise that limit. */
-    int16_t off_y = 0;
+    int16_t off_y = clamp_vertical_offset((int16_t)((split * axis_y) >> SPLIT_OFFSET_SHIFT));
 
     /* Per-frame top-speed cap breathes with the dance: |sep_osc| is ~128
      * at the split extremes and 0 at the merge crossing. Invert it so the
@@ -201,7 +204,7 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
         int16_t ax = (int16_t)(sep_x << 3) + (ali_x >> 2) + (coh_x >> 3) +
                      ((cruise_vx - b->vx) >> 4) + dance_ax;
         int16_t ay = (int16_t)(sep_y << 3) + (ali_y >> 2) + (coh_y >> 3) +
-                     ((-b->vy) >> 4) + ((mid_y - byp) >> 2) + dance_ay;
+                     ((-b->vy) >> 4) + dance_ay;
 
         uint8_t flutter = (uint8_t)(((anim_env->time >> 6) + i * 17) & 7);
         ax += (int16_t)flutter - 3;
@@ -217,7 +220,6 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
 
         int32_t next_x = (int32_t)b->x + b->vx;
         int32_t next_y = (int32_t)b->y + b->vy;
-        next_y += (((int32_t)mid_y << 8) - next_y) >> MIDLINE_RECENTER_SHIFT;
 
         if (next_x < 0) {
             next_x = 0;
