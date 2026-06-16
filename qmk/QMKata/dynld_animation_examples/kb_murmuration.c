@@ -16,14 +16,14 @@
 #define SEPARATION_RADIUS_Q8 (12 << 8)
 #define SEPARATION_RADIUS (SEPARATION_RADIUS_Q8 >> 8)
 #define SEPARATION_RADIUS_SQ (SEPARATION_RADIUS * SEPARATION_RADIUS)
-#define RENDER_RADIUS 18
+#define RENDER_RADIUS 12
 #define RENDER_RADIUS_SQ (RENDER_RADIUS * RENDER_RADIUS)
 /* Fission-fusion dance: the two sub-flocks aim at center +/- a breathing
  * offset along a slowly rotating axis. Because the offset is bounded, the
  * split distance is bounded too — the flocks always stay close enough to
  * reconnect and then merge again when the offset breathes back to zero. */
 #define SPLIT_OFFSET_SHIFT 6   /* scales oscillator product down to px */
-#define SPLIT_OFFSET_MAX 32    /* px; caps how far the flocks separate */
+#define SPLIT_OFFSET_MAX 56    /* px; caps how far the flocks separate */
 #define VERTICAL_OFFSET_MAX 16  /* px; half of the matrix half-height */
 #define SPLIT_STEER_SHIFT 2    /* how firmly birds seek their sub-flock */
 
@@ -262,7 +262,7 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
             int16_t dy = (int16_t)(birds[i].y >> 8) - ly;
             int32_t dist_sq = (int32_t)dx * dx + (int32_t)dy * dy;
             if (dist_sq < RENDER_RADIUS_SQ) {
-                int16_t contrib = (int16_t)(72 - (dist_sq >> 2));
+                int16_t contrib = (int16_t)(50 - (dist_sq >> 3));
                 if (contrib > 0) density += (uint16_t)contrib;
             }
         }

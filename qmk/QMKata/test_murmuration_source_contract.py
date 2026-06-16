@@ -206,6 +206,22 @@ class MurmurationSourceContractTest(unittest.TestCase):
             r"clamp_speed\s*\(\s*b->vy\s*\+\s*ay\s*,\s*cur_max_speed_q8\s*\)",
         )
 
+    def test_split_clouds_are_visibly_separated(self):
+        source = MURMURATION_SOURCE.read_text()
+
+        # Wider split + smaller render kernel so the two sub-flocks
+        # don't blur into one Gaussian smear.
+        split = int(re.search(r"#define SPLIT_OFFSET_MAX (\d+)", source).group(1))
+        render = int(re.search(r"#define RENDER_RADIUS (\d+)", source).group(1))
+        self.assertGreaterEqual(
+            split, 48,
+            "split offset too small to be visible across the render kernel",
+        )
+        self.assertLessEqual(
+            render, 14,
+            "render kernel too wide to show the gap between clouds",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
