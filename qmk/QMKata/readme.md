@@ -7,7 +7,8 @@ proof of concept demo (windows) of arduino firmata support in qmk firmware
 - set default layer depending on application in focus
 - set mac/win mode
 - set debug config, rgb mode/hsv/speed, keymap flags, debounce, ...
-- set dynamically loaded user animation binary
+- build and load kbsm behavior modules (flash or SRAM) — see "kbsm modules" below
+- build and upload dynamically-loaded user RGB animations
 - get battery/raw matrix/dip switch status
 - "keyboard scripting" ("development build" only), access keyboard mcu memory/eeprom and compile/execute c function from host python.
 - show console output
@@ -64,14 +65,29 @@ see kb_scripts dir for examples.
 for compile and execute function example install "GNU Arm Embedded Toolchain",
 see: https://developer.arm.com/downloads/-/gnu-rm and modify KeychronQ3Max.TOOLCHAIN to change path, includes/options, ... as needed.
 
-SRAM modules
+kbsm modules
 ------------
 
-QMKata can build and upload dynamically-loaded modules into a reserved
-SRAM region on the keyboard (currently slot 8 on the Keychron Q3 Max).
-See `kbsm_module_examples/` for working examples, `module_api.h` for the
-module-side API, and `docs/sram-module-compilation.md` for the
-compilation flow and the rationale behind the `-fPIC` requirement.
+QMKata builds and uploads kbsm behavior modules to the keyboard. The
+same C source can be linked for either of two targets:
+
+* **Flash** — module ships to a 4 KB module-loader slot in MCU flash
+  (slot 0..7 on the Keychron Q3 Max). Writable globals (`.data`,
+  `.bss`) are rejected at build time; only code + read-only data is
+  uploaded. Survives power cycles and `eeconfig` resets.
+* **SRAM** — module is relocated into a reserved SRAM slot (slot 8 on
+  the Q3 Max) at upload time. `.data` and `.bss` are kept in the
+  module blob, so the module can hold mutable state across callbacks.
+  Lost on reboot; meant for iteration and for modules that need
+  persistent runtime state.
+
+See `kbsm_module_examples/` for working SRAM modules
+(`kbsm_dyad`, `kbsm_holdseq`, `kbsm_autotext`, `kbsm_sticky_combo`,
+`kbsm_vim_modal`), `module_api.h` for the host-side ABI
+(`kbsm_env_t`, hook indices, version), and `docs/` for the build
+pipeline (`sram-module-compilation.md`), the relocation model and the
+`-fPIC` rationale (`sram-module-relocation.md`), and step-by-step
+authoring (`authoring-sram-modules.md`).
 
 demo videos
 -----------
