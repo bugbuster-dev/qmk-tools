@@ -155,6 +155,47 @@ class MurmurationSourceContractTest(unittest.TestCase):
         self.assertIsNotNone(body, "expected an `if (params->iter == 0) { ... }` block")
         self.assertIn("for (int i = 0; i < BIRD_COUNT; i++)", body.group("body"))
 
+    def test_max_speed_is_modulated_by_dance_phase(self):
+        source = MURMURATION_SOURCE.read_text()
+
+        # The static MAX_SPEED_Q8 must be replaced by a min/max pair that
+        # bounds the per-frame cur_max_speed_q8.
+        self.assertIn("MAX_SPEED_MIN_Q8", source)
+        self.assertIn("MAX_SPEED_MAX_Q8", source)
+        self.assertNotRegex(source, r"#define\s+MAX_SPEED_Q8\b")
+
+        min_v = int(re.search(r"#define MAX_SPEED_MIN_Q8 (\d+)", source).group(1))
+        max_v = int(re.search(r"#define MAX_SPEED_MAX_Q8 (\d+)", source).group(1))
+        self.assertLess(min_v, max_v,
+                        "min must be below max so the cap actually breathes")
+
+        # Per-frame cap derives from |sep_osc| so the dance and the speed
+        # share a phase (slow at the split extreme, fast at the merge).
+        self.assertIn("cur_max_speed_q8", source)
+        # cur_max_speed_q8 and sep_osc should appear in the same small
+        # span so the derivation is obviously a function of the dance.
+        match = re.search(
+            r"(?:cur_max_speed_q8[\s\S]{0,400}sep_osc"
+            r"|sep_osc[\s\S]{0,400}cur_max_speed_q8)",
+            source,
+        )
+        self.assertIsNotNone(
+            match,
+            "cur_max_speed_q8 and sep_osc must appear near each other "
+            "so the speed cap clearly tracks the dance phase",
+        )
+
+        # clamp_speed takes the per-frame cap as a second argument so the
+        # bird update uses the breathing limit instead of a static macro.
+        self.assertRegex(
+            source,
+            r"clamp_speed\s*\(\s*b->vx\s*\+\s*ax\s*,\s*cur_max_speed_q8\s*\)",
+        )
+        self.assertRegex(
+            source,
+            r"clamp_speed\s*\(\s*b->vy\s*\+\s*ay\s*,\s*cur_max_speed_q8\s*\)",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

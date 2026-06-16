@@ -3,7 +3,8 @@
 #include "dynld_func.h"
 
 #define BIRD_COUNT 24
-#define MAX_SPEED_Q8 150
+#define MAX_SPEED_MIN_Q8 80    /* slow extreme (~0.31 px/frame), at the split fully open */
+#define MAX_SPEED_MAX_Q8 220   /* fast extreme (~0.86 px/frame), at the merge moment */
 #define EDGE_MARGIN_Q8 (24 << 8)
 #define EDGE_FORCE_Q8 18
 #define MIGRATE_MARGIN_Q8 (32 << 8)
@@ -42,9 +43,9 @@ static uint16_t cached_max_y = 0;
 static int8_t travel_dir = 0;
 static bool initialized = false;
 
-static inline int16_t clamp_speed(int16_t v) {
-    if (v > MAX_SPEED_Q8) return MAX_SPEED_Q8;
-    if (v < -MAX_SPEED_Q8) return -MAX_SPEED_Q8;
+static inline int16_t clamp_speed(int16_t v, int16_t cap) {
+    if (v >  cap) return  cap;
+    if (v < -cap) return -cap;
     return v;
 }
 
@@ -138,6 +139,15 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
      * and clamp here if you raise that limit. */
     int16_t off_y = 0;
 
+    /* Per-frame top-speed cap breathes with the dance: |sep_osc| is ~128
+     * at the split extremes and 0 at the merge crossing. Invert it so the
+     * cap is highest at the merge moment and lowest while fully separated. */
+    int16_t abs_sep = sep_osc >= 0 ? sep_osc : (int16_t)-sep_osc;
+    uint8_t merge_phase = (uint8_t)(128 - abs_sep);
+    int16_t cur_max_speed_q8 = (int16_t)(MAX_SPEED_MIN_Q8 +
+        (((uint32_t)merge_phase *
+          (MAX_SPEED_MAX_Q8 - MAX_SPEED_MIN_Q8)) >> 7));
+
     for (int i = 0; i < BIRD_COUNT; i++) {
         bird_t *b = &birds[i];
         int16_t team = (i & 1) ? 1 : -1;
@@ -202,8 +212,8 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
         if (b->y < EDGE_MARGIN_Q8) ay += EDGE_FORCE_Q8;
         if (b->y > bound_y_q8 - EDGE_MARGIN_Q8) ay -= EDGE_FORCE_Q8;
 
-        b->vx = clamp_speed(b->vx + ax);
-        b->vy = clamp_speed(b->vy + ay);
+        b->vx = clamp_speed(b->vx + ax, cur_max_speed_q8);
+        b->vy = clamp_speed(b->vy + ay, cur_max_speed_q8);
 
         int32_t next_x = (int32_t)b->x + b->vx;
         int32_t next_y = (int32_t)b->y + b->vy;
