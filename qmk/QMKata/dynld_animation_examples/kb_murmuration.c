@@ -54,11 +54,8 @@ static inline int16_t clamp_offset(int16_t v) {
     return v;
 }
 
-static inline int16_t clamp_vertical_offset(int16_t v) {
-    if (v > VERTICAL_OFFSET_MAX) return VERTICAL_OFFSET_MAX;
-    if (v < -VERTICAL_OFFSET_MAX) return -VERTICAL_OFFSET_MAX;
-    return v;
-}
+/* clamp_vertical_offset is unnecessary while VERTICAL_OFFSET_MAX == 0
+ * (off_y is always 0). Re-add it if you ever raise the vertical range. */
 
 /* Integer triangle wave approximating a sine over 0..255 -> ~[-128,128].
  * Drives the dance oscillator; no float / LUT needed. */
@@ -70,10 +67,15 @@ static inline int16_t tri8(uint8_t p) {
 
 __attribute__((section(".text.entry")))
 bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t *params) {
-    if (!initialized) {
+    if (params->init || !initialized) {
+        /* cached_max_x/y start at 0 (.bss / explicit reset on re-init); the
+         * loop below only widens them, so re-entering with the same physical
+         * layout is idempotent. */
         for (int led = 0; led < RGB_MATRIX_LED_COUNT; led++) {
-            if (anim_env->led_config->point[led].x > cached_max_x) cached_max_x = anim_env->led_config->point[led].x;
-            if (anim_env->led_config->point[led].y > cached_max_y) cached_max_y = anim_env->led_config->point[led].y;
+            uint8_t lx = anim_env->led_config->point[led].x;
+            uint8_t ly = anim_env->led_config->point[led].y;
+            if (lx > cached_max_x) cached_max_x = lx;
+            if (ly > cached_max_y) cached_max_y = ly;
         }
 
         uint32_t seed = anim_env->time | 1u;
@@ -95,6 +97,12 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
         initialized = true;
     }
 
+    /* Advance the simulation once per frame, not once per LED chunk.
+     * The QMK matrix task calls this function several times per frame
+     * (params->iter goes 0..N) to slice rendering across ticks; the
+     * boids step must only fire when iter==0 so cost stays O(N^2) per
+     * frame instead of O(N^2 * chunks). */
+    if (params->iter == 0) {
     int32_t bound_x_q8 = (int32_t)cached_max_x << 8;
     int32_t bound_y_q8 = (int32_t)cached_max_y << 8;
 
@@ -123,10 +131,12 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
     uint8_t aph = (uint8_t)((anim_env->time >> 7) & 0xFF);
     int16_t sep_osc = tri8(ph);
     int16_t axis_x  = tri8(aph);
-    int16_t axis_y  = tri8((uint8_t)(aph + 64));
     int16_t split = sep_osc > 0 ? sep_osc : 0;
     int16_t off_x = clamp_offset((int16_t)((split * axis_x) >> SPLIT_OFFSET_SHIFT));
-    int16_t off_y = clamp_vertical_offset((int16_t)((split * axis_y) >> SPLIT_OFFSET_SHIFT));
+    /* Vertical split is disabled (VERTICAL_OFFSET_MAX == 0) to keep the
+     * flock visible on all six rows; re-introduce a tri8(aph + 64) axis
+     * and clamp here if you raise that limit. */
+    int16_t off_y = 0;
 
     for (int i = 0; i < BIRD_COUNT; i++) {
         bird_t *b = &birds[i];
@@ -218,8 +228,15 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
         b->x = (uint16_t)next_x;
         b->y = (uint16_t)next_y;
     }
+    }
 
     for (int led = 0; led < RGB_MATRIX_LED_COUNT; led++) {
+        /* Respect the user's LED flag mask: skip LEDs whose flags don't
+         * overlap params->flags (e.g. underglow/indicators when only
+         * keylight is enabled), matching the convention of QMK's stock
+         * effects (see RGB_MATRIX_TEST_LED_FLAGS in rgb_matrix.h). */
+        if (!(anim_env->led_config->flags[led] & params->flags)) continue;
+
         int16_t lx = anim_env->led_config->point[led].x;
         int16_t ly = anim_env->led_config->point[led].y;
         uint16_t density = 0;
@@ -247,6 +264,9 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
 
         if (density > MAX_DENSITY) density = MAX_DENSITY;
         density = (density * edge_scale) >> 8;
+        /* Scale brightness by the user's RGB matrix value so the
+         * brightness slider actually affects this effect. */
+        density = (density * anim_env->rgb_config->hsv.v) >> 8;
         HSV hsv = {
             .h = (uint8_t)(145 + (density >> 4)),
             .s = 90,

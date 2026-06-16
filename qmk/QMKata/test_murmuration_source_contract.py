@@ -100,6 +100,61 @@ class MurmurationSourceContractTest(unittest.TestCase):
         vertical_offset = int(re.search(r"#define VERTICAL_OFFSET_MAX (\d+)", source).group(1))
         self.assertLessEqual(vertical_offset, 10)
 
+    def test_reinitializes_when_effect_runner_signals_init(self):
+        source = MURMURATION_SOURCE.read_text()
+
+        # QMK sets params->init=true when an RGB mode is (re)entered or
+        # the matrix is re-enabled. The animation must honor that and
+        # reseed flock state, not rely solely on a private static flag.
+        self.assertRegex(
+            source,
+            r"if\s*\(\s*(?:params->init\s*\|\|\s*!initialized|!initialized\s*\|\|\s*params->init)\s*\)",
+        )
+
+    def test_brightness_scales_with_rgb_config_value(self):
+        source = MURMURATION_SOURCE.read_text()
+
+        # hsv.v must be scaled by the user's RGB matrix brightness
+        # (rgb_config->hsv.v / 255), otherwise the brightness control
+        # has no effect on this animation.
+        self.assertIn("anim_env->rgb_config->hsv.v", source)
+        self.assertRegex(
+            source,
+            r"\(\s*density\s*\*\s*anim_env->rgb_config->hsv\.v\s*\)\s*>>\s*8",
+        )
+
+    def test_skips_leds_whose_flags_do_not_match_params_flags(self):
+        source = MURMURATION_SOURCE.read_text()
+
+        # Standard QMK effects skip LEDs whose flag mask doesn't overlap
+        # params->flags so users can keep underglow/indicators untouched.
+        # The render loop must do the same check before writing each LED.
+        self.assertIn("anim_env->led_config->flags[led]", source)
+        self.assertIn("params->flags", source)
+        # The check must guard the body of the per-LED render loop.
+        self.assertRegex(
+            source,
+            r"for \(int led = 0; led < RGB_MATRIX_LED_COUNT; led\+\+\) \{"
+            r"[^}]*?anim_env->led_config->flags\[led\][^}]*?params->flags",
+        )
+
+    def test_simulation_step_runs_only_on_first_iter_of_a_frame(self):
+        source = MURMURATION_SOURCE.read_text()
+
+        # The QMK matrix task slices a frame across multiple calls
+        # (params->iter), but the boids simulation should advance once
+        # per frame, not once per LED chunk. Gate the bird loop on
+        # params->iter == 0 so simulation cost stays bounded.
+        self.assertRegex(source, r"if\s*\(\s*params->iter\s*==\s*0\s*\)")
+        # The per-bird update loop must live inside that gate.
+        body = re.search(
+            r"if\s*\(\s*params->iter\s*==\s*0\s*\)\s*\{(?P<body>.*?)\n    \}\n",
+            source,
+            re.S,
+        )
+        self.assertIsNotNone(body, "expected an `if (params->iter == 0) { ... }` block")
+        self.assertIn("for (int i = 0; i < BIRD_COUNT; i++)", body.group("body"))
+
 
 if __name__ == "__main__":
     unittest.main()
