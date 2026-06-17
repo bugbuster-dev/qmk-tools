@@ -3,19 +3,16 @@ QMKata demo
 
 proof of concept demo (windows) of arduino firmata support in qmk firmware
 
-- set rgb matrix from video/gif playback, matplotlib animation, audio peak level
-- set default layer and switch kbsm behavior module depending on application in focus
-- set mac/win mode
-- set debug config, rgb mode/hsv/speed, keymap flags, debounce, ...
+- set rgb matrix from host: video/gif playback, matplotlib animation, audio peak level
 - build and load kbsm behavior modules (flash or SRAM) — see "kbsm modules" below
 - build and upload user RGB animation dynamically to SRAM
+- set default layer and switch kbsm behavior module depending on application in focus
+- set parameters: mac/win mode, debug config, rgb mode/hsv/speed, keymap flags, debounce, ...
 - get battery/raw matrix/dip switch status
-- "keyboard scripting" ("development build" only), access keyboard mcu memory/eeprom and compile/execute c function from host python.
+- "keyboard scripting", access keyboard mcu memory/eeprom and compile/execute c function from host python.
 - show console output
 - websocket server to set default layer from other apps
 - websocket server to set rgb matrix from other apps (screen capture ws client example)
-
-**WARNING: depending on audio/video content the rgb leds may flash frequently, which can trigger a photosensitive seizure!**
 
 supported keyboards
 -------------------
@@ -61,7 +58,9 @@ keyboard script
 
 see kb_scripts dir for examples.
 
-for compile and execute function example install "GNU Arm Embedded Toolchain",
+arm toolchain
+-------------
+
 see: https://developer.arm.com/downloads/-/gnu-rm and `docs/cross-compiler-setup.md` for setup details.
 modify KeychronQ3Max.TOOLCHAIN to change path, includes/options, ... as needed.
 
@@ -92,6 +91,8 @@ for generating modules (`kbsm-agent-instructions.md`).
 
 demo videos
 -----------
+
+**WARNING: flashing lights**
 
 rgb from video/gif playback, screen capture:
 * https://www.dropbox.com/scl/fi/o1hf8g2pgcmz6pnmi4lf0/qmk_firmata_demo_video_playback.mp4?rlkey=109kbajetq0ow28s3isaid5ih&st=hl9uuwiq&dl=0
