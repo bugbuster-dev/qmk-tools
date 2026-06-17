@@ -21,7 +21,6 @@ supported keyboards
 -------------------
 
 * keychron q3 max (https://github.com/bugbuster-dev/keychron_qmk_firmware)
-* todo: nuphy air96 v2 (https://github.com/bugbuster-dev/qmk_firmware/tree/air96v2_virtser)
 
 install
 -------
@@ -49,7 +48,7 @@ set default layer:
 python layer_switch.py <layer>
 ~~~
 
-**NOTE: screen capture uses d3dshot which fails to install with python 3.11 so install python 3.8 for sceeen capture example**
+**NOTE: screen capture uses d3dshot which fails to install with python 3.11 so install python 3.8 for screen capture example**
 **and the packages in requirements_screen_capture.txt**
 
 screen capture and send rgb image:
@@ -63,7 +62,8 @@ keyboard script
 see kb_scripts dir for examples.
 
 for compile and execute function example install "GNU Arm Embedded Toolchain",
-see: https://developer.arm.com/downloads/-/gnu-rm and modify KeychronQ3Max.TOOLCHAIN to change path, includes/options, ... as needed.
+see: https://developer.arm.com/downloads/-/gnu-rm and `docs/cross-compiler-setup.md` for setup details.
+modify KeychronQ3Max.TOOLCHAIN to change path, includes/options, ... as needed.
 
 kbsm modules
 ------------
@@ -86,8 +86,9 @@ See `kbsm_module_examples/` for working SRAM modules
 `kbsm_vim_modal`), `module_api.h` for the host-side ABI
 (`kbsm_env_t`, hook indices, version), and `docs/` for the build
 pipeline (`sram-module-compilation.md`), the relocation model and the
-`-fPIC` rationale (`sram-module-relocation.md`), and step-by-step
-authoring (`authoring-sram-modules.md`).
+`-fPIC` rationale (`sram-module-relocation.md`), step-by-step
+authoring (`authoring-sram-modules.md`), and the LLM agent guide
+for generating modules (`kbsm-agent-instructions.md`).
 
 demo videos
 -----------
