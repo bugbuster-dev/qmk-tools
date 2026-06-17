@@ -4,11 +4,11 @@ QMKata demo
 proof of concept demo (windows) of arduino firmata support in qmk firmware
 
 - set rgb matrix from video/gif playback, matplotlib animation, audio peak level
-- set default layer depending on application in focus
+- set default layer and switch kbsm behavior module depending on application in focus
 - set mac/win mode
 - set debug config, rgb mode/hsv/speed, keymap flags, debounce, ...
 - build and load kbsm behavior modules (flash or SRAM) — see "kbsm modules" below
-- build and upload dynamically-loaded user RGB animations
+- build and upload user RGB animation dynamically to SRAM
 - get battery/raw matrix/dip switch status
 - "keyboard scripting" ("development build" only), access keyboard mcu memory/eeprom and compile/execute c function from host python.
 - show console output
