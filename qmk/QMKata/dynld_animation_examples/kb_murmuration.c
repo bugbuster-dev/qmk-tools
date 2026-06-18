@@ -18,6 +18,8 @@
 #define SEPARATION_RADIUS_SQ (SEPARATION_RADIUS * SEPARATION_RADIUS)
 #define RENDER_RADIUS 12
 #define RENDER_RADIUS_SQ (RENDER_RADIUS * RENDER_RADIUS)
+#define BASE_HUE 145    /* base hue (0-255), shifted by density */
+#define BASE_SATURATION 90
 /* Fission-fusion dance: the two sub-flocks aim at center +/- a breathing
  * offset along a slowly rotating axis. Because the offset is bounded, the
  * split distance is bounded too — the flocks always stay close enough to
@@ -280,8 +282,8 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env, effect_params_t 
          * brightness slider actually affects this effect. */
         density = (density * anim_env->rgb_config->hsv.v) >> 8;
         HSV hsv = {
-            .h = (uint8_t)(145 + (density >> 4)),
-            .s = 90,
+            .h = (uint8_t)(BASE_HUE + (density >> 4)),
+            .s = BASE_SATURATION,
             .v = (uint8_t)density,
         };
         anim_env->set_color_hsv(led, hsv);
