@@ -8,14 +8,16 @@
 #include "rgb_matrix.h"
 #include "dynld_func.h"
 
-extern void mprintf(const char *fmt, ...);
-
 #define LIFE_ROWS             4
 #define LIFE_COLS             14
 #define LIFE_ROW_OFFSET       1
 #define LIFE_STEP_INTERVAL    30
 #define LIFE_STAGNATION_LIMIT 10
 #define N_BYTES               (((LIFE_ROWS * LIFE_COLS) + 7) / 8)
+
+static uint8_t grid[N_BYTES * 2];
+static uint8_t frame_counter, stagnation, prev_cs;
+static bool seeded;
 
 static bool grid_get(uint8_t *buf, uint8_t row, uint8_t col) {
     uint8_t idx = row * LIFE_COLS + col;
@@ -65,27 +67,27 @@ static uint8_t grid_checksum(uint8_t *buf) {
     return c;
 }
 
+static void life_seed(dynld_custom_animation_env_t *anim_env) {
+    seeded = true;
+    frame_counter = 0;
+    stagnation = 0;
+    prev_cs = 0;
+
+    for (uint8_t i = 0; i < N_BYTES * 2; i++)
+        grid[i] = 0;
+
+    uint32_t s = (uint32_t)anim_env->time ^ 0x4B7E1131u;
+    for (uint8_t row = 0; row < LIFE_ROWS; row++)
+        for (uint8_t col = 0; col < LIFE_COLS; col++) {
+            s = s * 1103515245u + 12345u;
+            grid_set(grid, row, col, ((s >> 16) & 7) == 0);
+        }
+}
+
 __attribute__((section(".text.entry")))
 bool effect_runner_func(dynld_custom_animation_env_t *anim_env,
                                   effect_params_t *params) {
-    static uint8_t grid[N_BYTES * 2];
-    static uint8_t frame_counter, generation, stagnation, prev_cs;
-    static bool seeded;
-
-    void do_seed(void) {
-        seeded = true;
-        generation = 0;
-        stagnation = 0;
-        prev_cs = 0;
-        uint32_t s = (uint32_t)anim_env->time ^ 0x4B7E1131u;
-        for (uint8_t row = 0; row < LIFE_ROWS; row++)
-            for (uint8_t col = 0; col < LIFE_COLS; col++) {
-                s = s * 1103515245u + 12345u;
-                grid_set(grid, row, col, ((s >> 16) & 7) == 0);
-            }
-    }
-
-    if (!seeded) do_seed();
+    if (params->init || !seeded) life_seed(anim_env);
 
     frame_counter++;
     if (frame_counter >= LIFE_STEP_INTERVAL) {
@@ -98,16 +100,8 @@ bool effect_runner_func(dynld_custom_animation_env_t *anim_env,
         if (cs == prev_cs) stagnation++;
         else { prev_cs = cs; stagnation = 0; }
 
-        uint8_t alive_count = 0;
-        for (uint8_t i = 0; i < N_BYTES; i++) {
-            uint8_t b = grid[i];
-            while (b) { alive_count += (b & 1); b >>= 1; }
-        }
-        mprintf("life: step gen=%d alive=%d\n", generation++, alive_count);
-
         if (!any_alive(grid) || stagnation >= LIFE_STAGNATION_LIMIT) {
-            mprintf("life: %s, reseeding\n", !any_alive(grid) ? "all dead" : "stagnant");
-            do_seed();
+            life_seed(anim_env);
         }
     }
 
